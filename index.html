@@ -40,7 +40,7 @@
       <div id="pnlRibbon" class="pnlRibbon"></div>
       <div id="content" class="pane" role="tabpanel" aria-live="polite"><div class="skeleton">Загружаю портфель…</div></div>
       <div id="message" aria-live="polite"></div>
-      <p class="tiny storageNote">Изменения сохраняются только в этом браузере. Синхронизация с аккаунтом Bybit потребует защищённого сервера.</p>
+      <p id="storageNote" class="tiny storageNote">Ручные операции сохраняются в этом браузере.</p>
     </section>
   </div></main>
 <script>
@@ -214,7 +214,7 @@ function futures(){
 }
 function capitalSettings(){
  const a=sums();
- return `<section class="section settingsCard"><div class="hrow"><div><div class="sectitle">Плановый капитал</div><div class="tiny">Бюджет для покупок BTC и ETH</div></div><span class="pill">Спот</span></div><div class="capitalSummary"><div><small>План</small><strong>${dollars(C)}</strong></div><div><small>Вложено</small><strong>${dollars(a.invested)}</strong></div><div><small>Резерв</small><strong>${dollars(a.cash)}</strong></div></div><form id="capitalForm" class="capitalForm"><div class="field"><label for="plannedCapital">Запланированный капитал, USD</label><input id="plannedCapital" name="capital" type="number" min="100" max="1000000" step="1" value="${C}" required /></div><button class="btn primary" type="submit">Сохранить капитал</button></form><p class="tiny settingsHint">Лимит одной монеты равен половине плана. Изменение плана не создаёт сделки и не меняет уже записанные покупки.</p></section>`;
+ return `<section class="section settingsCard"><div class="hrow"><div><div class="sectitle">Плановый капитал</div><div class="tiny">Бюджет для покупок BTC и ETH</div></div><span class="pill">Спот</span></div><div class="capitalSummary"><div><small>План</small><strong>${dollars(C)}</strong></div><div><small>Вложено</small><strong>${dollars(a.invested)}</strong></div><div><small>Резерв</small><strong>${dollars(a.cash)}</strong></div><div><small>Лимит на монету</small><strong>${dollars(C/2)}</strong></div></div><form id="capitalForm" class="capitalForm"><div class="field"><label for="plannedCapital">Запланированный капитал, USD</label><input id="plannedCapital" name="capital" type="number" min="100" max="1000000" step="1" value="${C}" required /></div><button class="btn primary" type="submit">Сохранить капитал</button></form><p class="tiny settingsHint">Лимит одной монеты равен половине плана. Изменение плана не создаёт сделки и не меняет уже записанные покупки.</p></section>`;
 }
 function accountSettings(){
  const all=s.sources.flatMap(ex=>ex.accounts.map(ac=>({ex,ac})));
@@ -235,6 +235,7 @@ function render(){
  document.querySelector('.tabs').dataset.active=s.tab;
  document.querySelectorAll('[data-tab]').forEach(b=>{const active=b.dataset.tab===s.tab;b.classList.toggle('active',active);b.setAttribute('aria-selected',active?'true':'false')});
  $('message').innerHTML=s.flash?`<div class="toast">${escape(s.flash)}</div>`:'';
+ $('storageNote').textContent=s.backendConnection.connected?'Ручные покупки хранятся на этом устройстве. Данные Bybit обновляются с сервера.':'Ручные покупки хранятся в этом браузере.';
  if(window.fxmr4Levels?.render)window.fxmr4Levels.render();
  if(window.fxmr4Bybit?.renderPanel)window.fxmr4Bybit.renderPanel();
 }
