@@ -6,6 +6,7 @@
   <meta name="theme-color" content="#fafbfc" />
   <title>Мой портфель · fxmr4</title>
   <link rel="stylesheet" href="./styles.css" />
+  <link rel="stylesheet" href="./levels.css" />
 </head>
 <body>
   <svg aria-hidden="true" width="0" height="0" style="position:absolute;overflow:hidden">
@@ -136,6 +137,7 @@ function positions(){
  <div class="spotStats"><div class="card"><div class="eyebrow">В монетах</div><div class="num">${dollars(a.holdings)}</div></div><div class="card"><div class="eyebrow">Резерв</div><div class="num">${dollars(a.cash)}</div></div></div></div>
  <section class="section"><div class="hrow"><div><div class="sectitle">Монеты</div><div class="tiny">Нажми на строку для подробностей</div></div><button type="button" class="btn primary" data-action="new">${icon('plus')} Покупка</button></div><div class="spotList">${['BTC','ETH'].map(spotRow).join('')}</div></section>
  ${quoteStrip()}
+ <div id="strategyMount" aria-label="Графики уровней покупок BTC и ETH"></div>
  <div class="spotHistoryToggle"><button class="historyToggle" type="button" data-action="toggleHistory"><span>${icon('calendar')} История покупок <span class="historyCount">${s.trades.length}</span></span><span class="chev ${s.spotHistoryOpen?'rotated':''}">⌄</span></button>${s.spotHistoryOpen||s.form?history():''}</div>`;
 }
 function futuresSorted(){
@@ -195,6 +197,7 @@ function render(){
  document.querySelector('.tabs').dataset.active=s.tab;
  document.querySelectorAll('[data-tab]').forEach(b=>{const active=b.dataset.tab===s.tab;b.classList.toggle('active',active);b.setAttribute('aria-selected',active?'true':'false')});
  $('message').innerHTML=s.flash?`<div class="toast">${escape(s.flash)}</div>`:'';
+ if(window.fxmr4Levels?.render)window.fxmr4Levels.render();
 }
 
   const storageKey='fxmr4_portfolio_public_preview_v1';
@@ -355,11 +358,13 @@ function handleChange(e){
   document.addEventListener('click',handleClick);
   document.addEventListener('submit',handleSubmit);
   document.addEventListener('change',handleChange);
+  window.fxmr4GetState=()=>({tab:s.tab,quotes:s.quotes,holdings:{BTC:coin('BTC'),ETH:coin('ETH')},capital:C});
   // Standalone web preview. Every edit is saved only in this browser, never to a public repository.
   loadLocal();render();chart();sync({quiet:true});
   setInterval(()=>{if(!document.hidden&&!s.busy)sync({quiet:true})},60000);
   document.addEventListener('visibilitychange',()=>{if(!document.hidden&&Date.now()-lastSyncAttempt>60000)sync({quiet:true})});
 })();
 </script>
+<script src="./levels.js"></script>
 </body>
 </html>
