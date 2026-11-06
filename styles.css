@@ -251,7 +251,7 @@
 .settingsTabs{display:inline-flex;border:1px solid var(--border);background:var(--surface2);border-radius:11px;padding:4px;gap:3px;margin:20px 0 3px}
 .settingsTabs button{font-size:12px;padding:8px 17px}
 .settingsCard{border:1px solid var(--border);border-radius:var(--radius);padding:18px;background:var(--surface)}
-.capitalSummary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:19px 0;padding-bottom:17px;border-bottom:1px solid var(--border)}
+.capitalSummary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:19px 0;padding-bottom:17px;border-bottom:1px solid var(--border)}
 .capitalSummary>div{display:flex;flex-direction:column;gap:4px}
 .capitalSummary small{color:var(--muted);font-size:11px}
 .capitalSummary strong{font-size:19px;font-weight:680;letter-spacing:-.4px;font-variant-numeric:tabular-nums}
@@ -292,3 +292,5 @@
  .pnlChartHead .periods{gap:1px}
 }
 @media(prefers-reduced-motion:reduce){.chev::before{transition:none}}
+
+@media(max-width:600px){.capitalSummary{grid-template-columns:repeat(2,minmax(0,1fr));row-gap:15px}}
