@@ -27,16 +27,14 @@
       <header class="header"><div class="logoArea"><div class="appicon"><svg class="icon"><use href="#wallet"/></svg></div><div><div class="appname">Мой портфель</div><div class="account">fxmr4 · Spot</div></div></div><span class="pill">USD</span></header>
       <div class="navLabel">РАЗДЕЛЫ</div>
       <nav class="tabs" data-active="overview" role="tablist" aria-label="Разделы портфеля">
-        <button class="tab active" id="tab-overview" type="button" role="tab" aria-selected="true" data-tab="overview"><svg class="icon"><use href="#activity"/></svg><span>Обзор</span></button>
-        <button class="tab" id="tab-positions" type="button" role="tab" aria-selected="false" data-tab="positions"><svg class="icon"><use href="#wallet"/></svg><span>Спот</span></button>
-        <button class="tab" id="tab-history" type="button" role="tab" aria-selected="false" data-tab="history"><svg class="icon"><use href="#calendar"/></svg><span>Покупки</span></button>
-        <button class="tab" id="tab-trading" type="button" role="tab" aria-selected="false" data-tab="trading"><svg class="icon"><use href="#trend"/></svg><span>Торговля</span></button>
-        <button class="tab" id="tab-connections" type="button" role="tab" aria-selected="false" data-tab="connections"><svg class="icon"><use href="#shield"/></svg><span>Bybit</span></button>
+        <button class="tab active" type="button" role="tab" aria-selected="true" data-tab="overview"><svg class="icon"><use href="#activity"/></svg><span>Обзор</span></button>
+        <button class="tab" type="button" role="tab" aria-selected="false" data-tab="positions"><svg class="icon"><use href="#wallet"/></svg><span>Spot</span></button>
+        <button class="tab" type="button" role="tab" aria-selected="false" data-tab="futures"><svg class="icon"><use href="#trend"/></svg><span>Futures</span></button>
       </nav>
-      <div class="sideFooter"><span class="status-dot"></span>Котировки · раз в 60 секунд<div class="tiny">Операции сохраняются в браузере</div></div>
+      <div class="sideFooter"><span class="status-dot"></span>Котировки · раз в 60 секунд<div class="tiny">Операции сохраняются в браузере</div><button class="btn navConfig" type="button" data-action="goConnections">Подключения</button><div class="tiny"></div></div>
     </aside>
     <section class="workspace">
-      <div class="workspaceHead"><div><div class="workspaceEyebrow">FXMR4 / Личный кабинет</div><h1 id="pageTitle">Обзор</h1></div><span class="pill">USD</span></div>
+      <div class="workspaceHead"><div><div class="workspaceEyebrow">FXMR4 / Личный кабинет</div><h1 id="pageTitle">Обзор</h1></div><div class="headActions"><button class="btn" type="button" data-action="goConnections">Подключения</button><span class="pill">USD</span></div></div>
       <div id="pnlRibbon" class="pnlRibbon"></div>
       <div id="content" class="pane" role="tabpanel" aria-live="polite"><div class="skeleton">Загружаю портфель…</div></div>
       <div id="message" aria-live="polite"></div>
@@ -59,7 +57,7 @@
   const nowLocal=()=>{const d=new Date();return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-')};
   const fmtDate=d=>{if(!d)return 'Нет даты';const a=d.slice(0,10).split('-');return a.length===3?`${a[2]}.${a[1]}.${a[0]}`:d};
   const fmtTime=d=>{if(!d)return '';const x=new Date(d);return isNaN(x)?'':x.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})};
-  const s={tab:'overview',trades:[{id:1,coin:'BTC',spent:25,entry:76200,buy_date:'2026-11-06',confirmed:false},{id:2,coin:'ETH',spent:25,entry:2247,buy_date:'2026-11-06',confirmed:false}],quotes:{BTC:{price:initial.BTC,source:'Предварительно'},ETH:{price:initial.ETH,source:'Предварительно'}},capital:C,period:'7d',points:[],snapshots:[],sync:null,form:false,editing:null,deleteId:null,busy:false,flash:'',formError:'',showPrices:false,tradingSubtab:'futures'};
+  const s={tab:'overview',trades:[{id:1,coin:'BTC',spent:25,entry:76200,buy_date:'2026-11-06',confirmed:false},{id:2,coin:'ETH',spent:25,entry:2247,buy_date:'2026-11-06',confirmed:false}],quotes:{BTC:{price:initial.BTC,source:'Предварительно'},ETH:{price:initial.ETH,source:'Предварительно'}},capital:C,period:'7d',points:[],snapshots:[],sync:null,form:false,editing:null,deleteId:null,busy:false,flash:'',formError:'',showPrices:false,tradingSubtab:'futures',futureMode:'exchange',futureSort:'pnl',futureForm:null,futureFormError:'',sources:[{id:'bybit',name:'Bybit',connected:false,accounts:[]}],futuresPositions:[],openedExchanges:{},openedAccounts:{},spotHistoryOpen:false,spotOpen:{}};
   function coin(m){const trades=s.trades.filter(t=>t.coin===m);const invested=trades.reduce((t,x)=>t+Number(x.spent),0);const quantity=trades.reduce((t,x)=>t+Number(x.spent)/Number(x.entry),0);const current=Number(s.quotes[m]?.price||initial[m]);const value=quantity*current;return {invested,quantity,current,value,profit:value-invested,remaining:500-invested,avg:quantity?invested/quantity:0,provisional:trades.some(t=>!t.confirmed)}}
   function sums(){const btc=coin('BTC'),eth=coin('ETH'),invested=btc.invested+eth.invested,cash=C-invested,holdings=btc.value+eth.value,profit=holdings-invested;return {btc,eth,invested,cash,holdings,profit,total:cash+holdings}}
 
