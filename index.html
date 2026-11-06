@@ -235,30 +235,17 @@ function formHTML(){
 function quoteStrip(){
  return `<section class="section sectionline"><div class="hrow"><span class="sectitle">Текущие цены</span><div class="flexend"><button type="button" class="btn" data-action="prices">Цены</button><button type="button" class="btn" data-action="sync" ${s.busy?'disabled':''}>${icon('sync',s.busy?'spin':'')} ${s.busy?'Обновляю':'Обновить'}</button></div></div>${[['BTC','Bitcoin','₿','btc'],['ETH','Ethereum','◆','eth']].map(([m,name,sym,color])=>`<div class="priceRow"><div class="coinleft"><div class="coinIcon ${color}">${sym}</div><div><div class="coinName">${m}</div></div></div><span class="price">${dollars(coin(m).current)}</span></div>`).join('')}${s.showPrices?manualPricesHTML():''}</section>`;
 }
-function spotAccounts(){
- const map=new Map();
- for(const trade of s.trades){
-  const name=String(trade.account||'fxmr4').trim()||'fxmr4',spent=Number(trade.spent),entry=Number(trade.entry);
-  if(!(spent>0&&entry>0)||!['BTC','ETH'].includes(trade.coin))continue;
-  if(!map.has(name))map.set(name,{name,invested:0,value:0,coins:{BTC:{invested:0,value:0},ETH:{invested:0,value:0}}});
-  const account=map.get(name),value=spent/entry*coin(trade.coin).current;
-  account.invested+=spent;account.value+=value;account.coins[trade.coin].invested+=spent;account.coins[trade.coin].value+=value;
- }
- const accounts=[...map.values()];
- return `<div class="spotAccountsBlock"><button type="button" class="historyToggle" data-action="toggleSpotAccounts" aria-expanded="${!!s.spotAccountsOpen}"><span>${icon('layers')} Счета спота <span class="historyCount">${accounts.length}</span></span><span class="chev ${s.spotAccountsOpen?'rotated':''}">⌄</span></button>${s.spotAccountsOpen?`<div class="spotAccountsBody">${accounts.length?accounts.map(ac=>`<div class="spotAccount"><div class="spotAccountHead"><div><strong>${escape(ac.name)}</strong><span class="accountTag">Спот</span></div><div class="spotAccountTotals"><strong>${dollars(ac.value)}</strong><span class="${cls(ac.value-ac.invested)}">${signed(ac.value-ac.invested)}</span></div></div><div class="spotAccountCoins">${['BTC','ETH'].filter(sym=>ac.coins[sym].invested>0).map(sym=>`<div><span>${sym}</span><strong>${dollars(ac.coins[sym].value)}</strong></div>`).join('')}</div></div>`).join(''):'<div class="sourceEmpty">На счетах пока нет записанных покупок.</div>'}<div class="spotAccountHint">Здесь отображаются записанные покупки. Резерв не распределён по счетам.</div></div>`:''}</div>`;
-}
 function positions(){
- const a=sums(),reservePct=C>0?a.cash/C*100:0,usedPct=C>0?a.invested/C*100:0;
+ const a=sums(),reservePct=C>0?a.cash/C*100:0;
  const held=['BTC','ETH'].filter(sym=>coin(sym).invested>0);
  const stack=coinStack(held);
  return `<div class="spotTop"><div class="card tint spotHoldingsCard"><div class="eyebrow">Стоимость монет</div><div class="total">${dollars(a.holdings)}</div><div class="spotHeroBottom"><span class="metric ${cls(a.profit)}">${signed(a.profit)} (${signed(a.invested?a.profit/a.invested*100:0,'pct')})</span><span class="tiny">Вложено ${dollars(a.invested)}</span></div>${stack?`<div class="spotHeroCoins">${stack}<span class="tiny">${held.length} ${held.length===1?'монета':'монеты'} в работе</span></div>`:''}</div>
- <div class="card spotReserveCard reserveMuted"><div class="spotReserveTop"><div class="eyebrow">Резерв <span class="reserveTag">не в PNL</span></div><span class="reservePercent">${pct(reservePct)}</span></div><div class="total">${dollars(a.cash)}</div><div class="spotReserveFoot"><span>Задействовано ${pct(usedPct)}</span><span>${dollars(a.invested)} из ${dollars(C)}</span></div><div class="reserveProgress"><span style="width:${Math.min(100,Math.max(0,usedPct))}%"></span></div><p class="tiny reserveNote">Резерв — это свободные деньги. Он не участвует в расчёте PNL и не распределён по монетам.</p></div></div>
+ <div class="card spotReserveCard reserveMuted"><div class="spotReserveTop"><div class="eyebrow">Резерв</div><span class="reservePercent">${pct(reservePct)}</span></div><div class="total">${dollars(a.cash)}</div></div></div>
  ${spotChartBlock()}
  <section class="section"><div class="hrow"><div><div class="sectitle">Монеты</div></div><button type="button" class="btn primary" data-action="new">${icon('plus')} Покупка</button></div><div class="spotList">${['BTC','ETH'].map(spotRow).join('')}</div></section>
  <section class="section spotAllocation"><div class="hrow"><div><div class="sectitle">Распределение спота</div></div><button class="btn" type="button" data-action="gotoCapital">Капитал</button></div>${spotDistribution()}</section>
  ${quoteStrip()}
  <div id="strategyMount" aria-label="Графики уровней покупок BTC и ETH"></div>
- ${spotAccounts()}
  <div class="spotHistoryToggle"><button class="historyToggle" type="button" data-action="toggleHistory"><span>${icon('calendar')} История покупок <span class="historyCount">${s.trades.length}</span></span><span class="chev ${s.spotHistoryOpen?'rotated':''}">⌄</span></button>${s.spotHistoryOpen||s.form?history():''}</div>`;
 }
 
