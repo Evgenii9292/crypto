@@ -81,6 +81,24 @@ class TestEncryptedVpsStorage(TestCase):
             state.rename_extra_account("missing", "Other")
         self.assertEqual(state.list_extra_accounts()[0]["id"], first["id"])
 
+    def test_account_icons_persist_encrypted_and_survive_rename(self):
+        state.write_credentials("legacy-key-0123456", "legacy-secret-0123456", "Old")
+        state.rename_credentials("13 ордеров 2 стоп-лосс", icon="trend")
+        stored = state.read_credentials()
+        self.assertEqual(stored["label"], "13 ордеров 2 стоп-лосс")
+        self.assertEqual(stored["icon"], "trend")
+        self.assertEqual(stored["key"], "legacy-key-0123456")
+        self.assertNotIn(b"legacy-secret", state.CREDS_PATH.read_bytes())
+        sub = state.add_extra_account("other-key-0123456", "other-secret-0123456",
+                                      "Second", icon="bot")
+        self.assertEqual(state.list_extra_accounts()[0]["icon"], "bot")
+        state.rename_extra_account(sub["id"], "Second renamed", icon="shield")
+        self.assertEqual(state.list_extra_accounts()[0]["icon"], "shield")
+        with self.assertRaises(state.StateError):
+            state.rename_extra_account(sub["id"], "Second renamed", icon="<script>")
+        self.assertEqual(state.list_extra_accounts()[0]["icon"], "shield")
+        self.assertEqual(state.read_credentials()["icon"], "trend")
+
     def test_portfolio_save_and_reload(self):
         portfolio = {"capital": 1000, "trades": [{"coin": "BTC", "spent": 25, "entry": 76200}]}
         levels = {"levels": {"BTC": [{"id": "btc-75000", "price": 75000}]}}
