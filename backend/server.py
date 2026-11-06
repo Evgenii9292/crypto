@@ -409,6 +409,76 @@ class Handler(BaseHTTPRequestHandler):
                     "persisted": True, "message": "Ключ шифруется и хранится на VPS даже после перезапуска."})
 
 
+HISTORY_SAMPLE_SECONDS = 300
+
+
+def _spot_pnl(portfolio):
+    """Spot PNL from the saved portfolio, mirroring the browser formula.
+
+    Returns None when the inputs are not usable: an unknown value must stay
+    unknown rather than be recorded as a zero result.
+    """
+    if not isinstance(portfolio, dict):
+        return None
+    trades = portfolio.get("trades")
+    quotes = portfolio.get("quotes")
+    if not isinstance(trades, list) or not isinstance(quotes, dict):
+        return None
+    profit = 0.0
+    for trade in trades:
+        if not isinstance(trade, dict):
+            return None
+        coin = trade.get("coin")
+        try:
+            spent = float(trade.get("spent"))
+            entry = float(trade.get("entry"))
+        except (TypeError, ValueError):
+            return None
+        if entry <= 0 or spent < 0:
+            return None
+        quote = quotes.get(coin)
+        price = _num(quote.get("price")) if isinstance(quote, dict) else None
+        if price is None or price <= 0:
+            return None
+        profit += spent / entry * price - spent
+    return profit
+
+
+def sample_history_once():
+    """Append one durable PNL reading. Never raises into the caller."""
+    try:
+        key, secret, _label = credentials()
+        if not key or not secret:
+            return False
+        data = snapshot()
+        totals = data.get("totals") or {}
+        futures = _num(totals.get("perpUPL"))
+        portfolio = saved_state.read_profile().get("portfolio")
+        spot = _spot_pnl(portfolio)
+        point = {"t": int(time.time() * 1000)}
+        if spot is not None:
+            point["spot"] = spot
+        if futures is not None:
+            point["futures"] = futures
+        if spot is not None and futures is not None:
+            point["total"] = spot + futures
+        if len(point) == 1:
+            return False
+        saved_state.merge_history([point])
+        return True
+    except Exception as exc:  # a sampler must never take the app down
+        print("PNL history sample skipped: " + type(exc).__name__, flush=True)
+        return False
+
+
+def history_sampler():
+    # The browser only records while a tab is open, which is not enough for a
+    # month chart. This keeps the series alive on the server itself.
+    while True:
+        sample_history_once()
+        time.sleep(HISTORY_SAMPLE_SECONDS)
+
+
 def main():
     if not PASSWORD or len(PASSWORD) < 16 or PASSWORD.startswith("REPLACE_WITH_"):
         raise SystemExit("FXMR4_PASSWORD must be set to a strong password (16+ chars)")
@@ -418,6 +488,7 @@ def main():
         raise SystemExit("BYBIT_API_HOST must be an approved official Bybit API host")
     saved_state.is_ready()
     server = ThreadingHTTPServer((BIND, PORT), Handler)
+    threading.Thread(target=history_sampler, name="pnl-history", daemon=True).start()
     print("FXMR4 private app listening on http://%s:%d" % (BIND, PORT), flush=True)
     server.serve_forever()
 

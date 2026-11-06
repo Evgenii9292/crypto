@@ -103,5 +103,73 @@ class TestReadOnlySubaccount(TestCase):
         self.assertTrue(handler._same_origin_action())
 
 
+class TestHistorySampler(TestCase):
+    """The server must keep the PNL series alive with no browser open."""
+
+    def setUp(self):
+        self.saved = []
+        self.merge = patch.object(server.saved_state, "merge_history",
+                                  side_effect=lambda pts: self.saved.append(pts[0]))
+        self.merge.start()
+        self.creds = patch.object(server, "credentials",
+                                  return_value=("k", "s", "Sub"))
+        self.creds.start()
+        self.profile = patch.object(server.saved_state, "read_profile",
+                                    return_value={"portfolio": {
+                                        "trades": [{"coin": "BTC", "spent": 100, "entry": 50}],
+                                        "quotes": {"BTC": {"price": 60}}}})
+        self.profile.start()
+
+    def tearDown(self):
+        for p in (self.merge, self.creds, self.profile):
+            p.stop()
+
+    def _snapshot(self, perp_upl):
+        return patch.object(server, "snapshot", return_value={
+            "totals": {"perpUPL": perp_upl}})
+
+    def test_records_spot_and_futures_separately(self):
+        with self._snapshot(-3.5):
+            self.assertTrue(server.sample_history_once())
+        point = self.saved[0]
+        self.assertAlmostEqual(point["spot"], 20.0)   # 100/50*60 - 100
+        self.assertAlmostEqual(point["futures"], -3.5)
+        self.assertAlmostEqual(point["total"], 16.5)
+
+    def test_unknown_futures_is_absent_not_zero(self):
+        with self._snapshot(None):
+            self.assertTrue(server.sample_history_once())
+        point = self.saved[0]
+        self.assertIn("spot", point)
+        self.assertNotIn("futures", point)
+        self.assertNotIn("total", point)
+
+    def test_no_credentials_writes_nothing(self):
+        self.creds.stop()
+        with patch.object(server, "credentials", return_value=(None, None, "Sub")):
+            self.assertFalse(server.sample_history_once())
+        self.assertEqual(self.saved, [])
+        self.creds.start()
+
+    def test_bybit_failure_does_not_raise(self):
+        with patch.object(server, "snapshot", side_effect=server.BybitFailure("down")):
+            self.assertFalse(server.sample_history_once())
+        self.assertEqual(self.saved, [])
+
+    def test_missing_quote_keeps_spot_unknown(self):
+        self.profile.stop()
+        with patch.object(server.saved_state, "read_profile",
+                          return_value={"portfolio": {"trades": [{"coin": "BTC", "spent": 100,
+                                                                  "entry": 50}],
+                                                      "quotes": {}}}):
+            with self._snapshot(-1.0):
+                self.assertTrue(server.sample_history_once())
+        point = self.saved[0]
+        self.assertNotIn("spot", point)
+        self.assertNotIn("total", point)
+        self.assertAlmostEqual(point["futures"], -1.0)
+        self.profile.start()
+
+
 if __name__ == "__main__":
     main()
