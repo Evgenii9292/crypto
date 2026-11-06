@@ -494,3 +494,91 @@
 @media(prefers-reduced-motion:reduce){
  .tabs .tab{transition:none}
 }
+
+/* Balanced portfolio dashboard: information-rich without repeated breakdowns. */
+.overviewHero{
+ display:block;
+ min-height:178px;
+ padding:22px 24px!important;
+}
+.overviewEyebrow{
+ color:var(--sub);
+ font-size:12px;
+ font-weight:560;
+ line-height:1.4;
+ margin:0 0 11px;
+}
+.overviewHero .total{line-height:1.13;letter-spacing:-.7px}
+.overviewHeroMetrics{
+ display:grid;
+ grid-template-columns:repeat(2,minmax(0,1fr));
+ gap:12px 24px;
+ border-top:1px solid var(--border);
+ padding-top:14px;
+ margin-top:16px;
+}
+.overviewMetric{display:flex;align-items:flex-start;flex-direction:column;gap:5px;min-width:0}
+.overviewMetric>span{font-size:11px;color:var(--sub)}
+.overviewMetric>strong{font-size:15px;font-weight:680;line-height:1.3;font-variant-numeric:tabular-nums}
+.overviewMetric>strong .neutral{color:var(--muted)}
+.overview-aside .assetSummary{
+ display:flex;
+ flex-direction:column;
+ justify-content:space-between;
+ align-items:stretch;
+ text-align:left;
+ min-height:132px;
+ gap:16px;
+ padding:17px 19px;
+}
+.assetTopline{
+ display:flex;
+ align-items:flex-start;
+ justify-content:space-between;
+ gap:8px 14px;
+ line-height:1.2;
+}
+.assetTopline .assetTitle{font-size:15px;font-weight:680}
+.assetTopline>strong{
+ font-size:21px;
+ font-weight:740;
+ letter-spacing:-.45px;
+ font-variant-numeric:tabular-nums;
+ text-align:right;
+ white-space:nowrap;
+}
+.assetPnlMetrics{
+ display:grid;
+ grid-template-columns:repeat(2,minmax(0,1fr));
+ gap:12px;
+}
+.assetPnlMetric{
+ display:flex;
+ flex-direction:column;
+ align-items:flex-start;
+ gap:5px;
+ min-width:0;
+}
+.assetPnlMetric>small{
+ color:var(--sub);
+ font-size:10px;
+ line-height:1.25;
+ white-space:nowrap;
+}
+.assetPnlMetric>strong{
+ font-size:12px;
+ line-height:1.3;
+ font-weight:675;
+ font-variant-numeric:tabular-nums;
+}
+.assetPnlMetric .neutral{color:var(--muted)}
+@media(max-width:960px){
+ .overviewHero{min-height:0;padding:20px!important}
+ .overview-aside .assetSummary{min-height:115px}
+}
+@media(max-width:600px){
+ .overviewHero{padding:18px!important}
+ .overviewHeroMetrics{gap:11px;margin-top:14px}
+ .overview-aside .assetSummary{min-height:104px;padding:15px}
+ .assetTopline>strong{font-size:19px}
+}
