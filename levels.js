@@ -98,7 +98,7 @@ async function kline(sym,p){
 }
 async function fallbackHistory(sym,p){
  const days=periods[p].days;
- const url=days===7?'https://min-api.cryptocompare.com/data/v2/histohour?fsym='+sym+'&tsym=USD&limit=168':'https://min-api.cryptocompare.com/data/v2/histoday?fsym='+sym+'&tsym=USD&limit='+Math.min(2000,days+3);
+ const url=days===7?'https://min-api.cryptocompare.com/data/v2/histohour?fsym='+sym+'&tsym=USD&limit=168':'https://min-api.cryptocompare.com/data/v2/histoday?fsym='+sym+'&tsym=USD&limit='+(p==='all'?1000:Math.min(2000,days+3))+(p==='all'?'&aggregate=7':'');
  const raw=await request(url);
  const bars=raw?.Data?.Data;
  if(!Array.isArray(bars)||bars.length<2)throw Error('No fallback candles');
