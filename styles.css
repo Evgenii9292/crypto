@@ -641,3 +641,44 @@
  .bybitAccountRow{align-items:flex-start;flex-direction:column}
  .bybitAccountActions{padding-left:18px}
 }
+
+/* FXMR4: single subaccount connection action and compact account list */
+.bybitAccountsPanel{background:transparent;border:0;padding:0;margin:0}
+.bybitAccountsPanel .bybitConnectActions{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px;align-items:center}
+.bybitAccountsPanel .bybitConnectActions .btn{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.bybitAccountsPanel .bybitConnectActions .btn.primary{background:var(--text);border-color:var(--text);color:var(--surface);font-weight:680}
+.bybitAccountsPanel .bybitConnectActions .btn.bybitRefresh{background:transparent;border:1px solid var(--border);color:var(--sub);font-weight:560}
+.bybitAccountsPanel .bybitConnectActions .btn.bybitRefresh:hover{background:var(--surface2);color:var(--text)}
+.bybitAccountRow{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:17px 0;border-bottom:1px solid var(--border)}
+.bybitAccountRow:last-child{border-bottom:none}
+.bybitAccountMain{display:flex;align-items:center;gap:11px;min-width:0;flex:1}
+.bybitAccountIcon{flex:none;width:38px;height:38px;display:grid;place-items:center;border-radius:11px;background:var(--surface2);color:var(--text)}
+.bybitAccountIcon .icon{height:19px;width:19px;stroke-width:1.7}
+.bybitAccountMeta{min-width:0;display:flex;flex-direction:column;gap:7px;flex:1}
+.bybitAccountNameLine{display:flex;gap:7px;align-items:center;min-width:0}
+.bybitAccountNameLine>strong{font-size:14px;font-weight:680;overflow-wrap:anywhere}
+.bybitEditIcon{display:inline-grid;place-items:center;flex:none;width:25px;height:25px;padding:5px;border:0;background:transparent;border-radius:7px;color:var(--muted);cursor:pointer}
+.bybitEditIcon .icon{width:14px;height:14px}
+.bybitEditIcon:hover{background:var(--surface2);color:var(--text)}
+.bybitAccountDetails{display:flex;align-items:center;flex-wrap:wrap;gap:7px}
+.bybitExchangeBadge{display:inline-flex;align-items:center;gap:5px;max-width:100%;border-radius:6px;padding:3px 7px;background:var(--surface2);border:1px solid var(--border);color:var(--sub);font-size:10px;font-weight:620;line-height:1.3}
+.bybitExchangeBadge b{display:grid;place-items:center;width:14px;height:14px;border-radius:4px;background:#e1a846;color:#171717;font-size:10px;font-weight:800;line-height:1}
+.bybitAccountBalance{font-size:11px;color:var(--sub);font-variant-numeric:tabular-nums}
+.bybitAccountActions .btn.bybitDisconnect{background:transparent;border:1px solid var(--border);color:var(--red);font-size:11px;font-weight:610}
+.bybitAccountActions .btn.bybitDisconnect:hover{border-color:var(--red);background:var(--surface2)}
+.bybitRenameForm{flex:0 0 100%;display:flex;flex-wrap:wrap;align-items:end;gap:9px;padding-left:49px}
+.bybitRenameForm label,.bybitConnectForm label{display:flex;flex-direction:column;gap:5px;font-size:11px;font-weight:590;color:var(--sub)}
+.bybitRenameForm input,.bybitRenameForm select,.bybitConnectForm select{min-height:36px;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font:inherit;font-size:12px}
+.bybitRenameForm input{width:min(300px,100%)}
+.bybitFormActions{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
+.bybitConnectForm{padding-top:16px;margin-top:16px;border-top:1px solid var(--border);display:grid;gap:12px;max-width:550px}
+.bybitFormTitle{font-size:13px;font-weight:680;display:flex;gap:10px;align-items:center}
+.bybitConnectForm .field{margin:0;max-width:100%}
+.bybitConnectForm .field input,.bybitConnectForm .field select{width:100%;max-width:100%;margin:0}
+.bybitError{color:var(--red);font-size:11px;line-height:1.4;overflow-wrap:anywhere}
+@media(max-width:600px){
+ .bybitAccountRow{align-items:flex-start}
+ .bybitAccountActions{padding-left:49px}
+ .bybitRenameForm{padding-left:0}
+ .bybitAccountsPanel .bybitConnectActions .btn{flex:1;justify-content:center}
+}
