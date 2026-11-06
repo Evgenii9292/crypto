@@ -53,3 +53,15 @@ Version: 1.2 · 6 Nov 2026.
 - Если реальная история свечей недоступна, показываются только честные текущие котировки и горизонтальные уровни без искусственной ценовой кривой.
 
 **Стратегия на присланных скриншотах:** 50% капитала первоначально, остальные 50% в резерв; далее 10% от *резервной* половины (следовательно, всего задействовано 55%, хотя автор поста написал 60%). Это референс, а не автоматическое правило исполнения или подтверждение фактического инвестирования пользователя.
+
+## v1.5 · Overview / settings changes (2026-11-06)
+
+- Overview hero: invested Spot purchase cost **plus confirmed Bybit position initial margin** (`positionIM`), not the entire planned $1,000 capital or total UTA equity. When Bybit margin is unavailable, show `—`, not a fabricated number. Total live PNL = manual Spot floating PNL + Bybit `totalPerpUPL`, when both are available.
+- The right-hand Spot and Futures summary tiles still show the two separate balances. User-facing labels remove internal UTA and Read-Only jargon; the conceptual difference remains documented internally.
+- Portfolio PNL chart filters: `Все / Спот / Фьючерсы` and `24h / 7d / 30d / 90d`. Combined/Futures graphs use recorded live browser snapshots only. They do not synthesize history before initial API connection.
+- Move the spot asset-allocation bar to the Spot tab. Navigation renamed to `Обзор / Спот / Фьючерсы`.
+- Sidebar `Настройки` opens `Подключения / Капитал`. The latter manages planned Spot budget in localStorage and keeps half the budget for each coin. A responsive Settings button is included on mobile.
+- Each account row shows current floating PNL and an all-time PNL placeholder. **All-time PNL remains unavailable until the full historical ledger is imported**; `cumRealisedPnl` on currently open positions alone is not an all-account history.
+- Local manually added subaccounts can be removed after confirmation in Settings. The connected API subaccount can be disconnected through an authenticated server endpoint; no trading API or Bybit account deletion is performed.
+- Chevrons use small centered CSS-drawn rounded-angle strokes, not the old large `⌄` glyph.
+- The private backend now exposes `positionIM` and `cumRealisedPnl`; the latter is not misrepresented as full account lifetime PNL. Updating the running Python service requires a restart; credentials that were input only into RAM must be reentered.
