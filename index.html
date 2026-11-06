@@ -45,7 +45,7 @@
 <script>
 (() => {
   'use strict';
-  const C=1000;
+  let C=1000;
   const initial={BTC:76200,ETH:2247};
   const $=id=>document.getElementById(id);
   const el=(tag,attrs={},children=[])=>{const n=document.createElement(tag);for(const [k,v] of Object.entries(attrs))n.setAttribute(k,String(v));for(const c of children)n.append(c);return n};
@@ -58,8 +58,8 @@
   const nowLocal=()=>{const d=new Date();return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-')};
   const fmtDate=d=>{if(!d)return 'Нет даты';const a=d.slice(0,10).split('-');return a.length===3?`${a[2]}.${a[1]}.${a[0]}`:d};
   const fmtTime=d=>{if(!d)return '';const x=new Date(d);return isNaN(x)?'':x.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})};
-  const s={tab:'overview',trades:[{id:1,coin:'BTC',spent:25,entry:76200,buy_date:'2026-11-06',confirmed:false},{id:2,coin:'ETH',spent:25,entry:2247,buy_date:'2026-11-06',confirmed:false}],quotes:{BTC:{price:initial.BTC,source:'Предварительно'},ETH:{price:initial.ETH,source:'Предварительно'}},capital:C,period:'7d',points:[],snapshots:[],sync:null,form:false,editing:null,deleteId:null,busy:false,flash:'',formError:'',showPrices:false,tradingSubtab:'futures',futureMode:'exchange',futureSort:'pnl',futureForm:null,futureFormError:'',sources:[{id:'bybit',name:'Bybit',connected:false,accounts:[]}],futuresPositions:[],openedExchanges:{},openedAccounts:{},spotHistoryOpen:false,spotOpen:{},bybitSnapshot:null,backendConnection:{available:false,configured:false,connected:false,error:''}};
-  function coin(m){const trades=s.trades.filter(t=>t.coin===m);const invested=trades.reduce((t,x)=>t+Number(x.spent),0);const quantity=trades.reduce((t,x)=>t+Number(x.spent)/Number(x.entry),0);const current=Number(s.quotes[m]?.price||initial[m]);const value=quantity*current;return {invested,quantity,current,value,profit:value-invested,remaining:500-invested,avg:quantity?invested/quantity:0,provisional:trades.some(t=>!t.confirmed)}}
+  const s={tab:'overview',trades:[{id:1,coin:'BTC',spent:25,entry:76200,buy_date:'2026-11-06',confirmed:false},{id:2,coin:'ETH',spent:25,entry:2247,buy_date:'2026-11-06',confirmed:false}],quotes:{BTC:{price:initial.BTC,source:'Предварительно'},ETH:{price:initial.ETH,source:'Предварительно'}},capital:C,period:'7d',points:[],snapshots:[],sync:null,form:false,editing:null,deleteId:null,busy:false,flash:'',formError:'',showPrices:false,tradingSubtab:'futures',futureMode:'exchange',futureSort:'pnl',pnlMode:'all',settingsPane:'connections',portfolioSnapshots:[],pendingRemove:null,futureForm:null,futureFormError:'',sources:[{id:'bybit',name:'Bybit',connected:false,accounts:[]}],futuresPositions:[],openedExchanges:{},openedAccounts:{},spotHistoryOpen:false,spotOpen:{},bybitSnapshot:null,backendConnection:{available:false,configured:false,connected:false,error:''}};
+  function coin(m){const trades=s.trades.filter(t=>t.coin===m);const invested=trades.reduce((t,x)=>t+Number(x.spent),0);const quantity=trades.reduce((t,x)=>t+Number(x.spent)/Number(x.entry),0);const current=Number(s.quotes[m]?.price||initial[m]);const value=quantity*current;return {invested,quantity,current,value,profit:value-invested,remaining:C/2-invested,avg:quantity?invested/quantity:0,provisional:trades.some(t=>!t.confirmed)}}
   function sums(){const btc=coin('BTC'),eth=coin('ETH'),invested=btc.invested+eth.invested,cash=C-invested,holdings=btc.value+eth.value,profit=holdings-invested;return {btc,eth,invested,cash,holdings,profit,total:cash+holdings}}
 
   function markStatus(){
@@ -71,6 +71,15 @@
     return '<form class="form" id="priceForm"><div class="formTitle">Изменить текущие курсы</div><div class="fieldrow"><div class="field"><label for="manualBTC">BTC, $</label><input id="manualBTC" name="BTC" type="number" inputmode="decimal" step="any" min="0.01" value="'+Number(s.quotes.BTC.price)+'" required></div><div class="field"><label for="manualETH">ETH, $</label><input id="manualETH" name="ETH" type="number" inputmode="decimal" step="any" min="0.01" value="'+Number(s.quotes.ETH.price)+'" required></div></div><button type="submit" class="btn primary full">Сохранить курсы</button></form>';
   }
 function axisMoney(n){return (n<0?'−':n>0?'+':'')+'$'+(Math.abs(n)<10?Math.abs(n).toFixed(2):Math.abs(n)<100?Math.abs(n).toFixed(1):Math.round(Math.abs(n)).toLocaleString('en-US'))}
+function portfolioSummary(){
+ const a=sums(),snap=s.backendConnection.connected?s.bybitSnapshot:null;
+ const positions=s.futuresPositions.filter(p=>p.exchangeId==='bybit');
+ const known=!!snap&&positions.every(p=>p.initialMargin!=null&&Number.isFinite(Number(p.initialMargin)));
+ const margin=known?positions.reduce((v,p)=>v+Number(p.initialMargin),0):null;
+ const futuresPnl=snap&&snap.totals?.perpUPL!=null&&Number.isFinite(Number(snap.totals.perpUPL))?Number(snap.totals.perpUPL):null;
+ return {spot:a,hasFutures:!!snap,margin,invested:!snap?a.invested:margin===null?null:a.invested+margin,
+  futuresPnl,pnl:!snap?a.profit:futuresPnl===null?null:a.profit+futuresPnl};
+}
 function chartHTML(){
   const data=s.points.filter(p=>Number.isFinite(Number(p.pnl))&&Number.isFinite(Number(p.time))).slice(-1200);
   if(data.length<2)return '<div class="emptychart"><strong>История PNL формируется</strong><span>График появится после двух обновлений в разное время. Данные не моделируем.</span></div>';
@@ -237,12 +246,12 @@ function onSnapshot(data){
    markPrice:p.markPrice!=null&&Number.isFinite(Number(p.markPrice))?Number(p.markPrice):null,
    liqPrice:p.liqPrice!=null&&Number.isFinite(Number(p.liqPrice))?Number(p.liqPrice):null,
    leverage:Number(p.leverage)||null,
-   pnl:Number(p.pnl)||0
+   pnl:Number(p.pnl)||0,initialMargin:p.initialMargin==null?null:Number(p.initialMargin),cumulativeRealisedPnl:p.cumulativeRealisedPnl==null?null:Number(p.cumulativeRealisedPnl)
   }))
  );
  s.bybitSnapshot={totals:data.totals,account:data.account,updatedAt:data.updatedAt,warning:data.balanceNote};
  s.backendConnection={available:true,configured:true,connected:true,error:''};
- render();
+ recordPortfolioSnapshot();saveLocal();render();
 }
 window.fxmr4App={onBackendStatus,onSnapshot};
 
@@ -251,17 +260,19 @@ window.fxmr4App={onBackendStatus,onSnapshot};
     try{
       const saved=JSON.parse(localStorage.getItem(storageKey)||'null');
       if(!saved||typeof saved!=='object')return;
-      if(Array.isArray(saved.trades))s.trades=saved.trades.filter(t=>['BTC','ETH'].includes(t.coin)&&Number(t.spent)>0&&Number(t.entry)>0&&typeof t.buy_date==='string');
+      if(Number.isFinite(Number(saved.capital))&&Number(saved.capital)>=100&&Number(saved.capital)<=1000000)C=Number(saved.capital);
+       if(Array.isArray(saved.trades))s.trades=saved.trades.filter(t=>['BTC','ETH'].includes(t.coin)&&Number(t.spent)>0&&Number(t.entry)>0&&typeof t.buy_date==='string');
       for(const coin of ['BTC','ETH']){
         const q=saved.quotes?.[coin];
         if(q&&Number(q.price)>0&&Number.isFinite(Number(q.price)))s.quotes[coin]={price:Number(q.price),source:String(q.source||'Сохранено'),updated_at:q.updated_at||null};
       }
       if(Array.isArray(saved.snapshots))s.snapshots=saved.snapshots.filter(p=>Number.isFinite(p.time)&&Number.isFinite(p.pnl)).slice(-1500);
+      if(Array.isArray(saved.portfolioSnapshots))s.portfolioSnapshots=saved.portfolioSnapshots.filter(p=>p&&Number.isFinite(Number(p.time))&&Number.isFinite(Number(p.total))&&Number.isFinite(Number(p.futures))).slice(-1500);
       if(Array.isArray(saved.sources)){const sources=saved.sources.filter(x=>x&&typeof x.id==='string'&&typeof x.name==='string').slice(0,25).map(x=>({id:x.id.slice(0,60),name:x.name.slice(0,60),connected:false,accounts:Array.isArray(x.accounts)?x.accounts.filter(y=>y&&typeof y.id==='string'&&typeof y.name==='string').slice(0,60).map(y=>({id:y.id.slice(0,60),name:y.name.slice(0,40),balance:null})):[]}));if(!sources.some(x=>x.id==='bybit'))sources.unshift({id:'bybit',name:'Bybit',connected:false,accounts:[]});s.sources=sources;}
     }catch(e){console.warn('Локальное сохранение:',e)}
   }
   function saveLocal(){
-    try{localStorage.setItem(storageKey,JSON.stringify({trades:s.trades,quotes:s.quotes,snapshots:s.snapshots,sources:s.sources.map(ex=>({id:ex.id,name:ex.name,accounts:ex.accounts.filter(ac=>ac.id!=='bybit-subaccount').map(ac=>({id:ac.id,name:ac.name}))}))}))}catch(e){s.flash='Не удалось сохранить в браузере. Проверь режим приватности.';console.warn(e)}
+    try{localStorage.setItem(storageKey,JSON.stringify({capital:C,trades:s.trades,quotes:s.quotes,snapshots:s.snapshots,portfolioSnapshots:s.portfolioSnapshots,sources:s.sources.map(ex=>({id:ex.id,name:ex.name,accounts:ex.accounts.filter(ac=>ac.id!=='bybit-subaccount').map(ac=>({id:ac.id,name:ac.name}))}))}))}catch(e){s.flash='Не удалось сохранить в браузере. Проверь режим приватности.';console.warn(e)}
   }
   function chart(){
     const windows={'24h':86400000,'7d':604800000,'30d':2592000000,'90d':7776000000};
@@ -273,7 +284,15 @@ window.fxmr4App={onBackendStatus,onSnapshot};
     const p={time:Date.now(),pnl:sums().profit};
     const last=s.snapshots[s.snapshots.length-1];
     if(last&&p.time-last.time<1500&&Math.abs(last.pnl-p.pnl)<0.000001)return;
-    s.snapshots.push(p);s.snapshots=s.snapshots.slice(-1500);saveLocal();chart();
+    s.snapshots.push(p);s.snapshots=s.snapshots.slice(-1500);recordPortfolioSnapshot();saveLocal();chart();
+  }
+  function recordPortfolioSnapshot(){
+    const summary=portfolioSummary();
+    if(!summary.hasFutures||summary.futuresPnl===null||summary.pnl===null)return;
+    const p={time:Date.now(),spot:summary.spot.profit,futures:summary.futuresPnl,total:summary.pnl};
+    const last=s.portfolioSnapshots[s.portfolioSnapshots.length-1];
+    if(last&&p.time-last.time<1500&&Math.abs(last.total-p.total)<.000001)return;
+    s.portfolioSnapshots.push(p);s.portfolioSnapshots=s.portfolioSnapshots.slice(-1500);
   }
   async function json(url){
     const ctl=new AbortController(),tm=setTimeout(()=>ctl.abort(),6500);
@@ -330,7 +349,7 @@ function bybitQuotes(){
     if(!account||!['BTC','ETH'].includes(coin)||!Number.isFinite(spent)||!Number.isFinite(entry)||spent<=0||entry<=0){s.formError='Проверь сумму и цену покупки.';render();return}
     if(!/^\d{4}-\d{2}-\d{2}$/.test(buy_date)||buy_date>nowLocal()){s.formError='Проверь дату покупки.';render();return}
     const base=s.trades.filter(t=>t.id!==s.editing);
-    if(base.filter(t=>t.coin===coin).reduce((a,t)=>a+Number(t.spent),0)+spent>500.0000001){s.formError='Лимит для '+coin+' составляет $500.';render();return}
+    if(base.filter(t=>t.coin===coin).reduce((a,t)=>a+Number(t.spent),0)+spent>C/2+0.0000001){s.formError='Лимит для '+coin+' составляет '+dollars(C/2)+'.';render();return}
     if(base.reduce((a,t)=>a+Number(t.spent),0)+spent>C+0.0000001){s.formError='Превышен общий бюджет $1 000.';render();return}
     const id=s.editing===null?Math.max(0,...s.trades.map(t=>Number(t.id)))+1:s.editing;
     const rec={id,coin,spent,entry,buy_date,account,confirmed:true};
@@ -367,6 +386,8 @@ function saveFutureForm(fd){
 function handleClick(e){
  const tab=e.target.closest('[data-tab]');
  if(tab){s.tab=tab.dataset.tab;s.flash='';s.form=false;s.deleteId=null;render();return}
+ const pnl=e.target.closest('[data-pnl-mode]');
+ if(pnl){s.pnlMode=pnl.dataset.pnlMode;render();return}
  const per=e.target.closest('[data-period]');
  if(per){s.period=per.dataset.period;chart();render();return}
  const mode=e.target.closest('[data-future-mode]');
