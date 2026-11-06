@@ -296,6 +296,26 @@ function positions(){
  <div id="strategyMount" aria-label="Графики уровней покупок BTC и ETH"></div>
  <div class="spotHistoryToggle"><button class="historyToggle" type="button" data-action="toggleHistory"><span>${icon('calendar')} История покупок <span class="historyCount">${s.trades.length}</span></span><span class="chev ${s.spotHistoryOpen?'rotated':''}">⌄</span></button>${s.spotHistoryOpen||s.form?history():''}</div>`;
 }
+function coinStack(symbols){
+ // Overlapping round badges: which coins are open, without spelling each one out.
+ const list=[...new Set(symbols.filter(Boolean))].slice(0,4);
+ const extra=Math.max(0,[...new Set(symbols.filter(Boolean))].length-list.length);
+ if(!list.length)return '';
+ const label=sym=>{let t=String(sym).replace(/(USDT|USDC|USD|PERP)$/i,'');
+  // 1000FLOKI is the contract name, not the coin: the badge shows FLOKI.
+  const bare=t.replace(/^\d+/,'');if(bare.length>=3)t=bare;
+  return t.slice(0,4);};
+ return `<span class="coinStack">${list.map(sym=>`<i class="coinChip" title="${escape(String(sym))}">${escape(label(sym))}</i>`).join('')}${extra?`<i class="coinChip more">+${extra}</i>`:''}</span>`;
+}
+const FUTURE_SORTS=[['pnl','Плавающий PNL'],['size','Объём'],['symbol','Монета'],['leverage','Плечо'],['opened','Дата открытия'],['side','Направление']];
+function futureSortValue(p,key){
+ if(key==='size')return Number(p.size)||0;
+ if(key==='symbol')return String(p.symbol||'').toLowerCase();
+ if(key==='leverage')return Number(p.leverage)||0;
+ if(key==='opened')return p.openedAt==null?-Infinity:Number(p.openedAt);
+ if(key==='side')return String(p.side||'').toLowerCase();
+ return Number(p.pnl||0);
+}
 function futuresSorted(){
  const key=s.futureSort,dir=s.futureSortDir<0?-1:1;
  return [...s.futuresPositions].filter(p=>p&&p.symbol&&Number.isFinite(Number(p.size)))
