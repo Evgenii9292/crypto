@@ -25,7 +25,7 @@ function setup(){
    result={connected:true,data:{account:{id,name:id},totals:{equity:100,perpUPL:1},positions:[],updatedAt:Date.now()}};
   }else if(url.endsWith('/api/account-connect')){
    const body=JSON.parse(options.body);
-   notifications.push({type:'write',hasKey:!!body.key,hasSecret:!!body.secret});
+   notifications.push({type:'write',hasKey:!!body.key,hasSecret:!!body.secret,icon:body.icon});
    accounts.push({id:'sub-new',label:body.label});
    result={connected:true,account:{id:'sub-new',label:body.label}};
   }else throw Error('Unexpected request '+url);
@@ -47,7 +47,11 @@ test('existing and newly added Bybit API accounts are all refreshed',async()=>{
  const x=setup();await x.settle();
  assert.equal(x.notifications.filter(n=>n.type==='snapshot').length,2);
  assert.equal(x.window.fxmr4Bybit.status().connected,true);
- assert.match(x.panel.innerHTML,/\+ Добавить субаккаунт/);
+ assert.match(x.panel.innerHTML,/data-bybit-action="start"/);
+ assert.match(x.panel.innerHTML,/Добавить субаккаунт/);
+ assert.match(x.panel.innerHTML,/bybitExchangeBadge/);
+ assert.match(x.panel.innerHTML,/bybitDisconnect/);
+ assert.doesNotMatch(x.panel.innerHTML,/API только чтение|Название субаккаунта<\/button>|\+ Биржа/);
  assert.match(x.panel.innerHTML,/Обновить позиции/);
  x.click('start');
  assert.match(x.panel.innerHTML,/API Key/);
@@ -58,7 +62,7 @@ test('existing and newly added Bybit API accounts are all refreshed',async()=>{
  assert.equal(x.accounts.length,3);
  assert.equal(x.notifications.filter(n=>n.type==='snapshot').length,5);
  assert.equal(x.window.fxmr4Bybit.status().connected,true);
- assert.ok(x.notifications.some(n=>n.type==='write'&&n.hasKey&&n.hasSecret));
+ assert.ok(x.notifications.some(n=>n.type==='write'&&n.hasKey&&n.hasSecret&&n.icon==='wallet'));
  assert.doesNotMatch(x.panel.innerHTML,/test-secret-01234567/);
  assert.doesNotMatch(JSON.stringify(x.window.fxmr4Bybit.status()),/test-secret-01234567/);
 });
