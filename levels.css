@@ -86,3 +86,37 @@
  .sl-chart-tools{margin-top:10px;gap:5px}
  .sl-chart-tools button{min-width:32px;min-height:32px}
 }
+
+/* Compact, user-controlled Spot buying plan. Graphs load only when expanded. */
+.sl-planShell{margin-top:22px}
+.sl-planToggle{
+ display:flex;
+ align-items:center;
+ width:100%;
+ gap:10px;
+ padding:14px 16px;
+ text-align:left;
+ background:var(--surface2);
+ color:var(--text);
+ border:1px solid var(--border);
+ border-radius:12px;
+ cursor:pointer;
+ font:inherit;
+ min-height:52px;
+}
+.sl-planToggle:hover{background:var(--surface3)}
+.sl-planToggle:focus-visible{outline:2px solid var(--eth);outline-offset:2px}
+.sl-planToggle .sl-title{font-size:13px;font-weight:680}
+.sl-planInfo{font-size:11px;color:var(--muted);margin-left:auto}
+.sl-planChevron{display:inline-flex;justify-content:center;align-items:center;font-size:19px;line-height:1;width:22px;height:22px;color:var(--muted);transition:transform .2s}
+.sl-planChevron.isOpen{transform:rotate(180deg)}
+.sl-planBody{padding-top:15px}
+.sl-planBody>.sl-top{justify-content:flex-end}
+.sl-planBody .sl-controls{justify-content:flex-end}
+@media(max-width:600px){
+ .sl-planToggle{padding:13px 14px}
+ .sl-planInfo{font-size:10px}
+ .sl-planBody>.sl-top{justify-content:flex-start}
+ .sl-planBody .sl-controls{justify-content:flex-start}
+}
+@media(prefers-reduced-motion:reduce){.sl-planChevron{transition:none}}
