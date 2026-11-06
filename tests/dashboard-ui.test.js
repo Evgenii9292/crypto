@@ -44,7 +44,7 @@ function mount(sources){
 test('dashboard keeps only balance, PNL and two account tiles',()=>{
  const {element}=mount([{id:'bybit',name:'Bybit',accounts:[]}]);
  const overview=element('content').innerHTML;
- assert.match(overview,/class="overviewHero"/);
+ assert.match(overview,/class="card tint overviewHero"/);
  assert.match(overview,/class="sectitle">Портфель<\/div>/);
  for(const noise of ['Всего на счетах','Общий текущий PNL','heroBreakdown','assetSub','Весь портфель, спот или фьючерсы отдельно']){
   assert.ok(!overview.includes(noise),'unexpected UI noise: '+noise);
