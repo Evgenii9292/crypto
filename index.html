@@ -26,14 +26,14 @@
   </svg>
   <main class="page"><div class="shell">
     <aside class="sidebar">
-      <header class="header"><div class="logoArea"><div class="appicon"><svg class="icon"><use href="#wallet"/></svg></div><div><div class="appname">Мой портфель</div><div class="account">fxmr4 · Portfolio</div></div></div><span class="pill">USD</span></header>
+      <header class="header"><div class="logoArea"><div class="appicon"><svg class="icon"><use href="#wallet"/></svg></div><div><div class="appname">Мой портфель</div><div class="account">fxmr4 · Portfolio</div></div></div><span class="pill">USD</span><button class="mobileSettings" type="button" data-action="goConnections" aria-label="Настройки">${icon('settings')}</button></header>
       <div class="navLabel">РАЗДЕЛЫ</div>
       <nav class="tabs" data-active="overview" role="tablist" aria-label="Разделы портфеля">
         <button class="tab active" type="button" role="tab" aria-selected="true" data-tab="overview"><svg class="icon"><use href="#activity"/></svg><span>Обзор</span></button>
-        <button class="tab" type="button" role="tab" aria-selected="false" data-tab="positions"><svg class="icon"><use href="#wallet"/></svg><span>Spot</span></button>
-        <button class="tab" type="button" role="tab" aria-selected="false" data-tab="futures"><svg class="icon"><use href="#trend"/></svg><span>Futures</span></button>
+        <button class="tab" type="button" role="tab" aria-selected="false" data-tab="positions"><svg class="icon"><use href="#wallet"/></svg><span>Спот</span></button>
+        <button class="tab" type="button" role="tab" aria-selected="false" data-tab="futures"><svg class="icon"><use href="#trend"/></svg><span>Фьючерсы</span></button>
       </nav>
-      <div class="sideFooter"><span class="status-dot"></span>Котировки · раз в 60 секунд<div class="tiny">Операции сохраняются в браузере</div><button class="btn navConfig" type="button" data-action="goConnections">Подключения</button></div>
+      <div class="sideFooter"><span class="status-dot"></span>Котировки · раз в 60 секунд<div class="tiny">Операции сохраняются в браузере</div><button class="btn navConfig" type="button" data-action="goConnections">${icon('settings')} Настройки</button></div>
     </aside>
     <section class="workspace">
       <div class="workspaceHead"><div><div class="workspaceEyebrow">FXMR4 / Личный кабинет</div><h1 id="pageTitle">Обзор</h1></div><div class="headActions"><span class="pill">USD</span></div></div>
@@ -214,20 +214,22 @@ function futures(){
  <div class="sourceList futureResults">${body}</div>${futuresForm()}
  <p class="tiny noteBelow">«—» означает отсутствие подключения, а не нулевой баланс. Биржи и имена аккаунтов сохраняются локально. Управление сделками пока недоступно.</p></section>`;
 }
+function capitalSettings(){
+ const a=sums();
+ return `<section class="section settingsCard"><div class="hrow"><div><div class="sectitle">Плановый капитал</div><div class="tiny">Бюджет для покупок BTC и ETH</div></div><span class="pill">Спот</span></div><div class="capitalSummary"><div><small>План</small><strong>${dollars(C)}</strong></div><div><small>Вложено</small><strong>${dollars(a.invested)}</strong></div><div><small>Резерв</small><strong>${dollars(a.cash)}</strong></div></div><form id="capitalForm" class="capitalForm"><div class="field"><label for="plannedCapital">Запланированный капитал, USD</label><input id="plannedCapital" name="capital" type="number" min="100" max="1000000" step="1" value="${C}" required /></div><button class="btn primary" type="submit">Сохранить капитал</button></form><p class="tiny settingsHint">Лимит одной монеты равен половине плана. Изменение плана не создаёт сделки и не меняет уже записанные покупки.</p></section>`;
+}
+function accountSettings(){
+ const all=s.sources.flatMap(ex=>ex.accounts.map(ac=>({ex,ac})));
+ return `<section class="section settingsCard" id="accountSettings"><div class="hrow"><div><div class="sectitle">Субаккаунты</div><div class="tiny">Подключения и локальные записи</div></div></div><div class="settingsAccounts">${all.length?all.map(({ex,ac})=>{const id=ex.id+':'+ac.id,linked=ex.id==='bybit'&&ac.id==='bybit-subaccount',confirm=s.pendingRemove===id;return `<div class="settingsAccount"><span class="settingsAccountInfo"><strong>${escape(ac.name)}</strong><small>${escape(ex.name)} · ${linked?'Подключённый API':'Локальная запись'}</small></span><button type="button" class="btn ${confirm?'danger':''}" data-action="${confirm?'confirmRemoveAccount':'removeAccount'}" data-id="${escape(id)}">${confirm?(linked?'Отключить API?':'Удалить?'):linked?'Отключить':'Удалить'}</button>${confirm?'<button class="btn" type="button" data-action="cancelRemoveAccount">Отмена</button>':''}</div>`}).join(''):'<div class="sourceEmpty">Субаккаунтов пока нет.</div>'}</div><div class="settingsAccountFooter"><button class="btn" type="button" data-action="addAccountSettings" data-id="bybit">${icon('plus')} Название субаккаунта</button><button class="btn" type="button" data-action="addExchange">${icon('plus')} Биржа</button></div>${s.futureForm?futuresForm():''}<p class="tiny settingsHint">Удаление локальной записи не затрагивает Bybit. Отключение API останавливает синхронизацию, но ключ на бирже останется действительным.</p></section>`;
+}
 function connections(){
- return `<div class="hrow"><div><div class="sectitle">Подключения бирж</div><div class="tiny">Приватные данные требуют защищённого сервера</div></div><button class="btn" type="button" data-action="backToFutures">← Futures</button></div>
- <div class="card connectorCard"><div class="hrow"><div class="logoArea"><div class="appicon">${icon('shield')}</div><div><div class="coinName">Bybit</div><div class="coinSub">${s.backendConnection.connected?"Субаккаунт подключён · только чтение":"Субаккаунт · приватный API ещё не подключён"}</div></div></div><span class="connectBadge">${s.backendConnection.connected?"Подключено":"Не подключено"}</span></div>
- <p class="connectCopy">Балансы и открытые позиции доступны после подключения защищённого сервера и ключа субаккаунта Read-Only.</p><div id="bybitConnectionPanel"></div>${markStatus()}
- <div class="safeNote">Не вводи API Secret на публичном сайте. Для подключения потребуется закрытый сервер с HTTPS, ключ только для чтения и ограничение IP. Без права торговли и вывода.</div>
- <div class="connectSteps"><div><span>01</span>Создать отдельный ключ Bybit Read-Only</div><div><span>02</span>Разрешить доступ только с IP твоего VPS</div><div><span>03</span>Проверить полученные балансы и позиции</div></div>
- <div class="flexend"><a class="btn externalLink" href="https://www.bybit.com/app/user/api-management" target="_blank" rel="noopener noreferrer">Bybit Global ↗</a><a class="btn externalLink" href="https://www.bybit.id/app/user/api-management" target="_blank" rel="noopener noreferrer">Bybit Indonesia ↗</a></div></div>
- <div class="warning">Созданный ключ субаккаунта вводи только на своём HTTPS-сервере через защищённую форму выше. На публичной версии GitHub ввод ключей заблокирован.</div>`;
+ return `<div class="hrow"><div><div class="sectitle">Настройки портфеля</div><div class="tiny">Подключения, субаккаунты и капитал</div></div></div><div class="settingsTabs" role="tablist" aria-label="Настройки">${[['connections','Подключения'],['capital','Капитал']].map(([key,name])=>`<button type="button" role="tab" aria-selected="${s.settingsPane===key}" class="${s.settingsPane===key?'active':''}" data-settings-pane="${key}">${name}</button>`).join('')}</div>${s.settingsPane==='capital'?capitalSettings():`<div class="card connectorCard"><div class="hrow"><div class="logoArea"><div class="appicon">${icon('shield')}</div><div><div class="coinName">Bybit</div><div class="coinSub">${s.backendConnection.connected?'Субаккаунт подключён':'API ещё не подключён'}</div></div></div><span class="connectBadge">${s.backendConnection.connected?'Подключено':'Не подключено'}</span></div><div id="bybitConnectionPanel"></div><div class="safeNote">Ключ Bybit вводится только через защищённый сервер FXMR4. Права ключа: только чтение.</div></div>${accountSettings()}`}`;
 }
 function render(){
  const views={overview,positions,futures,connections};
  $('content').innerHTML=(views[s.tab]||overview)();
  $('content').classList.remove('pane');void $('content').offsetWidth;$('content').classList.add('pane');
- const titles={overview:'Обзор',positions:'Spot',futures:'Futures',connections:'Подключения'};
+ const titles={overview:'Обзор',positions:'Спот',futures:'Фьючерсы',connections:'Настройки'};
  $('pageTitle').textContent=titles[s.tab];
  const ribbon=$('pnlRibbon'),a=sums();
  ribbon.style.display=s.tab==='overview'?'none':'flex';
@@ -240,6 +242,24 @@ function render(){
 }
 
 
+function saveCapital(fd){
+ const v=Number(fd.get('capital'));
+ if(!Number.isFinite(v)||v<100||v>1000000||v/2+0.00001<Math.max(coin('BTC').invested,coin('ETH').invested)){s.flash='Бюджет некорректен. Лимит на монету не может быть меньше уже вложенной суммы.';render();return}
+ C=v;s.flash='Плановый капитал сохранён.';saveLocal();render();
+}
+function removeAccount(id){
+ const idx=id.indexOf(':'),exid=id.slice(0,idx),acid=id.slice(idx+1);
+ if(acid==='bybit-subaccount'){s.pendingRemove=null;if(window.fxmr4Bybit?.disconnect)window.fxmr4Bybit.disconnect();else{s.flash='Сервер недоступен';render()}return}
+ const ex=s.sources.find(x=>x.id===exid);
+ if(!ex||!ex.accounts.some(a=>a.id===acid)){s.flash='Аккаунт не найден';render();return}
+ ex.accounts=ex.accounts.filter(a=>a.id!==acid);delete s.openedAccounts[id];s.pendingRemove=null;saveLocal();s.flash='Запись субаккаунта удалена.';render();
+}
+function onDisconnected(){
+ const bybit=s.sources.find(x=>x.id==='bybit');
+ if(bybit){bybit.connected=false;bybit.accounts=bybit.accounts.filter(x=>x.id!=='bybit-subaccount')}
+ s.futuresPositions=s.futuresPositions.filter(x=>x.accountId!=='bybit-subaccount');
+ s.bybitSnapshot=null;s.backendConnection={available:true,configured:false,connected:false,error:''};s.pendingRemove=null;saveLocal();render();
+}
 function onBackendStatus(status){
  s.backendConnection={...s.backendConnection,...status};
  const ex=s.sources.find(x=>x.id==='bybit');
@@ -274,7 +294,7 @@ function onSnapshot(data){
  s.backendConnection={available:true,configured:true,connected:true,error:''};
  recordPortfolioSnapshot();saveLocal();render();
 }
-window.fxmr4App={onBackendStatus,onSnapshot};
+window.fxmr4App={onBackendStatus,onSnapshot,onDisconnected};
 
   const storageKey='fxmr4_portfolio_public_preview_v1';
   function loadLocal(){
@@ -409,6 +429,8 @@ function handleClick(e){
  if(tab){s.tab=tab.dataset.tab;s.flash='';s.form=false;s.deleteId=null;render();return}
  const pnl=e.target.closest('[data-pnl-mode]');
  if(pnl){s.pnlMode=pnl.dataset.pnlMode;render();return}
+ const settings=e.target.closest('[data-settings-pane]');
+ if(settings){s.settingsPane=settings.dataset.settingsPane;s.pendingRemove=null;render();return}
  const per=e.target.closest('[data-period]');
  if(per){s.period=per.dataset.period;chart();render();return}
  const mode=e.target.closest('[data-future-mode]');
@@ -418,7 +440,12 @@ function handleClick(e){
  if(act==='sync'){sync();return}
  if(act==='gotoSpot'){s.tab='positions';render();return}
  if(act==='gotoFutures'||act==='backToFutures'){s.tab='futures';s.futureMode='exchange';render();return}
- if(act==='goConnections'){s.tab='connections';render();return}
+ if(act==='goConnections'){s.tab='connections';s.settingsPane='connections';render();return}
+ if(act==='manageAccount'){s.tab='connections';s.settingsPane='connections';s.pendingRemove=null;render();return}
+ if(act==='removeAccount'){s.pendingRemove=id;render();return}
+ if(act==='cancelRemoveAccount'){s.pendingRemove=null;render();return}
+ if(act==='confirmRemoveAccount'){removeAccount(id);return}
+ if(act==='addAccountSettings'){s.futureForm=id;s.futureFormError='';render();return}
  if(act==='prices'){s.showPrices=!s.showPrices;render();return}
  if(act==='toggleExchange'){s.openedExchanges[id]=!s.openedExchanges[id];render();return}
  if(act==='toggleAccount'){s.openedAccounts[id]=!s.openedAccounts[id];render();return}
@@ -438,6 +465,7 @@ function handleSubmit(e){
  if(e.target.id==='tradeForm'){e.preventDefault();saveTrade(new FormData(e.target))}
  if(e.target.id==='priceForm'){e.preventDefault();saveManualPrices(new FormData(e.target))}
  if(e.target.id==='futureForm'){e.preventDefault();saveFutureForm(new FormData(e.target))}
+ if(e.target.id==='capitalForm'){e.preventDefault();saveCapital(new FormData(e.target))}
 }
 function handleChange(e){
  if(e.target.id==='coin'&&s.editing===null){const input=$('entry');if(input)input.value=Number(s.quotes[e.target.value]?.price||initial[e.target.value])}
