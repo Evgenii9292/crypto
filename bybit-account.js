@@ -8,35 +8,53 @@
  const authHeaders={"Content-Type":"application/json","X-FXMR4-Action":"1"};
  const money=n=>Number(n).toLocaleString("en-US",{style:"currency",currency:"USD"});
  const brand=a=>a.exchange||"Bybit";
+ const ICONS=[["wallet","Кошелёк"],["trend","График"],["shield","Щит"],["bot","Бот"],["activity","Монеты"]];
+ const iconName=x=>ICONS.some(o=>o[0]===x)?x:"wallet";
+ const svg=name=>'<svg class="icon" aria-hidden="true"><use href="#'+(["edit","plus","sync"].includes(name)?name:iconName(name))+'"></use></svg>';
+ const iconSelect=value=>'<select name="icon" aria-label="Иконка субаккаунта">'+ICONS.map(([v,label])=>
+   '<option value="'+v+'"'+(v===iconName(value)?' selected':'')+'>'+label+'</option>').join('')+'</select>';
  function renderPanel(){
   const el=panel();if(!el)return;
   if(!status.available){
-   el.innerHTML='<div class="connectorState"><p class="tiny">'+enc(status.error||"Открой защищённый FXMR4 на VPS для подключения API.")+'</p><button type="button" class="btn" data-bybit-action="check">Проверить соединение</button></div>';
+   const message=status.error==="HTTP 404"?"На VPS запущена старая версия FXMR4. Необходимо обновить сервер.":status.error||"Нет связи с сервером";
+   el.innerHTML='<div class="connectorState"><p class="bybitError">'+enc(message)+'</p><button class="btn" type="button" data-bybit-action="check">Проверить соединение</button></div>';
    return;
   }
   const list=status.accounts.map(a=>{
-   const live=status.results[a.id],healthy=!!live&&!live.error;
-   const metrics=healthy&&live.data?.totals?live.data.totals:null;
-   const detail=live?.error?'<span class="bybitError">'+enc(live.error)+'</span>':
-     metrics?'<span class="tiny">Баланс '+(metrics.equity==null?'—':money(metrics.equity))+'</span>':
-     '<span class="tiny">Ожидается обновление</span>';
-   const actions=status.editing===a.id?
-      '<form class="bybitRenameForm" data-account-id="'+enc(a.id)+'"><input name="label" required maxlength="40" value="'+enc(a.label)+'" aria-label="Название субаккаунта"><button type="submit" class="btn primary">Сохранить</button><button type="button" class="btn" data-bybit-action="cancel-rename">Отмена</button></form>':
-      '<div class="bybitAccountActions"><button type="button" class="btn" data-bybit-action="rename" data-id="'+enc(a.id)+'" aria-label="Переименовать '+enc(a.label)+'">Название</button><button type="button" class="btn" data-bybit-action="remove" data-id="'+enc(a.id)+'" aria-label="Отключить '+enc(a.label)+'">Отключить</button></div>';
-   return '<div class="bybitAccountRow"><div class="bybitAccountMain"><span class="status-dot '+(live?.error?'isError':healthy?'':'isDisconnected')+'"></span><span class="bybitAccountMeta"><strong>'+enc(a.label)+'</strong><small>'+enc(brand(a))+' · API только чтение</small>'+detail+'</span></div>'+actions+'</div>';
+   const result=status.results[a.id],healthy=!!result&&!result.error;
+   const equity=healthy?result.data?.totals?.equity:null;
+   const badge='<span class="bybitExchangeBadge"><b aria-hidden="true">B</b>'+enc(brand(a))+'</span>';
+   const accountIcon=iconName(a.icon);
+   const editing=status.editing===a.id;
+   const pencil=editing?'':'<button class="bybitEditIcon" type="button" data-bybit-action="rename" data-id="'+enc(a.id)+
+     '" aria-label="Изменить название и иконку '+enc(a.label)+'" title="Изменить">'+svg("edit")+'</button>';
+   const details='<span class="bybitAccountDetails">'+badge+
+     (equity!=null&&Number.isFinite(Number(equity))?'<span class="bybitAccountBalance">'+money(equity)+'</span>':'')+'</span>';
+   const editForm=editing?'<form class="bybitRenameForm" data-account-id="'+enc(a.id)+'">'+
+     '<label>Название<input name="label" maxlength="40" value="'+enc(a.label)+'" required></label>'+
+     '<label>Иконка'+iconSelect(accountIcon)+'</label>'+
+     '<div class="bybitFormActions"><button class="btn primary" type="submit">Сохранить</button><button class="btn" type="button" data-bybit-action="cancel-rename">Отмена</button></div></form>':'';
+   return '<div class="bybitAccountRow"><div class="bybitAccountMain"><span class="bybitAccountIcon">'+svg(accountIcon)+'</span>'+
+     '<span class="bybitAccountMeta"><span class="bybitAccountNameLine"><strong>'+enc(a.label)+'</strong>'+pencil+'</span>'+
+     details+(result?.error?'<span class="bybitError">'+enc(result.error)+'</span>':'')+
+     '</span></div>'+(editing?editForm:'<div class="bybitAccountActions">'+
+     '<button class="btn bybitDisconnect" type="button" data-bybit-action="remove" data-id="'+enc(a.id)+'">Отключить API</button></div>')+'</div>';
   }).join('');
   const form=status.formOpen?'<form id="bybitConnectForm" class="bybitConnectForm" autocomplete="off">'+
-
-   '<div class="field"><label>Название субаккаунта<input name="label" maxlength="40" placeholder="Например, 13 ORD (2SL)" required></label></div>'+
-   '<div class="field"><label>API Key<input name="key" type="password" autocomplete="off" required></label></div>'+
-   '<div class="field"><label>API Secret<input name="secret" type="password" autocomplete="off" required></label></div>'+
-   '<div class="tiny">Только Read-Only. Ключ проверяется сервером и хранится на VPS зашифрованным.</div>'+
-   '<div class="flexend"><button class="btn" type="button" data-bybit-action="cancel">Отмена</button><button class="btn primary" type="submit">Проверить и подключить</button></div></form>':'';
-  el.innerHTML='<div class="connectorState">'+
+   '<div class="bybitFormTitle"><span class="bybitExchangeBadge"><b>B</b>Bybit</span>Новый субаккаунт</div>'+
+   '<div class="field"><label>Название субаккаунта<input name="label" maxlength="40" placeholder="Например, 13 ордеров 2 стоп-лосс" required></label></div>'+
+   '<div class="field"><label>Иконка'+iconSelect("wallet")+'</label></div>'+
+   '<div class="field"><label>API Key<input name="key" type="password" autocomplete="new-password" required></label></div>'+
+   '<div class="field"><label>API Secret<input name="secret" type="password" autocomplete="new-password" required></label></div>'+
+   '<div class="bybitFormActions"><button class="btn" type="button" data-bybit-action="cancel">Отмена</button>'+
+   '<button class="btn primary" type="submit">Проверить и подключить</button></div></form>':'';
+  el.innerHTML='<div class="connectorState bybitAccountsPanel">'+
    (status.error?'<p class="bybitError" role="alert">'+enc(status.error)+'</p>':'')+
-   '<div class="bybitAccountsList">'+(list||'<div class="sourceEmpty">Подключённых субаккаунтов пока нет.</div>')+'</div>'+
-   '<div class="bybitConnectActions"><button type="button" class="btn primary" data-bybit-action="start">+ Добавить субаккаунт</button>'+
-   (status.accounts.length?'<button type="button" class="btn" data-bybit-action="refresh" '+(status.busy?'disabled':'')+'>Обновить позиции</button>':'')+'</div>'+
+   '<div class="bybitConnectActions"><button class="btn primary" type="button" data-bybit-action="start"'+
+     (status.busy?' disabled':'')+'>'+svg("plus")+'Добавить субаккаунт</button>'+
+     (status.accounts.length?'<button class="btn bybitRefresh" type="button" data-bybit-action="refresh"'+
+     (status.busy?' disabled':'')+'>'+svg("sync")+'Обновить позиции</button>':'')+'</div>'+
+   '<div class="bybitAccountsList">'+(list||'<div class="sourceEmpty">Субаккаунтов пока нет</div>')+'</div>'+
    form+'</div>';
  }
  async function getJson(url,opts={}){
@@ -59,6 +77,7 @@
   window.fxmr4App?.onBackendStatus?.({available:status.available,configured:status.configured,connected:status.connected,error:status.error});
  }
  async function check(){
+  if(status.formOpen||status.editing)return;
   if(!canSend){status.error="HTTPS обязателен";status.available=false;renderPanel();return}
   try{
    const info=await getJson("./api/status");
@@ -113,15 +132,15 @@
   }catch(e){status.error=e.message||"Не удалось подключить API"}
   finally{status.busy=false;renderPanel()}
  }
- async function rename(label,accountId="bybit-subaccount"){
+ async function rename(label,accountId="bybit-subaccount",icon="wallet"){
   if(!status.available||status.busy)return false;
   status.busy=true;renderPanel();
   try{
    const legacy=accountId==="bybit-subaccount";
    const data=await getJson(legacy?"./api/rename":"./api/account-rename",
-    {method:"POST",body:legacy?{label}:{id:accountId,label}});
+    {method:"POST",body:legacy?{label,icon}:{id:accountId,label,icon}});
    if(!data.renamed)throw Error("Сервер не подтвердил изменение имени");
-   const a=status.accounts.find(x=>x.id===accountId);if(a)a.label=label;
+   const a=status.accounts.find(x=>x.id===accountId);if(a){a.label=label;a.icon=iconName(icon)}
    status.editing=null;
    window.fxmr4App?.onAccounts?.(status.accounts);
    return true;
@@ -158,7 +177,7 @@
   if(e.target?.id==="bybitConnectForm"){
    e.preventDefault();
    const fd=new FormData(e.target);
-   const fields={label:String(fd.get("label")||"").trim(),
+   const fields={label:String(fd.get("label")||"").trim(),icon:iconName(fd.get("icon")),
      key:String(fd.get("key")||"").trim(),secret:String(fd.get("secret")||"").trim()};
    e.target.reset();
    if(fields.key.length<10||fields.secret.length<10||!fields.label){status.error="Заполни название и API-ключ";renderPanel();return}
@@ -167,7 +186,7 @@
   if(e.target?.classList?.contains("bybitRenameForm")){
    e.preventDefault();
    const fd=new FormData(e.target);
-   rename(String(fd.get("label")||"").trim(),e.target.dataset.accountId);
+   rename(String(fd.get("label")||"").trim(),e.target.dataset.accountId,iconName(fd.get("icon")));
   }
  });
  window.fxmr4Bybit={renderPanel,check,refresh,disconnect,rename,isEditing:()=>status.formOpen,status:()=>({...status})};
