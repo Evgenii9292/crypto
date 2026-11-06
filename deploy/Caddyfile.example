@@ -1,0 +1,9 @@
+# Replace the example hostname with a DNS name pointing to this VPS.
+# Caddy acquires and renews HTTPS certificates automatically.
+fxmr4.example.com {
+  encode zstd gzip
+  reverse_proxy 127.0.0.1:8768 {
+    header_up X-Forwarded-Proto https
+  }
+  header Strict-Transport-Security "max-age=31536000"
+}
