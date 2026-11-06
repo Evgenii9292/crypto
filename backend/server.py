@@ -422,7 +422,22 @@ class Handler(BaseHTTPRequestHandler):
                 wallet = request_bybit("/v5/account/wallet-balance", {"accountType": "UNIFIED"}, key, secret)
                 if not wallet.get("list"):
                     raise BybitFailure("Нет доступа к Unified Account")
-                created = saved_state.add_extra_account(key, secret, label)
+                uid = meta.get("userID")
+                if uid not in (None, ""):
+                    uid = str(uid)
+                    if any(str(x.get("uid")) == uid for x in saved_state.list_extra_accounts()):
+                        raise BybitFailure("Субаккаунт с этим UID уже подключён")
+                    legacy_key, legacy_secret, _ = credentials()
+                    if legacy_key and legacy_secret:
+                        try:
+                            legacy_meta = request_bybit("/v5/user/query-api", {}, legacy_key, legacy_secret)
+                            if str(legacy_meta.get("userID")) == uid:
+                                raise BybitFailure("Этот субаккаунт уже подключён через другой API-ключ")
+                        except BybitFailure as exc:
+                            if "уже подключён" in str(exc):
+                                raise
+                            # Offline old key must not block an otherwise valid new connection.
+                created = saved_state.add_extra_account(key, secret, label, uid=uid)
                 self._json({"connected": True, "account": created, "persisted": True})
             except BybitFailure as exc:
                 self._json({"error": str(exc)}, 422)
