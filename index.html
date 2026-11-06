@@ -275,37 +275,25 @@ function quoteStrip(){
 }
 function positions(){
  const a=sums(),reservePct=C>0?a.cash/C*100:0;
- const held=['BTC','ETH'].filter(sym=>coin(sym).invested>0);
- const stack=coinStack(held);
- return `<div class="spotTop"><div class="card tint spotHoldingsCard"><div class="eyebrow">Стоимость монет</div><div class="total">${dollars(a.holdings)}</div><div class="spotHeroBottom"><span class="metric ${cls(a.profit)}">${signed(a.profit)} (${signed(a.invested?a.profit/a.invested*100:0,'pct')})</span><span class="tiny">Вложено ${dollars(a.invested)}</span></div>${stack?`<div class="spotHeroCoins">${stack}<span class="tiny">${held.length} ${held.length===1?'монета':'монеты'} в работе</span></div>`:''}</div>
- <div class="card spotReserveCard reserveMuted"><div class="spotReserveTop"><div class="eyebrow">Резерв</div><span class="reservePercent">${pct(reservePct)}</span></div><div class="total">${dollars(a.cash)}</div></div></div>
+ return `<div class="spotTop">
+  <div class="card tint spotHoldingsCard">
+   <div class="eyebrow">Стоимость монет</div>
+   <div class="spotCardBottom">
+    <div class="total">${dollars(a.holdings)}</div>
+    <div class="spotHeroBottom"><span class="metric ${cls(a.profit)}">${signed(a.profit)} (${signed(a.invested?a.profit/a.invested*100:0,'pct')})</span></div>
+   </div>
+  </div>
+  <div class="card spotReserveCard reserveMuted">
+   <div class="spotReserveTop"><div class="eyebrow">Резерв</div><span class="reservePercent">${pct(reservePct)}</span></div>
+   <div class="spotCardBottom"><div class="total">${dollars(a.cash)}</div></div>
+  </div>
+ </div>
  ${spotChartBlock()}
  <section class="section"><div class="hrow"><div><div class="sectitle">Монеты</div></div><button type="button" class="btn primary" data-action="new">${icon('plus')} Покупка</button></div><div class="spotList">${['BTC','ETH'].map(spotRow).join('')}</div></section>
  <section class="section spotAllocation"><div class="hrow"><div><div class="sectitle">Распределение спота</div></div><button class="btn" type="button" data-action="gotoCapital">Капитал</button></div>${spotDistribution()}</section>
  ${quoteStrip()}
  <div id="strategyMount" aria-label="Графики уровней покупок BTC и ETH"></div>
  <div class="spotHistoryToggle"><button class="historyToggle" type="button" data-action="toggleHistory"><span>${icon('calendar')} История покупок <span class="historyCount">${s.trades.length}</span></span><span class="chev ${s.spotHistoryOpen?'rotated':''}">⌄</span></button>${s.spotHistoryOpen||s.form?history():''}</div>`;
-}
-
-function coinStack(symbols){
- // Overlapping round badges: which coins are open, without spelling each one out.
- const list=[...new Set(symbols.filter(Boolean))].slice(0,4);
- const extra=Math.max(0,[...new Set(symbols.filter(Boolean))].length-list.length);
- if(!list.length)return '';
- const label=sym=>{let t=String(sym).replace(/(USDT|USDC|USD|PERP)$/i,'');
-  // 1000FLOKI is the contract name, not the coin: the badge shows FLOKI.
-  const bare=t.replace(/^\d+/,'');if(bare.length>=3)t=bare;
-  return t.slice(0,4);};
- return `<span class="coinStack">${list.map(sym=>`<i class="coinChip" title="${escape(String(sym))}">${escape(label(sym))}</i>`).join('')}${extra?`<i class="coinChip more">+${extra}</i>`:''}</span>`;
-}
-const FUTURE_SORTS=[['pnl','Плавающий PNL'],['size','Объём'],['symbol','Монета'],['leverage','Плечо'],['opened','Дата открытия'],['side','Направление']];
-function futureSortValue(p,key){
- if(key==='size')return Number(p.size)||0;
- if(key==='symbol')return String(p.symbol||'').toLowerCase();
- if(key==='leverage')return Number(p.leverage)||0;
- if(key==='opened')return p.openedAt==null?-Infinity:Number(p.openedAt);
- if(key==='side')return String(p.side||'').toLowerCase();
- return Number(p.pnl||0);
 }
 function futuresSorted(){
  const key=s.futureSort,dir=s.futureSortDir<0?-1:1;
