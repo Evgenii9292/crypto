@@ -84,21 +84,30 @@ function portfolioSummary(){
 const PERIODS={'24h':86400000,'7d':604800000,'30d':2592000000,'90d':7776000000,'6m':15552000000};
 const PERIOD_NAMES={'24h':'24 часа','7d':'7 дней','30d':'30 дней','90d':'90 дней','6m':'6 месяцев'};
 function pnlField(kind){return kind==='spot'?'spot':kind==='futures'?'futures':'total'}
+function hasTrackedFutures(){
+ const known=p=>p&&p.futures!=null&&Number.isFinite(Number(p.futures));
+ return !!(s.backendConnection.configured||s.bybitSnapshot||s.portfolioSnapshots.some(known)||(s.pnlHistory||[]).some(known));
+}
 function pnlSeries(kind){
- // Live readings are the finest detail we hold and always win. Durable server
- // history fills everything older, so month and half-year windows have real
- // points instead of an empty box. Never invent values for gaps.
  kind=kind||s.pnlMode;
- const field=pnlField(kind);
+ const field=pnlField(kind),fullRequired=kind==='all'&&hasTrackedFutures();
+ const n=x=>x!=null&&Number.isFinite(Number(x))?Number(x):null;
+ function value(p){
+  if(kind==='spot')return n(p.spot??p.pnl);
+  if(kind==='futures')return n(p.futures);
+  const spot=n(p.spot),futures=n(p.futures);
+  if(spot!==null&&futures!==null)return spot+futures;
+  if(fullRequired)return null;
+  return n(p.total)??spot??n(p.pnl);
+ }
  let live;
  if(kind==='spot')live=s.snapshots.map(p=>({t:Number(p.time),v:Number(p.pnl)}));
- else live=s.portfolioSnapshots.map(p=>({t:Number(p.time),v:Number(p[field])}));
- live=live.filter(p=>Number.isFinite(p.t)&&Number.isFinite(p.v)).sort((a,b)=>a.t-b.t);
+ else live=s.portfolioSnapshots.map(p=>({t:Number(p.time),v:value(p)}));
+ live=live.filter(p=>Number.isFinite(p.t)&&p.v!==null&&Number.isFinite(p.v)).sort((a,b)=>a.t-b.t);
  const oldestLive=live.length?live[0].t:Infinity;
- const older=(s.pnlHistory||[]).map(p=>({t:Number(p.t),v:Number(p[field])}))
-   .filter(p=>Number.isFinite(p.t)&&Number.isFinite(p.v)&&p.t<oldestLive).sort((a,b)=>a.t-b.t);
- if(kind==='all'&&!live.length&&!older.length&&!s.backendConnection.connected&&s.snapshots.length)
-   return {kind,field,points:s.snapshots.map(p=>({t:Number(p.time),v:Number(p.pnl)})).filter(p=>Number.isFinite(p.t)&&Number.isFinite(p.v))};
+ const older=(s.pnlHistory||[]).map(p=>({t:Number(p.t),v:value(p)}))
+  .filter(p=>Number.isFinite(p.t)&&p.v!==null&&Number.isFinite(p.v)&&p.t<oldestLive)
+  .sort((a,b)=>a.t-b.t);
  const seen=new Set();
  const points=older.concat(live).filter(p=>{if(seen.has(p.t))return false;seen.add(p.t);return true});
  return {kind,field,points};
@@ -570,9 +579,15 @@ window.fxmr4App={onBackendStatus,onSnapshot,onDisconnected,applyCloudState};
     const summary=portfolioSummary();
     // Spot PNL exists even with no futures account, so it is recorded on its
     // own. Futures and total stay absent, never zero, while they are unknown.
-    const p={time:Date.now(),spot:summary.spot.profit};
-    if(summary.hasFutures&&summary.futuresPnl!==null)p.futures=summary.futuresPnl;
-    if(summary.pnl!==null)p.total=summary.pnl;
+    const p={time:Date.now(),spot:summary.spot.profit,spotBalance:summary.spot.holdings};
+    if(summary.hasFutures&&summary.futuresPnl!==null){
+      p.futures=summary.futuresPnl;
+      p.total=summary.spot.profit+summary.futuresPnl;
+      const equity=s.bybitSnapshot?.totals?.equity;
+      if(equity!=null&&Number.isFinite(Number(equity)))p.futuresBalance=Number(equity);
+    }else if(!hasTrackedFutures()&&!s.backendConnection.configured){
+      p.total=summary.spot.profit;
+    }
     const last=s.portfolioSnapshots[s.portfolioSnapshots.length-1];
     if(last&&p.time-last.time<1500&&Math.abs((last.total??last.spot)-(p.total??p.spot))<0.000001)return;
     s.portfolioSnapshots.push(p);s.portfolioSnapshots=s.portfolioSnapshots.slice(-1500);
