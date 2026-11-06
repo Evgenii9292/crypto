@@ -18,13 +18,16 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Crypto dependency
+        run: python -m pip install --disable-pip-version-check cryptography
       - name: Python syntax
-        run: python -m py_compile backend/server.py
+        run: python -m py_compile backend/server.py backend/state.py
       - name: Backend tests (mocked Bybit)
         run: python -m unittest discover -s backend -p 'test_*.py' -v
       - name: Frontend syntax
         run: |
           node --check bybit-account.js
+          node --check cloud-sync.js
           node --check levels.js
           python - <<'PY'
           import re
@@ -35,3 +38,5 @@ jobs:
           Path("/tmp/fxmr4-main.js").write_text(m.group(1), encoding="utf-8")
           PY
           node --check /tmp/fxmr4-main.js
+      - name: Deployment bash syntax
+        run: bash -n deploy/upgrade-v2.sh
