@@ -119,7 +119,7 @@ function overviewSource(ex){
  const accounts=ex.accounts.map(ac=>{
   const id=ex.id+':'+ac.id,pp=s.futuresPositions.filter(p=>p.exchangeId===ex.id&&p.accountId===ac.id);
   const isLinked=isBybit&&ac.id==='bybit-subaccount'&&s.backendConnection.connected;
-  const current=isLinked?pp.reduce((sum,p)=>sum+Number(p.pnl||0),0):null;
+  const current=isLinked&&pp.every(p=>p.pnl!=null)?pp.reduce((sum,p)=>sum+Number(p.pnl),0):null;
   return `<div class="sourceSub"><div class="accountRow"><button type="button" class="sourceSubHeader" data-action="toggleAccount" data-id="${escape(id)}"><span class="accountIdentity"><strong>${escape(ac.name)}</strong><span class="accountTag">Фьючерсы</span></span><span class="sourceSubRight">${inlineMetric(current,null)} <span class="chev ${s.openedAccounts[id]?'rotated':''}">⌄</span></span></button><button class="accountManage" type="button" data-action="manageAccount" data-id="${escape(id)}" aria-label="Настройки ${escape(ac.name)}" title="Управление субаккаунтом">${icon('settings')}</button></div>${s.openedAccounts[id]?(pp.length?pp.map(futurePositionLine).join(''):'<div class="sourceEmpty">Нет открытых позиций или счёт не подключён.</div>'):''}</div>`;
  }).join('');
  const balance=isBybit&&s.backendConnection.connected&&s.bybitSnapshot?.totals?.equity!=null?dollars(s.bybitSnapshot.totals.equity):isBybit?dollars(a.total):'—';
