@@ -26,7 +26,7 @@
    return '<div class="bybitAccountRow"><div class="bybitAccountMain"><span class="status-dot '+(live?.error?'isError':healthy?'':'isDisconnected')+'"></span><span class="bybitAccountMeta"><strong>'+enc(a.label)+'</strong><small>'+enc(brand(a))+' · API только чтение</small>'+detail+'</span></div>'+actions+'</div>';
   }).join('');
   const form=status.formOpen?'<form id="bybitConnectForm" class="bybitConnectForm" autocomplete="off">'+
-   '<div class="field"><label>Биржа<select name="exchange" disabled><option>Bybit</option></select></label></div>'+
+
    '<div class="field"><label>Название субаккаунта<input name="label" maxlength="40" placeholder="Например, 13 ORD (2SL)" required></label></div>'+
    '<div class="field"><label>API Key<input name="key" type="password" autocomplete="off" required></label></div>'+
    '<div class="field"><label>API Secret<input name="secret" type="password" autocomplete="off" required></label></div>'+
