@@ -42,6 +42,7 @@ class TestPhoneLogin(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertIn(b'action="/api/login"', body)
         self.assertNotIn("WWW-Authenticate", headers)
+        self.assertEqual(headers["Referrer-Policy"], "same-origin")
         self.assertNotIn(b"test-password", body)
 
     def test_correct_password_cookie_and_private_api(self):
