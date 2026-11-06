@@ -39,6 +39,6 @@ jobs:
           PY
           node --check /tmp/fxmr4-main.js
       - name: Cloud sync reload regression
-        run: node --test tests/cloud-sync.test.js
+        run: node --test tests/*.test.js
       - name: Deployment bash syntax
         run: bash -n deploy/upgrade-v2.sh
