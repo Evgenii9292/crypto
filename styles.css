@@ -206,3 +206,17 @@
 .spotTop{grid-template-columns:minmax(0,1.2fr) minmax(260px,.85fr)}
 .spotStats{grid-template-columns:repeat(2,1fr);grid-template-rows:1fr}
 }
+
+/* FXMR4 v1.4: private read-only Bybit subaccount connection panel */
+.connectorState{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:17px;margin:18px 0}
+.connectorState>strong{font-size:13px;font-weight:690}
+.connectorState p{font-size:12px;color:var(--sub);line-height:1.6;margin:10px 0}
+.connectorState .hrow{align-items:center}
+.bybitConnectActions{margin-top:14px;display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.bybitConnectForm{margin-top:16px;padding-top:14px;border-top:1px solid var(--border)}
+.bybitConnectForm .field{max-width:560px}
+.bybitConnectForm .safeNote{margin:14px 0;color:var(--sub)}
+.bybitError{margin-top:14px;border-radius:9px;background:color-mix(in srgb,var(--red) 7%,var(--surface));color:var(--red);padding:10px 12px;font-size:12px;line-height:1.45}
+.bybitConnectForm input{font-size:13px}
+.bybitConnectForm .flexend{margin-top:13px}
+@media(max-width:600px){.connectorState{padding:13px}.bybitConnectForm .flexend{flex-wrap:wrap;gap:7px}}
