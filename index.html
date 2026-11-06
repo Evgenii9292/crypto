@@ -28,7 +28,7 @@
   </svg>
   <main class="page"><div class="shell">
     <aside class="sidebar">
-      <header class="header"><div class="logoArea"><div class="appicon"><svg class="icon"><use href="#wallet"/></svg></div><div class="accountTotalBlock"><div class="accountTotalLabel">Общий баланс</div><strong class="accountTotalValue" id="sidebarTotal">—</strong><div class="accountTotalDetail" id="sidebarTotalDetail"></div></div></div><button class="mobileSettings" type="button" data-action="goConnections" aria-label="Настройки"><svg class="icon"><use href="#settings"></use></svg></button></header>
+      <header class="header"><div class="logoArea"><div class="appicon"><svg class="icon"><use href="#wallet"/></svg></div><div class="accountTotalBlock"><div class="accountTotalLabel">Общий баланс</div><strong class="accountTotalValue" id="sidebarTotal">—</strong></div></div><button class="mobileSettings" type="button" data-action="goConnections" aria-label="Настройки"><svg class="icon"><use href="#settings"></use></svg></button></header>
       <div class="navLabel">РАЗДЕЛЫ</div>
       <nav class="tabs" data-active="overview" role="tablist" aria-label="Разделы портфеля">
         <button class="tab active" type="button" role="tab" aria-selected="true" data-tab="overview"><svg class="icon"><use href="#activity"/></svg><span>Обзор</span></button>
@@ -220,11 +220,12 @@ function futuresForm(){
 function futures(){
  const body=s.futureMode==='exchange'?s.sources.map(futureExchangeCard).join(''):s.futureMode==='account'?futuresByAccount():futuresSorted().length?futuresSorted().map(futurePositionLine).join(''):'<div class="card emptyState"><div class="sectitle">Нет открытых позиций</div><p>После подключения появятся позиции субаккаунта.</p></div>';
  const snap=s.bybitSnapshot?.totals,ready=!!s.backendConnection.connected&&!!snap;
- const metrics=[['Баланс субаккаунта',ready&&snap.equity!=null?dollars(snap.equity):'—'],
- ['Плавающий PNL',ready&&snap.perpUPL!=null?signed(snap.perpUPL):'—'],
- ['Доступно',ready&&snap.availableBalance!=null?dollars(snap.availableBalance):'—'],
- ['Открытых позиций',ready?String(s.futuresPositions.filter(p=>p.exchangeId==='bybit').length):'—']];
- return `<div class="hrow"><div><div class="sectitle">Фьючерсы</div><div class="tiny">Позиции по биржам и субаккаунтам</div></div><span class="pill">${ready?'Bybit подключён':'Нет подключения'}</span></div><div class="futureMetrics">${metrics.map(([name,value])=>`<div class="card tint"><div class="eyebrow">${name}</div><div class="num">${value}</div></div>`).join('')}</div><div class="section futurePnlLink"><div><strong>Общий график PNL</strong><span class="tiny">Весь портфель, спот или фьючерсы отдельно</span></div><button class="btn" type="button" data-action="gotoOverview">Посмотреть в обзоре</button></div><section class="section"><div class="futureToolbar"><div><div class="sectitle">Позиции и аккаунты</div><div class="tiny">Раскрывай биржи и выбирай группировку</div></div><button class="btn" type="button" data-action="goConnections">${icon('settings')} Настройки</button></div><div class="futureFilters"><div class="tradeSwitch" role="tablist" aria-label="Группировка фьючерсов">${[['all','Все позиции'],['exchange','По биржам'],['account','По субаккаунтам']].map(([id,name])=>`<button type="button" data-future-mode="${id}" class="${s.futureMode===id?'active':''}">${name}</button>`).join('')}</div><label class="sortLabel">Сортировка <select id="futureSort"><option value="pnl" ${s.futureSort==='pnl'?'selected':''}>PNL</option><option value="size" ${s.futureSort==='size'?'selected':''}>Размер</option><option value="symbol" ${s.futureSort==='symbol'?'selected':''}>Монета</option></select></label></div><div class="sourceList futureResults">${body}</div>${s.futureForm?futuresForm():''}</section>`;
+ const upl=ready&&snap.perpUPL!=null?Number(snap.perpUPL):null;
+ const metrics=[['Баланс субкаунта',ready&&snap.equity!=null?dollars(snap.equity):'—',''],
+ ['Плавающий PNL',upl!=null?signed(upl):'—',upl==null?'neutral':cls(upl)],
+ ['Доступно',ready&&snap.availableBalance!=null?dollars(snap.availableBalance):'—',''],
+ ['Открытых позиций',ready?String(s.futuresPositions.filter(p=>p.exchangeId==='bybit').length):'—','']];
+ return `<div class="hrow"><div><div class="sectitle">Фьючерсы</div><div class="tiny">Позиции по биржам и субаккаунтам</div></div><span class="pill">${ready?'Bybit подключён':'Нет подключения'}</span></div><div class="futureMetrics">${metrics.map(([name,value,tone])=>`<div class="card tint"><div class="eyebrow">${name}</div><div class="num ${tone}">${value}</div></div>`).join('')}</div><div class="section futurePnlLink"><div><strong>Общий график PNL</strong><span class="tiny">Весь портфель, спот или фьючерсы отдельно</span></div><button class="btn" type="button" data-action="gotoOverview">Посмотреть в обзоре</button></div><section class="section"><div class="futureToolbar"><div><div class="sectitle">Позиции и аккаунты</div><div class="tiny">Раскрывай биржи и выбирай группировку</div></div><button class="btn" type="button" data-action="goConnections">${icon('settings')} Настройки</button></div><div class="futureFilters"><div class="tradeSwitch" role="tablist" aria-label="Группировка фьючерсов">${[['all','Все позиции'],['exchange','По биржам'],['account','По субаккаунтам']].map(([id,name])=>`<button type="button" data-future-mode="${id}" class="${s.futureMode===id?'active':''}">${name}</button>`).join('')}</div><label class="sortLabel">Сортировка <select id="futureSort"><option value="pnl" ${s.futureSort==='pnl'?'selected':''}>PNL</option><option value="size" ${s.futureSort==='size'?'selected':''}>Размер</option><option value="symbol" ${s.futureSort==='symbol'?'selected':''}>Монета</option></select></label></div><div class="sourceList futureResults">${body}</div>${s.futureForm?futuresForm():''}</section>`;
 }
 function capitalSettings(){
  const a=sums();
@@ -246,7 +247,6 @@ function render(){
  const a=sums(),equity=s.backendConnection.connected?s.bybitSnapshot?.totals?.equity:null;
  const distinctEquity=equity!=null&&Number.isFinite(Number(equity))?Number(equity):null;
  $('sidebarTotal').textContent=dollars(a.total+(distinctEquity??0));
- $('sidebarTotalDetail').textContent=distinctEquity===null?'Спот (учёт)': 'Спот (учёт) + Bybit';
  $('connectionStatusText').textContent=s.backendConnection.connected?'Bybit подключён':'Биржи не подключены';
  $('connectionDot').classList.toggle('isDisconnected',!s.backendConnection.connected);
  document.querySelector('.tabs').dataset.active=s.tab;
