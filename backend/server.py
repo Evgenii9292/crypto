@@ -557,14 +557,29 @@ def _spot_pnl(portfolio):
 
 
 def sample_history_once():
-    """Append one durable PNL reading. Never raises into the caller."""
+    """Sample spot plus every configured futures subaccount as one coherent point."""
     try:
         key, secret, _label = credentials()
-        if not key or not secret:
+        extras = saved_state.list_extra_accounts()
+        if not (key and secret) and not extras:
             return False
-        data = snapshot()
-        totals = data.get("totals") or {}
-        futures = _num(totals.get("perpUPL"))
+        futures_parts = []
+        valid = True
+        if key and secret:
+            data = snapshot()
+            v = _num((data.get("totals") or {}).get("perpUPL"))
+            if v is None:
+                valid = False
+            else:
+                futures_parts.append(v)
+        for item in extras:
+            value = snapshot_extra(item["id"])
+            v = _num((value.get("totals") or {}).get("perpUPL"))
+            if v is None:
+                valid = False
+            else:
+                futures_parts.append(v)
+        futures = sum(futures_parts) if valid and futures_parts else None
         portfolio = saved_state.read_profile().get("portfolio")
         spot = _spot_pnl(portfolio)
         point = {"t": int(time.time() * 1000)}
@@ -578,7 +593,8 @@ def sample_history_once():
             return False
         saved_state.merge_history([point])
         return True
-    except Exception as exc:  # a sampler must never take the app down
+    except Exception as exc:
+        # Never record an incomplete PNL as a full-portfolio observation.
         print("PNL history sample skipped: " + type(exc).__name__, flush=True)
         return False
 
