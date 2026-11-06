@@ -64,7 +64,8 @@
     headers:opts.method==="POST"?authHeaders:{Accept:"application/json"},
     body:opts.body?JSON.stringify(opts.body):undefined,signal:ctl.signal});
    const data=await r.json();
-   if(!r.ok)throw Error(String(data.error||"HTTP "+r.status).slice(0,250));
+   if(!r.ok)throw Error(r.status===404&&url.includes("/api/accounts")?
+     "На VPS старая версия FXMR4. Необходимо обновить сервер.":String(data.error||"HTTP "+r.status).slice(0,250));
    return data;
   }finally{clearTimeout(clock)}
  }
