@@ -362,3 +362,50 @@
   .spotHeroBottom{justify-content:flex-start}
   .workspaceTitleLine{gap:8px}
 }
+
+/* --- PNL charts in place, sortable futures table, coin stacks --- */
+.overviewCharts{display:grid;gap:14px}
+.overviewCharts .pnlChart{margin-top:0}
+.pnlChartHead .periods{flex-wrap:wrap;justify-content:flex-end}
+.metricCoins{margin-top:9px}
+.coinStack{display:inline-flex;align-items:center}
+.coinChip{display:inline-grid;place-items:center;width:32px;height:32px;border-radius:50%;background:var(--surface);border:2px solid var(--surface2);color:var(--sub);font-size:8px;font-weight:700;font-style:normal;letter-spacing:-.1px;margin-left:-7px;box-shadow:0 1px 3px #00000012;overflow:hidden}
+.coinChip:first-child{margin-left:0}
+.coinChip.more{background:var(--surface3);color:var(--muted)}
+.spotHeroCoins{display:flex;align-items:center;gap:9px;margin-top:12px}
+.spotHeroCoins .coinChip{border-color:var(--surface2);background:var(--surface)}
+.reserveMuted{background:var(--surface2);border-color:transparent;color:var(--sub)}
+.reserveMuted .total{color:var(--sub)}
+.reserveMuted .reserveProgress{background:var(--surface3)}
+.reserveMuted .reserveProgress span{background:var(--reserve)}
+.reserveTag{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:999px;background:var(--surface3);color:var(--muted);font-size:9px;font-weight:650;letter-spacing:.2px;vertical-align:1px}
+.reserveNote{margin:10px 0 0!important;line-height:1.45;color:var(--muted)}
+.futureSortBar{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}
+.sortChip{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--border);background:var(--surface);color:var(--sub);border-radius:999px;padding:6px 11px;font-size:11px;font-weight:600;transition:background .15s,color .15s,border-color .15s}
+.sortChip:hover{background:var(--surface2);color:var(--text)}
+.sortChip.active{background:var(--text);border-color:var(--text);color:var(--surface)}
+.sortDir{font-size:10px;opacity:.85}
+.futurePosition.futureHead{padding:0 13px 8px;border-bottom:1px solid var(--border);color:var(--muted);font-size:10px;font-weight:650;letter-spacing:.3px;text-transform:uppercase}
+.futurePosition.futureHead>span{display:block}
+.futureCoin{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.posBadges{display:inline-flex;gap:4px}
+.posBadge{display:inline-block;padding:1px 6px;border-radius:6px;font-size:9px;font-weight:700;font-style:normal;letter-spacing:.2px;background:var(--surface3);color:var(--sub)}
+.posBadge.long{background:#e6f7ed;color:#196342}
+.posBadge.short{background:#fdeaea;color:#a52a2f}
+.posBadge.lev{background:var(--surface3);color:var(--sub)}
+.posBar{display:block;height:3px;border-radius:2px;background:var(--surface3);margin-top:6px;overflow:hidden;max-width:120px}
+.posBar>i{display:block;height:100%;background:var(--reserve);border-radius:2px}
+@media(prefers-color-scheme:dark){
+ .posBadge.long{background:#1a422d;color:#a4f1c0}
+ .posBadge.short{background:#4a2226;color:#ffb3b6}
+}
+.hShort{display:none}
+@media(max-width:600px){
+ .futurePosition.futureHead{display:grid;padding:0 4px 7px;font-size:9px;letter-spacing:.2px}
+ .futurePosition.futureHead .hLong{display:none}
+ .futurePosition.futureHead .hShort{display:inline}
+ .futurePosition{grid-template-columns:minmax(0,1fr) auto auto;gap:8px;padding:12px 4px}
+ .futurePosition .right strong{font-size:12px}
+ .sortChip{padding:5px 9px;font-size:10px}
+ .pnlChartHead .periods{justify-content:flex-start}
+}

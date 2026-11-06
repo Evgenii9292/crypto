@@ -103,6 +103,18 @@ class TestReadOnlySubaccount(TestCase):
         self.assertTrue(handler._same_origin_action())
 
 
+class TestPositionOpenTime(TestCase):
+    """Sorting by open date needs the venue's own timestamp, not a guess."""
+
+    def test_created_time_is_kept_as_milliseconds(self):
+        self.assertEqual(server._int_ms("1700000000000"), 1700000000000)
+        self.assertEqual(server._int_ms(1700000000000), 1700000000000)
+
+    def test_missing_or_bad_open_time_is_unknown(self):
+        for value in (None, "", "abc", 0, -5):
+            self.assertIsNone(server._int_ms(value), value)
+
+
 class TestHistorySampler(TestCase):
     """The server must keep the PNL series alive with no browser open."""
 

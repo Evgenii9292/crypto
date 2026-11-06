@@ -92,6 +92,14 @@ def request_bybit(path, params, key, secret):
     return data.get("result", {})
 
 
+def _int_ms(value):
+    try:
+        n = int(str(value).strip())
+        return n if n > 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
 def _num(value):
     try:
         n = float(value)
@@ -126,6 +134,9 @@ def collect_positions(key, secret, settle_coin):
                 "cumulativeRealisedPnl": _num(p.get("cumRealisedPnl")),
                 "takeProfit": _num(p.get("takeProfit")),
                 "stopLoss": _num(p.get("stopLoss")),
+                # Bybit reports the position's first open time; sorting by it is
+                # the only way to read "oldest position first" from the venue.
+                "openedAt": _int_ms(p.get("createdTime")),
                 "accountId": "bybit-subaccount",
                 "exchangeId": "bybit",
                 "settleCoin": settle_coin,

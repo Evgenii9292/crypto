@@ -59,7 +59,7 @@
   const nowLocal=()=>{const d=new Date();return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-')};
   const fmtDate=d=>{if(!d)return 'Нет даты';const a=d.slice(0,10).split('-');return a.length===3?`${a[2]}.${a[1]}.${a[0]}`:d};
   const fmtTime=d=>{if(!d)return '';const x=new Date(d);return isNaN(x)?'':x.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})};
-  const s={tab:'overview',trades:[{id:1,coin:'BTC',spent:25,entry:76200,buy_date:'2026-11-06',confirmed:false},{id:2,coin:'ETH',spent:25,entry:2247,buy_date:'2026-11-06',confirmed:false}],quotes:{BTC:{price:initial.BTC,source:'Предварительно'},ETH:{price:initial.ETH,source:'Предварительно'}},capital:C,period:'7d',points:[],snapshots:[],sync:null,form:false,editing:null,deleteId:null,busy:false,flash:'',formError:'',showPrices:false,tradingSubtab:'futures',futureMode:'exchange',futureSort:'pnl',pnlMode:'all',settingsPane:'connections',portfolioSnapshots:[],pnlHistory:[],pendingRemove:null,renameId:null,renameValue:'',renameError:'',futureForm:null,futureFormError:'',sources:[{id:'bybit',name:'Bybit',connected:false,accounts:[]}],futuresPositions:[],openedExchanges:{},openedAccounts:{},spotHistoryOpen:false,spotAccountsOpen:false,spotOpen:{},bybitSnapshot:null,backendConnection:{available:false,configured:false,connected:false,error:''}};
+  const s={tab:'overview',trades:[{id:1,coin:'BTC',spent:25,entry:76200,buy_date:'2026-11-06',confirmed:false},{id:2,coin:'ETH',spent:25,entry:2247,buy_date:'2026-11-06',confirmed:false}],quotes:{BTC:{price:initial.BTC,source:'Предварительно'},ETH:{price:initial.ETH,source:'Предварительно'}},capital:C,period:'7d',chartPeriod:{overview:'7d',spot:'7d',futures:'7d'},chartMetric:{spot:'pnl',futures:'pnl'},points:[],snapshots:[],sync:null,form:false,editing:null,deleteId:null,busy:false,flash:'',formError:'',showPrices:false,tradingSubtab:'futures',futureMode:'all',futureSort:'pnl',futureSortDir:-1,pnlMode:'all',settingsPane:'connections',portfolioSnapshots:[],pnlHistory:[],pendingRemove:null,renameId:null,renameValue:'',renameError:'',futureForm:null,futureFormError:'',sources:[{id:'bybit',name:'Bybit',connected:false,accounts:[]}],futuresPositions:[],openedExchanges:{},openedAccounts:{},spotHistoryOpen:false,spotAccountsOpen:false,spotOpen:{},bybitSnapshot:null,backendConnection:{available:false,configured:false,connected:false,error:''}};
   function coin(m){const trades=s.trades.filter(t=>t.coin===m);const invested=trades.reduce((t,x)=>t+Number(x.spent),0);const quantity=trades.reduce((t,x)=>t+Number(x.spent)/Number(x.entry),0);const current=Number(s.quotes[m]?.price||initial[m]);const value=quantity*current;return {invested,quantity,current,value,profit:value-invested,remaining:C/2-invested,avg:quantity?invested/quantity:0,provisional:trades.some(t=>!t.confirmed)}}
   function sums(){const btc=coin('BTC'),eth=coin('ETH'),invested=btc.invested+eth.invested,cash=C-invested,holdings=btc.value+eth.value,profit=holdings-invested;return {btc,eth,invested,cash,holdings,profit,total:cash+holdings}}
 
@@ -84,11 +84,12 @@ function portfolioSummary(){
 const PERIODS={'24h':86400000,'7d':604800000,'30d':2592000000,'90d':7776000000,'6m':15552000000};
 const PERIOD_NAMES={'24h':'24 часа','7d':'7 дней','30d':'30 дней','90d':'90 дней','6m':'6 месяцев'};
 function pnlField(kind){return kind==='spot'?'spot':kind==='futures'?'futures':'total'}
-function pnlSeries(){
+function pnlSeries(kind){
  // Live readings are the finest detail we hold and always win. Durable server
  // history fills everything older, so month and half-year windows have real
  // points instead of an empty box. Never invent values for gaps.
- const kind=s.pnlMode,field=pnlField(kind);
+ kind=kind||s.pnlMode;
+ const field=pnlField(kind);
  let live;
  if(kind==='spot')live=s.snapshots.map(p=>({t:Number(p.time),v:Number(p.pnl)}));
  else live=s.portfolioSnapshots.map(p=>({t:Number(p.time),v:Number(p[field])}));
@@ -102,37 +103,64 @@ function pnlSeries(){
  const points=older.concat(live).filter(p=>{if(seen.has(p.t))return false;seen.add(p.t);return true});
  return {kind,field,points};
 }
-function pnlWindow(){
- const from=Date.now()-(PERIODS[s.period]||PERIODS['7d']);
- const all=pnlSeries().points,points=all.filter(p=>p.t>=from).slice(-1500);
+function pnlWindow(kind,period){
+ const from=Date.now()-(PERIODS[period]||PERIODS['7d']);
+ const all=pnlSeries(kind).points,points=all.filter(p=>p.t>=from).slice(-1500);
  return {all,points,from,first:points.length?points[0].t:null,last:points.length?points[points.length-1].t:null};
 }
-function chartHTML(){
- const win=pnlWindow(),data=win.points;
+function chartHTML(kind,period,shift){
+ const win=pnlWindow(kind,period);
+ // A balance view is the same series lifted by the money currently invested.
+ // It is a derived line, not a second measurement, and the caption says so.
+ const data=shift?win.points.map(p=>({t:p.t,v:p.v+shift})):win.points;
  if(data.length<2)return '<div class="emptychart"><strong>История PNL формируется</strong><span>После нескольких обновлений появится график с реальными датами. Историю не придумываем.</span></div>';
  const start=data[0].t,end=data[data.length-1].t,W=660,H=224,L=65,R=16,T=14,B=39;
  const vals=data.map(x=>x.v),min=Math.min(0,...vals),max=Math.max(0,...vals),spread=Math.max(max-min,.25),low=min-.18*spread,high=max+.18*spread;
  const x=t=>L+(t-start)/Math.max(1,end-start)*(W-L-R),y=v=>T+(high-v)/(high-low)*(H-T-B);
  let guide='';
  for(let k=0;k<=4;k++){let value=high-(high-low)*k/4,cy=y(value);guide+='<line x1="'+L+'" x2="'+(W-R)+'" y1="'+cy.toFixed(1)+'" y2="'+cy.toFixed(1)+'" class="chartGrid"/><text x="'+(L-9)+'" y="'+(cy+4).toFixed(1)+'" text-anchor="end" class="chartAxis">'+axisMoney(value)+'</text>'}
- const f=t=>s.period==='24h'?new Date(t).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}):new Date(t).toLocaleDateString('ru-RU',{month:'short',day:'numeric'});
+ const f=t=>period==='24h'?new Date(t).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}):new Date(t).toLocaleDateString('ru-RU',{month:'short',day:'numeric'});
  for(const fraction of [0,.5,1]){const tick=L+fraction*(W-L-R);guide+='<text x="'+tick+'" y="'+(H-10)+'" text-anchor="'+(fraction===0?'start':fraction===1?'end':'middle')+'" class="chartAxis">'+escape(f(start+(end-start)*fraction))+'</text>'}
  const pts=data.map(p=>x(p.t).toFixed(1)+','+y(p.v).toFixed(1)).join(' '),last=data[data.length-1],color=last.v<0?'var(--red)':'var(--green)';
  return '<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="xMidYMid meet" role="img" aria-label="График PNL с датами и значениями"><g>'+guide+'</g><line x1="'+L+'" x2="'+(W-R)+'" y1="'+y(0).toFixed(1)+'" y2="'+y(0).toFixed(1)+'" class="chartZero"/><polyline points="'+pts+'" fill="none" stroke="'+color+'" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="'+x(last.t).toFixed(1)+'" cy="'+y(last.v).toFixed(1)+'" r="4" fill="'+color+'"><title>'+escape(axisMoney(last.v)+' · '+new Date(last.t).toLocaleString('ru-RU'))+'</title></circle></svg>';
 }
-function chartCaption(p){
- const win=pnlWindow();
- const scope=s.pnlMode==='spot'?'Спот':s.pnlMode==='futures'?'Фьючерсы':'Портфель';
- if(!win.points.length)return 'USD · '+scope+' · нет данных за '+PERIOD_NAMES[s.period];
+function chartCaption(kind,period,p,shift){
+ const win=pnlWindow(kind,period);
+ const scope=kind==='spot'?'Спот':kind==='futures'?'Фьючерсы':'Портфель';
+ if(!win.points.length)return 'USD · '+scope+' · нет данных за '+PERIOD_NAMES[period];
  const days=Math.max(1,Math.round((win.last-win.first)/86400000));
  const span=days>=2?days+' дн.':Math.max(1,Math.round((win.last-win.first)/3600000))+' ч';
  const partial=win.first>win.from+86400000?' · история короче периода':'';
- return 'USD · '+scope+' · '+span+partial+(s.pnlMode==='all'&&!p.hasFutures?' · сейчас только Спот':'');
+ const derived=shift?' · баланс = вложено сейчас + PNL':'';
+ return 'USD · '+scope+' · '+span+partial+derived+(kind==='all'&&!p.hasFutures?' · сейчас только Спот':'');
+}
+function periodButtons(period,chart){
+ return `<div class="periods">${[['24h','24ч'],['7d','7д'],['30d','30д'],['90d','90д'],['6m','6 мес']].map(([q,name])=>`<button type="button" data-period="${q}" data-chart="${chart}" class="period ${period===q?'active':''}">${name}</button>`).join('')}</div>`;
+}
+function pnlChartBlock(opts){
+ // One chart component reused in three places (overview, spot, futures). Each
+ // place owns its own period and metric so switching one does not move another.
+ const key=opts.key,kind=opts.kind||s.pnlMode,period=s.chartPeriod[key]||'7d';
+ const metric=opts.metricSwitch?(s.chartMetric[key]||'pnl'):'pnl';
+ const current=opts.current==null?null:Number(opts.current);
+ const shift=metric==='balance'&&opts.invested!=null?Number(opts.invested):null;
+ const showModes=!!opts.modes;
+ const metricSwitch=opts.metricSwitch?`<div class="pnlMode"><button class="${metric==='pnl'?'active':''}" data-metric="pnl" data-chart="${key}" type="button">PNL</button><button class="${metric==='balance'?'active':''}" data-metric="balance" data-chart="${key}" type="button">Баланс</button></div>`:'';
+ return `<section class="section pnlChart card"><div class="hrow pnlChartHead"><div><div class="sectitle">${opts.title||'PNL · Портфель'}</div><div class="tiny">${opts.subtitle||'Динамика результатов по позициям'}</div></div>${periodButtons(period,key)}</div>${showModes?`<div class="pnlMode">${[['all','Все'],['spot','Спот'],['futures','Фьючерсы']].map(([k,name])=>`<button class="${kind===k?'active':''}" data-pnl-mode="${k}" type="button">${name}</button>`).join('')}</div>`:''}${metricSwitch}<div class="chartbox">${chartHTML(kind,period,shift)}</div><div class="chartlegend"><span>${chartCaption(kind,period,opts.summary,shift)}</span><strong class="${current==null?'neutral':cls(current)}">${current==null?'—':signed(current)}</strong></div></section>`;
 }
 function spotPnlChart(){
- const p=portfolioSummary(),current=s.pnlMode==='spot'?p.spot.profit:s.pnlMode==='futures'?p.futuresPnl:p.pnl;
- const modes=[['all','Все'],['spot','Спот'],['futures','Фьючерсы']];
- return `<section class="section pnlChart card"><div class="hrow pnlChartHead"><div><div class="sectitle">PNL · Портфель</div><div class="tiny">Динамика результатов по позициям</div></div><div class="periods">${[['24h','24ч'],['7d','7д'],['30d','30д'],['90d','90д'],['6m','6 мес']].map(([q,name])=>`<button type="button" data-period="${q}" class="period ${s.period===q?'active':''}">${name}</button>`).join('')}</div></div><div class="pnlMode">${modes.map(([key,name])=>`<button class="${s.pnlMode===key?'active':''}" data-pnl-mode="${key}" type="button">${name}</button>`).join('')}</div><div class="chartbox">${chartHTML()}</div><div class="chartlegend"><span>${chartCaption(p)}</span><strong class="${current==null?'neutral':cls(current)}">${current==null?'—':signed(current)}</strong></div></section>`;
+ const p=portfolioSummary();
+ return pnlChartBlock({key:'overview',title:'PNL · Портфель',subtitle:'Весь портфель, спот или фьючерсы отдельно',modes:true,current:p.pnl,summary:p});
+}
+function spotChartBlock(){
+ const p=portfolioSummary(),a=p.spot;
+ return pnlChartBlock({key:'spot',kind:'spot',title:'PNL · Спот',subtitle:'BTC, ETH и резерв на записанных покупках',
+  metricSwitch:true,current:p.spot.profit,summary:p,invested:a.invested});
+}
+function futuresChartBlock(){
+ const p=portfolioSummary();
+ return pnlChartBlock({key:'futures',kind:'futures',title:'PNL · Фьючерсы',subtitle:'Плавающий результат открытых позиций',
+  metricSwitch:true,current:p.futuresPnl,summary:p,invested:p.margin});
 }
 function spotDistribution(){
   const a=sums();
@@ -202,8 +230,11 @@ function spotAccounts(){
 }
 function positions(){
  const a=sums(),reservePct=C>0?a.cash/C*100:0,usedPct=C>0?a.invested/C*100:0;
- return `<div class="spotTop"><div class="card tint spotHoldingsCard"><div class="eyebrow">Стоимость монет</div><div class="total">${dollars(a.holdings)}</div><div class="spotHeroBottom"><span class="metric ${cls(a.profit)}">${signed(a.profit)} (${signed(a.invested?a.profit/a.invested*100:0,'pct')})</span><span class="tiny">Вложено ${dollars(a.invested)}</span></div></div>
- <div class="card spotReserveCard"><div class="spotReserveTop"><div class="eyebrow">Резерв</div><span class="reservePercent">${pct(reservePct)}</span></div><div class="total">${dollars(a.cash)}</div><div class="spotReserveFoot"><span>Задействовано ${pct(usedPct)}</span><span>${dollars(a.invested)} из ${dollars(C)}</span></div><div class="reserveProgress"><span style="width:${Math.min(100,Math.max(0,usedPct))}%"></span></div></div></div>
+ const held=['BTC','ETH'].filter(sym=>coin(sym).invested>0);
+ const stack=coinStack(held);
+ return `<div class="spotTop"><div class="card tint spotHoldingsCard"><div class="eyebrow">Стоимость монет</div><div class="total">${dollars(a.holdings)}</div><div class="spotHeroBottom"><span class="metric ${cls(a.profit)}">${signed(a.profit)} (${signed(a.invested?a.profit/a.invested*100:0,'pct')})</span><span class="tiny">Вложено ${dollars(a.invested)}</span></div>${stack?`<div class="spotHeroCoins">${stack}<span class="tiny">${held.length} ${held.length===1?'монета':'монеты'} в работе</span></div>`:''}</div>
+ <div class="card spotReserveCard reserveMuted"><div class="spotReserveTop"><div class="eyebrow">Резерв <span class="reserveTag">не в PNL</span></div><span class="reservePercent">${pct(reservePct)}</span></div><div class="total">${dollars(a.cash)}</div><div class="spotReserveFoot"><span>Задействовано ${pct(usedPct)}</span><span>${dollars(a.invested)} из ${dollars(C)}</span></div><div class="reserveProgress"><span style="width:${Math.min(100,Math.max(0,usedPct))}%"></span></div><p class="tiny reserveNote">Резерв — это свободные деньги. Он не участвует в расчёте PNL и не распределён по монетам.</p></div></div>
+ ${spotChartBlock()}
  <section class="section"><div class="hrow"><div><div class="sectitle">Монеты</div></div><button type="button" class="btn primary" data-action="new">${icon('plus')} Покупка</button></div><div class="spotList">${['BTC','ETH'].map(spotRow).join('')}</div></section>
  <section class="section spotAllocation"><div class="hrow"><div><div class="sectitle">Распределение спота</div></div><button class="btn" type="button" data-action="gotoCapital">Капитал</button></div>${spotDistribution()}</section>
  ${quoteStrip()}
@@ -212,12 +243,48 @@ function positions(){
  <div class="spotHistoryToggle"><button class="historyToggle" type="button" data-action="toggleHistory"><span>${icon('calendar')} История покупок <span class="historyCount">${s.trades.length}</span></span><span class="chev ${s.spotHistoryOpen?'rotated':''}">⌄</span></button>${s.spotHistoryOpen||s.form?history():''}</div>`;
 }
 
+function coinStack(symbols){
+ // Overlapping round badges: which coins are open, without spelling each one out.
+ const list=[...new Set(symbols.filter(Boolean))].slice(0,4);
+ const extra=Math.max(0,[...new Set(symbols.filter(Boolean))].length-list.length);
+ if(!list.length)return '';
+ const label=sym=>{let t=String(sym).replace(/(USDT|USDC|USD|PERP)$/i,'');
+  // 1000FLOKI is the contract name, not the coin: the badge shows FLOKI.
+  const bare=t.replace(/^\d+/,'');if(bare.length>=3)t=bare;
+  return t.slice(0,4);};
+ return `<span class="coinStack">${list.map(sym=>`<i class="coinChip" title="${escape(String(sym))}">${escape(label(sym))}</i>`).join('')}${extra?`<i class="coinChip more">+${extra}</i>`:''}</span>`;
+}
+const FUTURE_SORTS=[['pnl','Плавающий PNL'],['size','Объём'],['symbol','Монета'],['leverage','Плечо'],['opened','Дата открытия'],['side','Направление']];
+function futureSortValue(p,key){
+ if(key==='size')return Number(p.size)||0;
+ if(key==='symbol')return String(p.symbol||'').toLowerCase();
+ if(key==='leverage')return Number(p.leverage)||0;
+ if(key==='opened')return p.openedAt==null?-Infinity:Number(p.openedAt);
+ if(key==='side')return String(p.side||'').toLowerCase();
+ return Number(p.pnl||0);
+}
 function futuresSorted(){
- return [...s.futuresPositions].filter(p=>p&&p.symbol&&Number.isFinite(Number(p.size))).sort((a,b)=>s.futureSort==='symbol'?String(a.symbol).localeCompare(String(b.symbol)):s.futureSort==='size'?Number(b.size)-Number(a.size):Number(b.pnl||0)-Number(a.pnl||0));
+ const key=s.futureSort,dir=s.futureSortDir<0?-1:1;
+ return [...s.futuresPositions].filter(p=>p&&p.symbol&&Number.isFinite(Number(p.size)))
+  .sort((a,b)=>{const x=futureSortValue(a,key),y=futureSortValue(b,key);
+   if(typeof x==='string'||typeof y==='string')return String(x).localeCompare(String(y))*dir;
+   return (x-y)*dir});
+}
+function futuresSortBar(){
+ const arrow=s.futureSortDir<0?'↓':'↑';
+ return `<div class="futureSortBar">${FUTURE_SORTS.map(([key,name])=>`<button type="button" class="sortChip ${s.futureSort===key?'active':''}" data-sort="${key}" title="Сортировать по «${name}»">${name}${s.futureSort===key?`<span class="sortDir">${arrow}</span>`:''}</button>`).join('')}</div>`;
+}
+function futuresTableHead(){
+ return `<div class="futurePosition futureHead"><span>Монета</span><span class="right"><span class="hLong">Объём · USD</span><span class="hShort">Объём</span></span><span class="right"><span class="hLong">Плавающий PNL</span><span class="hShort">PNL</span></span></div>`;
 }
 function futurePositionLine(p){
- const extra=[p.entryPrice!=null?'Вход '+dollars(p.entryPrice):null,p.markPrice!=null?'Марк '+dollars(p.markPrice):null,p.liqPrice!=null&&p.liqPrice>0?'Ликв. '+dollars(p.liqPrice):null].filter(Boolean).join(' · ');
- return `<div class="futurePosition"><span><strong>${escape(p.symbol)}</strong><span class="tiny">${escape(p.side||'')} ${p.leverage?escape(p.leverage+'×'):''}</span><span class="tiny">${extra||'—'}</span></span><span class="right"><strong>${dollars(p.size)}</strong><span class="tiny">Объём · USD</span></span><span class="right ${p.pnl==null?'neutral':cls(Number(p.pnl))}">${p.pnl==null?'—':signed(Number(p.pnl))}<span class="tiny">Плавающий PNL</span></span></div>`;
+ const side=String(p.side||'').toLowerCase();
+ const sideName=side==='buy'||side==='long'?'Long':side==='sell'||side==='short'?'Short':'—';
+ const badge=`<span class="posBadges"><i class="posBadge ${sideName==='Short'?'short':'long'}">${sideName}</i>${p.leverage?`<i class="posBadge lev">${escape(String(p.leverage))}×</i>`:''}</span>`;
+ const opened=p.openedAt?new Date(Number(p.openedAt)).toLocaleDateString('ru-RU',{day:'numeric',month:'short'}):null;
+ const meta=[p.markPrice!=null?'Марк '+dollars(p.markPrice):null,p.liqPrice!=null&&p.liqPrice>0?'Ликв. '+dollars(p.liqPrice):null,opened?'с '+opened:null].filter(Boolean).join(' · ');
+ const share=Math.max(0,Math.min(100,Number(s.futuresPositions.reduce((m,x)=>m+Math.abs(Number(x.size)||0),0))>0?Math.abs(Number(p.size)||0)/s.futuresPositions.reduce((m,x)=>m+Math.abs(Number(x.size)||0),0)*100:0));
+ return `<div class="futurePosition"><span><span class="futureCoin"><strong>${escape(p.symbol)}</strong>${badge}</span><span class="tiny">${meta||'—'}</span><span class="posBar"><i style="width:${share.toFixed(1)}%"></i></span></span><span class="right"><strong>${dollars(p.size)}</strong></span><span class="right ${p.pnl==null?'neutral':cls(Number(p.pnl))}"><strong>${p.pnl==null?'—':signed(Number(p.pnl))}</strong></span></div>`;
 }
 function futureAccountRow(ex,ac){
  const id=ex.id+':'+ac.id,pp=futuresSorted().filter(p=>p.exchangeId===ex.id&&p.accountId===ac.id);
@@ -245,14 +312,18 @@ function futuresForm(){
  <button class="btn primary full" type="submit">Сохранить</button><p class="tiny">Добавится только название. Биржевые деньги и позиции пока не загружаются.</p></form>`;
 }
 function futures(){
- const body=s.futureMode==='exchange'?s.sources.map(futureExchangeCard).join(''):s.futureMode==='account'?futuresByAccount():futuresSorted().length?futuresSorted().map(futurePositionLine).join(''):'<div class="card emptyState"><div class="sectitle">Нет открытых позиций</div><p>После подключения появятся позиции субаккаунта.</p></div>';
+ const body=s.futureMode==='exchange'?s.sources.map(futureExchangeCard).join(''):s.futureMode==='account'?futuresByAccount():futuresSorted().length?futuresTableHead()+futuresSorted().map(futurePositionLine).join(''):'<div class="card emptyState"><div class="sectitle">Нет открытых позиций</div><p>После подключения появятся позиции субаккаунта.</p></div>';
  const snap=s.bybitSnapshot?.totals,ready=!!s.backendConnection.connected&&!!snap;
  const upl=ready&&snap.perpUPL!=null?Number(snap.perpUPL):null;
- const metrics=[['Баланс субкаунта',ready&&snap.equity!=null?dollars(snap.equity):'—',''],
+ const open=s.futuresPositions.filter(p=>p.exchangeId==='bybit');
+ const metrics=[['Баланс субаккаунта',ready&&snap.equity!=null?dollars(snap.equity):'—',''],
  ['Плавающий PNL',upl!=null?signed(upl):'—',upl==null?'neutral':cls(upl)],
  ['Доступно',ready&&snap.availableBalance!=null?dollars(snap.availableBalance):'—',''],
- ['Открытых позиций',ready?String(s.futuresPositions.filter(p=>p.exchangeId==='bybit').length):'—','']];
- return `<div class="hrow"><div><div class="sectitle">Фьючерсы</div><div class="tiny">Позиции по биржам и субаккаунтам</div></div><span class="pill">${ready?'Bybit подключён':'Нет подключения'}</span></div><div class="futureMetrics">${metrics.map(([name,value,tone])=>`<div class="card tint"><div class="eyebrow">${name}</div><div class="num ${tone}">${value}</div></div>`).join('')}</div><div class="section futurePnlLink"><div><strong>Общий график PNL</strong><span class="tiny">Весь портфель, спот или фьючерсы отдельно</span></div><button class="btn" type="button" data-action="gotoOverview">Посмотреть в обзоре</button></div><section class="section"><div class="futureToolbar"><div><div class="sectitle">Позиции и аккаунты</div><div class="tiny">Раскрывай биржи и выбирай группировку</div></div><button class="btn" type="button" data-action="goConnections">${icon('settings')} Настройки</button></div><div class="futureFilters"><div class="tradeSwitch" role="tablist" aria-label="Группировка фьючерсов">${[['all','Все позиции'],['exchange','По биржам'],['account','По субаккаунтам']].map(([id,name])=>`<button type="button" data-future-mode="${id}" class="${s.futureMode===id?'active':''}">${name}</button>`).join('')}</div><label class="sortLabel">Сортировка <select id="futureSort"><option value="pnl" ${s.futureSort==='pnl'?'selected':''}>PNL</option><option value="size" ${s.futureSort==='size'?'selected':''}>Размер</option><option value="symbol" ${s.futureSort==='symbol'?'selected':''}>Монета</option></select></label></div><div class="sourceList futureResults">${body}</div>${s.futureForm?futuresForm():''}</section>`;
+ ['Открытых позиций',ready?String(open.length):'—','']];
+ const coins=coinStack(open.map(p=>p.symbol));
+ return `<div class="futureMetrics">${metrics.map(([name,value,tone])=>`<div class="card tint"><div class="eyebrow">${name}</div><div class="num ${tone}">${value}</div>${name==='Открытых позиций'&&coins?`<div class="metricCoins">${coins}</div>`:''}</div>`).join('')}</div>
+ ${futuresChartBlock()}
+ <section class="section"><div class="futureToolbar"><div><div class="sectitle">Позиции и аккаунты</div><div class="tiny">Раскрывай биржи и выбирай группировку</div></div><button class="btn" type="button" data-action="goConnections">${icon('settings')} Настройки</button></div><div class="futureFilters"><div class="tradeSwitch" role="tablist" aria-label="Группировка фьючерсов">${[['all','Все позиции'],['exchange','По биржам'],['account','По субаккаунтам']].map(([id,name])=>`<button type="button" data-future-mode="${id}" class="${s.futureMode===id?'active':''}">${name}</button>`).join('')}</div></div>${s.futureMode==='all'?futuresSortBar():''}<div class="sourceList futureResults">${body}</div>${s.futureForm?futuresForm():''}</section>`;
 }
 function capitalSettings(){
  const a=sums();
@@ -354,7 +425,8 @@ function onSnapshot(data){
    markPrice:p.markPrice!=null&&Number.isFinite(Number(p.markPrice))?Number(p.markPrice):null,
    liqPrice:p.liqPrice!=null&&Number.isFinite(Number(p.liqPrice))?Number(p.liqPrice):null,
    leverage:Number(p.leverage)||null,
-   pnl:p.pnl==null?null:Number(p.pnl),initialMargin:p.initialMargin==null?null:Number(p.initialMargin),cumulativeRealisedPnl:p.cumulativeRealisedPnl==null?null:Number(p.cumulativeRealisedPnl)
+   pnl:p.pnl==null?null:Number(p.pnl),initialMargin:p.initialMargin==null?null:Number(p.initialMargin),cumulativeRealisedPnl:p.cumulativeRealisedPnl==null?null:Number(p.cumulativeRealisedPnl),
+   openedAt:p.openedAt==null?null:Number(p.openedAt)
   }))
  );
  s.bybitSnapshot={totals:data.totals,account:data.account,updatedAt:data.updatedAt,warning:data.balanceNote};
@@ -376,6 +448,15 @@ window.fxmr4App={onBackendStatus,onSnapshot,onDisconnected};
       }
       if(Array.isArray(saved.snapshots))s.snapshots=saved.snapshots.filter(p=>Number.isFinite(p.time)&&Number.isFinite(p.pnl)).slice(-1500);
       if(Array.isArray(saved.portfolioSnapshots))s.portfolioSnapshots=saved.portfolioSnapshots.filter(p=>p&&Number.isFinite(Number(p.time))&&Number.isFinite(Number(p.total))&&Number.isFinite(Number(p.futures))).slice(-1500);
+      if(saved.chartPeriod&&typeof saved.chartPeriod==='object'){
+        for(const k of ['overview','spot','futures'])if(PERIODS[saved.chartPeriod[k]])s.chartPeriod[k]=saved.chartPeriod[k];
+        s.period=s.chartPeriod.overview;
+      }
+      if(saved.chartMetric&&typeof saved.chartMetric==='object'){
+        for(const k of ['spot','futures'])if(['pnl','balance'].includes(saved.chartMetric[k]))s.chartMetric[k]=saved.chartMetric[k];
+      }
+      if(saved.futureSort&&FUTURE_SORTS.some(([k])=>k===saved.futureSort))s.futureSort=saved.futureSort;
+      if(saved.futureSortDir===-1||saved.futureSortDir===1)s.futureSortDir=saved.futureSortDir;
       if(Array.isArray(saved.sources)){const sources=saved.sources.filter(x=>x&&typeof x.id==='string'&&typeof x.name==='string').slice(0,25).map(x=>({id:x.id.slice(0,60),name:x.name.slice(0,60),connected:false,accounts:Array.isArray(x.accounts)?x.accounts.filter(y=>y&&typeof y.id==='string'&&typeof y.name==='string').slice(0,60).map(y=>({id:y.id.slice(0,60),name:y.name.slice(0,40),balance:null})):[]}));if(!sources.some(x=>x.id==='bybit'))sources.unshift({id:'bybit',name:'Bybit',connected:false,accounts:[]});s.sources=sources;}
     }catch(e){console.warn('Локальное сохранение:',e)}
   }
@@ -387,6 +468,10 @@ window.fxmr4App={onBackendStatus,onSnapshot,onDisconnected};
         quotes:s.quotes,
         snapshots:s.snapshots,
         portfolioSnapshots:s.portfolioSnapshots,
+        chartPeriod:s.chartPeriod,
+        chartMetric:s.chartMetric,
+        futureSort:s.futureSort,
+        futureSortDir:s.futureSortDir,
         sources:s.sources.map(ex=>({
           id:ex.id,name:ex.name,
           accounts:ex.accounts.filter(ac=>ac.id!=='bybit-subaccount').map(ac=>({id:ac.id,name:ac.name}))
@@ -543,7 +628,11 @@ function handleClick(e){
  const settings=e.target.closest('[data-settings-pane]');
  if(settings){s.settingsPane=settings.dataset.settingsPane;s.pendingRemove=null;render();return}
  const per=e.target.closest('[data-period]');
- if(per){s.period=per.dataset.period;chart();render();return}
+ if(per){const key=per.dataset.chart||'overview';s.chartPeriod[key]=per.dataset.period;if(key==='overview')s.period=per.dataset.period;chart();render();return}
+ const met=e.target.closest('[data-metric]');
+ if(met){s.chartMetric[met.dataset.chart]=met.dataset.metric;render();return}
+ const sort=e.target.closest('[data-sort]');
+ if(sort){const key=sort.dataset.sort;if(s.futureSort===key)s.futureSortDir*=-1;else{s.futureSort=key;s.futureSortDir=(key==='symbol'||key==='side')?1:-1}render();return}
  const mode=e.target.closest('[data-future-mode]');
  if(mode){s.futureMode=mode.dataset.futureMode;render();return}
  const btn=e.target.closest('[data-action]');if(!btn)return;
@@ -587,7 +676,6 @@ function handleSubmit(e){
 }
 function handleChange(e){
  if(e.target.id==='coin'&&s.editing===null){const input=$('entry');if(input)input.value=Number(s.quotes[e.target.value]?.price||initial[e.target.value])}
- if(e.target.id==='futureSort'){s.futureSort=e.target.value;render()}
 }
   document.addEventListener('click',handleClick);
   document.addEventListener('submit',handleSubmit);
