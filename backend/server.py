@@ -22,7 +22,7 @@ import state as saved_state
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import urlencode, urlsplit, parse_qs
 from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -41,6 +41,7 @@ RECV_WINDOW = "5000"
 LOCK = threading.RLock()
 EPHEMERAL = {"key": None, "secret": None, "label": "Subaccount"}
 CACHE = {"at": 0.0, "data": None}
+EXTRA_CACHE = {}
 MIME = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
         ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml"}
 
@@ -189,6 +190,49 @@ def snapshot():
         CACHE["at"], CACHE["data"] = time.monotonic(), data
     return data
 
+
+
+def linked_accounts():
+    key, secret, label = credentials()
+    out = []
+    if key and secret:
+        out.append({"id": "bybit-subaccount", "label": label, "exchange": "Bybit", "legacy": True})
+    for a in saved_state.list_extra_accounts():
+        out.append({"id": a["id"], "label": a["label"], "exchange": "Bybit", "legacy": False})
+    return out
+
+
+def snapshot_extra(account_id):
+    account = next((a for a in saved_state.list_extra_accounts() if a["id"] == account_id), None)
+    if account is None:
+        raise BybitFailure("Субаккаунт не найден")
+    with LOCK:
+        cached = EXTRA_CACHE.get(account_id)
+        if cached and time.monotonic() - cached["at"] < 30:
+            return cached["data"]
+    key, secret = account["key"], account["secret"]
+    meta = request_bybit("/v5/user/query-api", {}, key, secret)
+    if meta.get("readOnly") != 1 or meta.get("isMaster") is True:
+        raise BybitFailure("Ключ не имеет прав Read-Only субаккаунта")
+    wallet = request_bybit("/v5/account/wallet-balance", {"accountType": "UNIFIED"}, key, secret)
+    if not wallet.get("list"):
+        raise BybitFailure("Bybit не вернул Unified Account")
+    a = wallet["list"][0]
+    positions = collect_positions(key, secret, "USDT") + collect_positions(key, secret, "USDC")
+    for p in positions:
+        p["accountId"] = account_id
+    result = {"exchange": "Bybit",
+              "account": {"id": account_id, "name": account["label"], "type": "UNIFIED"},
+              "totals": {"equity": _num(a.get("totalEquity")),
+                         "walletBalance": _num(a.get("totalWalletBalance")),
+                         "availableBalance": _num(a.get("totalAvailableBalance")),
+                         "perpUPL": _num(a.get("totalPerpUPL")),
+                         "accountInitialMargin": _num(a.get("totalInitialMargin")),
+                         "positionCount": len(positions)},
+              "positions": positions, "updatedAt": int(time.time() * 1000)}
+    with LOCK:
+        EXTRA_CACHE[account_id] = {"at": time.monotonic(), "data": result}
+    return result
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "FXMR4/1.0"
