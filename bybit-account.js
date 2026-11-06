@@ -91,6 +91,7 @@
       status.formOpen=false;
       status.account=reply.account||fields.label;
       window.fxmr4App?.onBackendStatus?.({available:true,configured:true,connected:false});
+      status.busy=false;
       await refresh();
     }catch(e){
       status.error=e.message||"Ошибка подключения Bybit";
