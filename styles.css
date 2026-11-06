@@ -46,7 +46,7 @@
 @media(max-width:400px){.tab{font-size:11px}}
 @media(min-width:961px){
   body{background:var(--bg)}
-  .page{max-width:1480px;padding:0 24px;margin:26px auto 50px}
+  .page{width:100%;max-width:none;padding:0 24px;margin:26px auto 50px}
   .shell{display:grid;grid-template-columns:238px minmax(0,1fr);padding:0;min-height:calc(100vh - 54px);overflow:hidden;border-radius:20px}
   .sidebar{padding:25px 17px;border-right:1px solid var(--border);display:flex;flex-direction:column;background:var(--surface)}
   .header{align-items:flex-start;flex-direction:column;gap:16px}
