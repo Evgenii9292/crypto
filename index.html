@@ -355,7 +355,7 @@ function futureAccountRow(ex,ac){
 }
 function futureExchangeCard(ex){
  const opened=!!s.openedExchanges[ex.id],balance=ex.id==='bybit'&&s.backendConnection.connected&&s.bybitSnapshot?.totals?.equity!=null?dollars(s.bybitSnapshot.totals.equity):'—';
- return `<section class="sourceCard"><button class="sourceHeader" type="button" data-action="toggleExchange" data-id="${escape(ex.id)}"><span class="sourceLogo">${escape(ex.name.slice(0,1))}</span><span class="sourceName"><strong>${escape(ex.name)}</strong><span class="tiny">${ex.accounts.length} субаккаунтов · ${ex.connected?'Подключено':'Не подключено'}</span></span><span class="sourceHeaderRight">${balance} <span class="chev ${opened?'rotated':''}">⌄</span></span></button>${opened?`<div class="sourceChildren">${ex.accounts.length?ex.accounts.map(ac=>futureAccountRow(ex,ac)).join(''):'<div class="sourceEmpty">Субаккаунты пока не добавлены.</div>'}<div class="sourceAction"><button class="btn" type="button" data-action="addAccount" data-id="${escape(ex.id)}">${icon('plus')} Субаккаунт</button></div></div>`:''}</section>`;
+ return `<section class="sourceCard"><button class="sourceHeader" type="button" data-action="toggleExchange" data-id="${escape(ex.id)}"><span class="sourceLogo">${escape(ex.name.slice(0,1))}</span><span class="sourceName"><strong>${escape(ex.name)}</strong><span class="tiny">${ex.accounts.length} субаккаунтов · ${ex.connected?'Подключено':'Не подключено'}</span></span><span class="sourceHeaderRight">${balance} <span class="chev ${opened?'rotated':''}">⌄</span></span></button>${opened?`<div class="sourceChildren">${ex.accounts.length?ex.accounts.map(ac=>futureAccountRow(ex,ac)).join(''):'<div class="sourceEmpty">Субаккаунты пока не добавлены.</div>'}</div>`:''}</section>`;
 }
 function futuresByAccount(){
  const acc=s.sources.flatMap(ex=>ex.accounts.map(ac=>({ex,ac})));
@@ -383,7 +383,7 @@ function futures(){
  const coins=coinStack(open.map(p=>p.symbol));
  return `<div class="futureMetrics">${metrics.map(([name,value,tone])=>`<div class="card tint"><div class="eyebrow">${name}</div><div class="num ${tone}">${value}</div>${name==='Открытых позиций'&&coins?`<div class="metricCoins">${coins}</div>`:''}</div>`).join('')}</div>
  ${futuresChartBlock()}
- <section class="section"><div class="futureToolbar"><div><div class="sectitle">Позиции и аккаунты</div><div class="tiny">Раскрывай биржи и выбирай группировку</div></div><button class="btn" type="button" data-action="goConnections">${icon('settings')} Настройки</button></div><div class="futureFilters"><div class="tradeSwitch" role="tablist" aria-label="Группировка фьючерсов">${[['all','Все позиции'],['exchange','По биржам'],['account','По субаккаунтам']].map(([id,name])=>`<button type="button" data-future-mode="${id}" class="${s.futureMode===id?'active':''}">${name}</button>`).join('')}</div></div>${s.futureMode==='all'?futuresSortBar():''}<div class="sourceList futureResults">${body}</div>${s.futureForm?futuresForm():''}</section>`;
+ <section class="section"><div class="futureToolbar"><div><div class="sectitle">Позиции и аккаунты</div><div class="tiny">Раскрывай биржи и выбирай группировку</div></div><button class="btn" type="button" data-action="goConnections">${icon('settings')} Настройки</button></div><div class="futureFilters"><div class="tradeSwitch" role="tablist" aria-label="Группировка фьючерсов">${[['all','Все позиции'],['exchange','По биржам'],['account','По субаккаунтам']].map(([id,name])=>`<button type="button" data-future-mode="${id}" class="${s.futureMode===id?'active':''}">${name}</button>`).join('')}</div></div>${s.futureMode==='all'?futuresSortBar():''}<div class="sourceList futureResults">${body}</div></section>`;
 }
 function capitalSettings(){
  const a=sums();
@@ -408,7 +408,8 @@ function bybitConnectorHead(){
  return `<div class="hrow connectorHead"><div class="logoArea"><div class="appicon">${icon('shield')}</div><div><div class="coinName">Bybit</div><div class="coinSub">${escape(sub)}</div></div></div>${badge}</div>`;
 }
 function connections(){
- return `<div class="hrow"><div><div class="sectitle">Настройки портфеля</div><div class="tiny">Подключения, субаккаунты и капитал</div></div></div><div class="settingsTabs" role="tablist" aria-label="Настройки">${[['connections','Подключения'],['capital','Капитал']].map(([key,name])=>`<button type="button" role="tab" aria-selected="${s.settingsPane===key}" class="${s.settingsPane===key?'active':''}" data-settings-pane="${key}">${name}</button>`).join('')}</div>${s.settingsPane==='capital'?capitalSettings():`<div class="card connectorCard">${bybitConnectorHead()}<div id="bybitConnectionPanel"></div><div class="safeNote">Ключ вводится на защищённом сервере FXMR4 и хранится там зашифрованным. Права ключа — только чтение, торговля недоступна.</div></div>${accountSettings()}`}`;
+ return `<div class="settingsTabs" role="tablist" aria-label="Настройки">${[['connections','Подключения'],['capital','Капитал']].map(([key,name])=>`<button type="button" role="tab" aria-selected="${s.settingsPane===key}" class="${s.settingsPane===key?'active':''}" data-settings-pane="${key}">${name}</button>`).join('')}</div>
+ ${s.settingsPane==='capital'?capitalSettings():`<div class="card connectorCard"><div class="hrow connectorTop"><div><div class="sectitle">Субаккаунты</div><div class="tiny">Подключения Bybit · отдельные API-ключи</div></div></div><div id="bybitConnectionPanel"></div></div>`}`;
 }
 function exchangeFooterStatus(){
  const all=Array.isArray(s.sources)?s.sources:[];
