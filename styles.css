@@ -412,10 +412,6 @@
 }
 
 /* --- Overview: money on the accounts, not the planned budget --- */
-.heroMeta{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:14px;padding-top:13px;border-top:1px solid var(--border)}
-.heroMetaItem{display:flex;align-items:center;gap:8px;min-width:0}
-.heroMeta .coinChip{width:26px;height:26px;font-size:7px;background:var(--surface);border-color:var(--surface3);margin-left:-7px}
-.heroMeta .coinChip:first-child{margin-left:0}
 .overviewHero .total{font-size:38px}
 @media(max-width:600px){.overviewHero .total{font-size:34px}}
 
@@ -430,3 +426,8 @@
 .connectorState .bybitConnectActions{margin-top:12px}
 .connectorCard .safeNote{margin-top:14px;font-size:11px;line-height:1.55;color:var(--muted);background:var(--surface2)}
 @media(prefers-color-scheme:dark){.connectBadge.warn{color:#e8b866}}
+
+/* --- Overview: account totals only; exchanges live in settings --- */
+.settingsExchanges{margin-top:16px;padding-top:14px;border-top:1px solid var(--border)}
+.settingsExchangesTitle{margin-bottom:8px;font-weight:620;color:var(--sub)}
+.settingsExchanges .sourceList{margin-top:0}
