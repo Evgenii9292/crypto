@@ -22,11 +22,14 @@ class TestReadOnlySubaccount(TestCase):
         # Tests must never read real encrypted API credentials on a production VPS.
         self.disk = patch.object(server.saved_state, "read_credentials", return_value=None)
         self.disk.start()
+        self.extras = patch.object(server.saved_state, "list_extra_accounts", return_value=[])
+        self.extras.start()
         with server.LOCK:
             server.EPHEMERAL.update(key=None, secret=None, label="Subaccount")
             server.CACHE.update(at=0.0, data=None)
 
     def tearDown(self):
+        self.extras.stop()
         self.disk.stop()
         self.env.stop()
         with server.LOCK:
@@ -91,6 +94,45 @@ class TestReadOnlySubaccount(TestCase):
         server.EPHEMERAL.update(key="temporary-api-key", secret="temporary-secret", label="Sub 2")
         self.assertEqual(server.credentials(), ("temporary-api-key", "temporary-secret", "Sub 2"))
 
+
+    def test_account_listing_never_exposes_api_credentials(self):
+        self.extras.stop()
+        with patch.object(server.saved_state, "list_extra_accounts",
+                          return_value=[{"id": "sub-test", "label": "Second",
+                                         "key": "private-test-key", "secret": "private-test-secret"}]):
+            data = server.linked_accounts()
+        self.extras.start()
+        self.assertEqual(len(data), 2)
+        self.assertEqual(data[1]["id"], "sub-test")
+        payload = json.dumps(data)
+        self.assertNotIn("private-test-key", payload)
+        self.assertNotIn("private-test-secret", payload)
+
+    def test_second_subaccount_returns_only_its_own_positions(self):
+        self.extras.stop()
+        extra = {"id": "sub-test", "label": "Second", "key": "private-test-key", "secret": "private-test-secret"}
+        def query(path, params, key, secret):
+            self.assertEqual(key, "private-test-key")
+            self.assertEqual(secret, "private-test-secret")
+            if path.endswith("query-api"):
+                return {"readOnly": 1, "isMaster": False}
+            if path.endswith("wallet-balance"):
+                return {"list": [{"totalEquity": "300", "totalPerpUPL": "-4"}]}
+            if params.get("settleCoin") == "USDT":
+                return {"list": [{"symbol": "ADAUSDT", "side": "Buy", "size": "5",
+                                   "positionValue": "90", "createdTime": "1730000000000",
+                                   "unrealisedPnl": "-4"}]}
+            return {"list": []}
+        try:
+            with patch.object(server.saved_state, "list_extra_accounts", return_value=[extra]):
+                with patch.object(server, "request_bybit", side_effect=query):
+                    result = server.snapshot_extra("sub-test")
+            self.assertEqual(result["account"]["id"], "sub-test")
+            self.assertEqual(result["positions"][0]["accountId"], "sub-test")
+            self.assertEqual(result["totals"]["equity"], 300)
+            self.assertNotIn("private-test-secret", json.dumps(result))
+        finally:
+            self.extras.start()
 
     def test_rename_endpoint_requires_same_origin_header(self):
         """A rename is a write: it must carry the same-origin action header."""
