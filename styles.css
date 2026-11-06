@@ -582,3 +582,23 @@
  .overview-aside .assetSummary{min-height:104px;padding:15px}
  .assetTopline>strong{font-size:19px}
 }
+
+/* Spot: labels at the top and account values anchored to the bottom. */
+.spotTop{align-items:stretch}
+.spotTop .spotHoldingsCard,.spotTop .spotReserveCard{
+ display:flex;
+ flex-direction:column;
+ justify-content:space-between;
+ align-items:stretch;
+ min-height:164px;
+ padding:19px 21px;
+}
+.spotTop .spotHoldingsCard>.eyebrow,.spotTop .spotReserveTop>.eyebrow{margin:0}
+.spotTop .spotCardBottom{margin-top:auto;display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding-top:22px}
+.spotTop .spotReserveTop{align-items:flex-start}
+.spotTop .spotReserveCard .total{font-size:32px}
+.spotTop .spotHeroBottom{margin:0}
+@media(max-width:600px){
+ .spotTop .spotHoldingsCard,.spotTop .spotReserveCard{padding:17px;min-height:140px}
+ .spotTop .spotCardBottom{padding-top:18px}
+}
