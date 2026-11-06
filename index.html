@@ -374,8 +374,11 @@ function exchangeFooterStatus(){
  if(s.backendConnection.error&&s.backendConnection.configured&&!s.backendConnection.connected)
   return {text:'Bybit · нет связи',error:true,details:String(s.backendConnection.error)};
  if(failed)return {text:String(failed.name||'Биржа')+' · требуется проверка',error:true,details:String(failed.connectionError||'Нет подключения')};
+ // An exchange added without an API is unconnected, not an expired key.
+ const offline=all.find(ex=>!ex.connected&&(ex.id!=='bybit'||s.backendConnection.configured));
+ if(offline)return {text:String(offline.name||'Биржа')+' · не подключена',error:true,details:'Нет действующего подключения'};
  const connected=all.filter(ex=>ex.connected);
- return connected.length?{text:connected.length===1?'Биржа подключена':'Биржи подключены',error:false,details:connected.map(ex=>ex.name).join(', ')}:{text:'Биржи не подключены',error:false,details:''};
+ return connected.length?{text:'Биржи подключены',error:false,details:connected.map(ex=>ex.name).join(', ')}:{text:'Биржи не подключены',error:false,details:''};
 }
 function render(){
  const views={overview,positions,futures,connections};
