@@ -188,7 +188,7 @@ function overviewSource(ex){
  const spot=isBybit?`<div class="sourceSub"><button type="button" class="sourceSubHeader" data-action="toggleAccount" data-id="bybit:spot-fxmr4"><span class="accountIdentity"><strong>fxmr4</strong><span class="accountTag">Спот</span></span><span class="sourceSubRight">${inlineMetric(a.profit,a.profit)} <span class="chev ${s.openedAccounts['bybit:spot-fxmr4']?'rotated':''}">⌄</span></span></button>${s.openedAccounts['bybit:spot-fxmr4']?`<div class="sourcePositions">${[['BTC',coin('BTC')],['ETH',coin('ETH')]].map(([sym,x])=>`<div class="sourcePosition"><strong>${sym}</strong><span>${dollars(x.value)}</span><span class="${cls(x.profit)}">${signed(x.profit)}</span></div>`).join('')}</div>`:''}</div>`:'';
  const accounts=ex.accounts.map(ac=>{
   const id=ex.id+':'+ac.id,pp=s.futuresPositions.filter(p=>p.exchangeId===ex.id&&p.accountId===ac.id);
-  const isLinked=isBybit&&ac.id==='bybit-subaccount'&&s.backendConnection.connected;
+  const isLinked=isBybit&&!!s.bybitAccountsSnapshots?.[ac.id]&&s.backendConnection.connected;
   const current=isLinked&&pp.every(p=>p.pnl!=null)?pp.reduce((sum,p)=>sum+Number(p.pnl),0):null;
   return `<div class="sourceSub"><div class="accountRow"><button type="button" class="sourceSubHeader" data-action="toggleAccount" data-id="${escape(id)}"><span class="accountIdentity"><strong>${escape(ac.name)}</strong><span class="accountTag">Фьючерсы</span></span><span class="sourceSubRight">${inlineMetric(current,null)} <span class="chev ${s.openedAccounts[id]?'rotated':''}">⌄</span></span></button><button class="accountManage" type="button" data-action="manageAccount" data-id="${escape(id)}" aria-label="Настройки ${escape(ac.name)}" title="Управление субаккаунтом">${icon('settings')}</button></div>${s.openedAccounts[id]?(pp.length?pp.map(futurePositionLine).join(''):'<div class="sourceEmpty">Нет открытых позиций или счёт не подключён.</div>'):''}</div>`;
  }).join('');
@@ -348,7 +348,7 @@ function futurePositionLine(p){
 }
 function futureAccountRow(ex,ac){
  const id=ex.id+':'+ac.id,pp=futuresSorted().filter(p=>p.exchangeId===ex.id&&p.accountId===ac.id);
- const linked=ex.id==='bybit'&&ac.id==='bybit-subaccount'&&s.backendConnection.connected;
+ const linked=ex.id==='bybit'&&!!s.bybitAccountsSnapshots?.[ac.id]&&s.backendConnection.connected;
  const current=linked&&pp.every(p=>p.pnl!=null)?pp.reduce((v,p)=>v+Number(p.pnl),0):null;
  const pnl=`<span class="accountMetrics"><span><small>Сейчас</small><b class="${current==null?'neutral':cls(current)}">${current==null?'—':signed(current)}</b></span><span><small>Всё время</small><b class="neutral" title="Для точного расчёта нужна история закрытых позиций">—</b></span></span>`;
  return `<div class="sourceSub"><div class="accountRow"><button type="button" class="sourceSubHeader" data-action="toggleAccount" data-id="${escape(id)}"><span class="accountIdentity"><strong>${escape(ac.name)}</strong><span class="accountTag">Фьючерсы</span></span><span class="sourceSubRight">${pnl}<span class="chev ${s.openedAccounts[id]?'rotated':''}">⌄</span></span></button><button class="accountManage" type="button" data-action="manageAccount" data-id="${escape(id)}" aria-label="Настройки ${escape(ac.name)}">${icon('settings')}</button></div>${s.openedAccounts[id]?(pp.length?pp.map(futurePositionLine).join(''):'<div class="sourceEmpty">Нет открытых позиций или API не подключён.</div>'):''}</div>`;
@@ -415,7 +415,7 @@ function exchangeFooterStatus(){
  const all=Array.isArray(s.sources)?s.sources:[];
  const failed=all.find(ex=>ex.connectionError||ex.needsReconnect||ex.status==='error');
  if(s.backendConnection.error&&s.backendConnection.configured&&!s.backendConnection.connected)
-  return {text:'Bybit · нет связи',error:true,details:String(s.backendConnection.error)};
+  return {text:String(s.backendConnection.error).slice(0,60),error:true,details:String(s.backendConnection.error)};
  if(failed)return {text:String(failed.name||'Биржа')+' · требуется проверка',error:true,details:String(failed.connectionError||'Нет подключения')};
  // An exchange added without an API is unconnected, not an expired key.
  const offline=all.find(ex=>!ex.connected&&(ex.id!=='bybit'||s.backendConnection.configured));
@@ -561,17 +561,19 @@ function onSnapshot(data){
  recordPortfolioSnapshot();saveLocal(false);render();
 }
 function applyCloudState(){
- // Only user-authored state comes from VPS. Keep live Bybit account and
- // positions in memory while refreshing Spot purchases and account labels.
- const bybit=s.sources.find(x=>x.id==='bybit');
- const linked=bybit?.accounts?.find(x=>x.id==='bybit-subaccount');
+ // Cloud owns manual Spot allocations. The live API accounts are owned by VPS
+ // and must survive a cloud refresh, including every non-legacy subaccount.
+ const previous=s.sources.find(x=>x.id==='bybit');
+ const linked=previous?.accounts?.filter(a=>a.apiLinked)||[];
  loadLocal();
- if(linked&&s.backendConnection.connected){
-  let exchange=s.sources.find(x=>x.id==='bybit');
-  if(!exchange){exchange={id:'bybit',name:'Bybit',connected:true,accounts:[]};s.sources.unshift(exchange)}
-  exchange.connected=true;
-  if(!exchange.accounts.some(x=>x.id==='bybit-subaccount'))exchange.accounts.push(linked);
+ let bybit=s.sources.find(x=>x.id==='bybit');
+ if(!bybit){bybit={id:'bybit',name:'Bybit',connected:false,accounts:[]};s.sources.unshift(bybit)}
+ for(const ac of linked){
+  const prior=bybit.accounts.find(x=>x.id===ac.id);
+  if(prior)Object.assign(prior,ac);
+  else bybit.accounts.push(ac);
  }
+ bybit.connected=!!s.backendConnection.connected;
  render();
 }
 window.fxmr4App={onBackendStatus,onSnapshot,onAccounts,onDisconnected,applyCloudState};
