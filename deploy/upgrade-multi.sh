@@ -7,7 +7,7 @@ echo "[1/4] Проверяем код"
 python3 -m py_compile backend/server.py backend/state.py
 python3 -m unittest discover -s backend -p 'test_*.py' -v
 echo "[2/4] Проверяем сохранность старого API"
-if [[ ! -s /var/lib/fxmr4/bybit.cred ]] &&
+if [[ ! -s /var/lib/fxmr4/bybit.cred && ! -s /var/lib/fxmr4/bybit-accounts.cred ]] &&
    ! grep -Eq '^BYBIT_SUBACCOUNT_KEY=[^[:space:]]{10,}' /etc/fxmr4/fxmr4.env; then
   echo "СТОП: старый API-ключ не обнаружен на диске. Перезапуск может потерять ключ из RAM."
   echo "Проверь, сохранён ли он на VPS, прежде чем перезапускать."
@@ -31,15 +31,15 @@ auth_user="${auth_user:-fxmr4}"
 if [[ -z "$auth_pass" ]]; then
   echo "Пароль FXMR4 отсутствует в env, проверь конфигурацию"; exit 1
 fi
-api_result="$(printf 'user = "%s:%s"\\n' "$auth_user" "$auth_pass" |
+api_result="$(printf 'user = "%s:%s"\n' "$auth_user" "$auth_pass" |
   curl --fail --silent --show-error --max-time 12 --config - http://127.0.0.1:8768/api/accounts)"
 printf '%s' "$api_result" | python3 -c 'import json,sys; obj=json.load(sys.stdin); assert isinstance(obj.get("accounts"),list), "Новый API не отвечает"; print("API субаккаунтов работает, число подключений:",len(obj["accounts"]))'
-ui="$(printf 'user = "%s:%s"\\n' "$auth_user" "$auth_pass" |
+ui="$(printf 'user = "%s:%s"\n' "$auth_user" "$auth_pass" |
   curl --fail --silent --show-error --max-time 10 --config - http://127.0.0.1:8768/)"
-printf '%s' "$ui" | grep -q 'fxmr4-ui-release' || { echo "ОШИБКА: VPS показывает старый index.html"; exit 1; }
-js="$(printf 'user = "%s:%s"\\n' "$auth_user" "$auth_pass" |
+[[ "$ui" == *fxmr4-ui-release* ]] || { echo "ОШИБКА: VPS показывает старый index.html"; exit 1; }
+js="$(printf 'user = "%s:%s"\n' "$auth_user" "$auth_pass" |
   curl --fail --silent --show-error --max-time 10 --config - http://127.0.0.1:8768/bybit-account.js)"
-printf '%s' "$js" | grep -q 'bybitExchangeBadge' || { echo "ОШИБКА: на VPS старый bybit-account.js"; exit 1; }
+[[ "$js" == *bybitExchangeBadge* ]] || { echo "ОШИБКА: на VPS старый bybit-account.js"; exit 1; }
 unset auth_pass auth_user api_result ui js
 echo "Готово: обновлённый интерфейс и новый API реально отдаются VPS."
 echo "Сохранённые API-ключи и покупки не изменены."
