@@ -92,7 +92,9 @@ async function kline(sym,p){
   if(raw?.retCode!==0||!Array.isArray(rows)||rows.length<2)throw Error('Invalid kline response');
   const data=rows.map(item=>({time:Number(item[0]),price:Number(item[4])})).filter(q=>Number.isFinite(q.time)&&q.price>0).sort((a,b)=>a.time-b.time);
   if(data.length<2)throw Error('Empty candle history');
-  return {source:host.includes('bybit.id')?'Bybit Spot (ID)':'Bybit Spot',data};
+  const windowStart=p==='all'?-Infinity:Date.now()-periods[p].days*86400000;
+  const trimmed=data.filter(q=>q.time>=windowStart);
+  return {source:host.includes('bybit.id')?'Bybit Spot (ID)':'Bybit Spot',data:trimmed.length>=2?trimmed:data};
  }));
  return results;
 }
@@ -104,7 +106,9 @@ async function fallbackHistory(sym,p){
  if(!Array.isArray(bars)||bars.length<2)throw Error('No fallback candles');
  const data=bars.map(x=>({time:Number(x.time)*1000,price:Number(x.close)})).filter(x=>Number.isFinite(x.time)&&x.price>0);
  if(data.length<2)throw Error('Invalid fallback candles');
- return {source:'CryptoCompare',data};
+ const windowStart=p==='all'?-Infinity:Date.now()-periods[p].days*86400000;
+ const trimmed=data.filter(q=>q.time>=windowStart);
+ return {source:'CryptoCompare',data:trimmed.length>=2?trimmed:data};
 }
 async function refreshHistories(force=false){
  if(!mount||!document.getElementById('strategyMount'))return;
