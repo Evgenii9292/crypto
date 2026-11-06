@@ -38,7 +38,7 @@
       <div class="sideFooter"><div id="cloudStatus" class="cloudSyncStatus" aria-live="polite"></div><div class="connectionStatus"><span class="status-dot" id="connectionDot"></span><span id="connectionStatusText">Биржи не подключены</span></div><button class="btn navConfig" type="button" data-action="goConnections"><svg class="icon" aria-hidden="true"><use href="#settings"></use></svg> Настройки</button></div>
     </aside>
     <section class="workspace">
-      <div class="workspaceHead"><div class="workspaceTitleLine"><h1 id="pageTitle">Обзор</h1><span class="brandBadge">FXMR4</span></div></div>
+      <div class="workspaceHead"><div class="workspaceTitleLine"><h1 id="pageTitle">Обзор</h1></div></div>
       <div id="content" class="pane" role="tabpanel" aria-live="polite"><div class="skeleton">Загружаю портфель…</div></div>
       <div id="message" aria-live="polite"></div>
     </section>
@@ -143,14 +143,15 @@ function pnlChartBlock(opts){
  const key=opts.key,kind=opts.kind||s.pnlMode,period=s.chartPeriod[key]||'7d';
  const metric=opts.metricSwitch?(s.chartMetric[key]||'pnl'):'pnl';
  const current=opts.current==null?null:Number(opts.current);
+ const subtitle=opts.subtitle===undefined?'Динамика результатов по позициям':opts.subtitle;
  const shift=metric==='balance'&&opts.invested!=null?Number(opts.invested):null;
  const showModes=!!opts.modes;
  const metricSwitch=opts.metricSwitch?`<div class="pnlMode"><button class="${metric==='pnl'?'active':''}" data-metric="pnl" data-chart="${key}" type="button">PNL</button><button class="${metric==='balance'?'active':''}" data-metric="balance" data-chart="${key}" type="button">Баланс</button></div>`:'';
- return `<section class="section pnlChart card"><div class="hrow pnlChartHead"><div><div class="sectitle">${opts.title||'PNL · Портфель'}</div><div class="tiny">${opts.subtitle||'Динамика результатов по позициям'}</div></div>${periodButtons(period,key)}</div>${showModes?`<div class="pnlMode">${[['all','Все'],['spot','Спот'],['futures','Фьючерсы']].map(([k,name])=>`<button class="${kind===k?'active':''}" data-pnl-mode="${k}" type="button">${name}</button>`).join('')}</div>`:''}${metricSwitch}<div class="chartbox">${chartHTML(kind,period,shift)}</div><div class="chartlegend"><span>${chartCaption(kind,period,opts.summary,shift)}</span><strong class="${current==null?'neutral':cls(current)}">${current==null?'—':signed(current)}</strong></div></section>`;
+ return `<section class="section pnlChart card"><div class="hrow pnlChartHead"><div><div class="sectitle">${opts.title||'Портфель'}</div>${subtitle?`<div class="tiny">${escape(subtitle)}</div>`:''}</div>${periodButtons(period,key)}</div>${showModes?`<div class="pnlMode">${[['all','Все'],['spot','Спот'],['futures','Фьючерсы']].map(([k,name])=>`<button class="${kind===k?'active':''}" data-pnl-mode="${k}" type="button">${name}</button>`).join('')}</div>`:''}${metricSwitch}<div class="chartbox">${chartHTML(kind,period,shift)}</div><div class="chartlegend"><span>${chartCaption(kind,period,opts.summary,shift)}</span><strong class="${current==null?'neutral':cls(current)}">${current==null?'—':signed(current)}</strong></div></section>`;
 }
 function spotPnlChart(){
  const p=portfolioSummary();
- return pnlChartBlock({key:'overview',title:'PNL · Портфель',subtitle:'Весь портфель, спот или фьючерсы отдельно',modes:true,current:p.pnl,summary:p});
+ return pnlChartBlock({key:'overview',title:'Портфель',subtitle:'',modes:true,current:p.pnl,summary:p});
 }
 function spotChartBlock(){
  const p=portfolioSummary(),a=p.spot;
@@ -187,20 +188,27 @@ function accountTotal(){
  const equity=p.hasFutures&&s.bybitSnapshot?.totals?.equity!=null?Number(s.bybitSnapshot.totals.equity):null;
  return equity==null?a.holdings:a.holdings+equity;
 }
+function pnlThirtyDayDelta(){
+ // Monthly change in recorded floating PNL; never mislabel a short history
+ // as a full-month result or invent one from live quotes.
+ const series=pnlSeries('all').points,cutoff=Date.now()-PERIODS['30d'];
+ if(series.length<2)return null;
+ const baseline=series.filter(p=>p.t<=cutoff&&p.t>=cutoff-12*3600000).at(-1);
+ const latest=series.at(-1);
+ if(!baseline||!latest||latest.t<=cutoff||Date.now()-latest.t>6*3600000)return null;
+ return latest.v-baseline.v;
+}
 function overview(){
  const p=portfolioSummary(),a=p.spot,has=p.hasFutures;
- // Money actually on the accounts: the coins we hold plus the futures equity.
- // The planned budget and its untouched reserve are not money we own, so they
- // are deliberately left out of this figure.
  const equity=has&&s.bybitSnapshot?.totals?.equity!=null?Number(s.bybitSnapshot.totals.equity):null;
- const total=accountTotal();
- const pnl=p.pnl==null?'—':signed(p.pnl);
+ const total=accountTotal(),pnl=p.pnl==null?'—':signed(p.pnl);
  const futureValue=equity==null?'—':dollars(equity);
+ const month=pnlThirtyDayDelta();
  return `<div class="overview-layout"><div class="overview-primary">
-   <div class="card tint overviewHero"><div class="eyebrow">Всего на счетах</div><div class="total">${dollars(total)}</div><div class="performance"><span class="metric ${p.pnl==null?'neutral':cls(p.pnl)}">${pnl}</span><span class="tiny">Общий текущий PNL</span></div><div class="hr"></div><div class="heroBreakdown"><span>Спот <strong>${dollars(a.holdings)}</strong></span><span>Фьючерсы <strong>${futureValue}</strong></span></div></div>
+   <div class="card tint overviewHero"><div class="total">${dollars(total)}</div><div class="overviewPnlLine"><span class="metric ${p.pnl==null?'neutral':cls(p.pnl)}">${pnl}</span>${month==null?'':`<span class="overviewMonth" title="Изменение отслеживаемого PNL за 30 дней">30д <strong class="${cls(month)}">${signed(month)}</strong></span>`}</div></div>
    ${spotPnlChart()}</div><div class="overview-aside">
-   <button class="assetSummary" type="button" data-action="gotoSpot"><span><span class="assetTitle">Спот</span><span class="assetSub">Куплено монет на ${dollars(a.invested)}</span></span><span class="assetNumbers"><strong>${dollars(a.holdings)}</strong><span class="${cls(a.profit)}">${signed(a.profit)}</span></span></button>
-   <button class="assetSummary" type="button" data-action="gotoFutures"><span><span class="assetTitle">Фьючерсы</span><span class="assetSub">${has?'Баланс субаккаунта':'Биржи и субаккаунты'}</span></span><span class="assetNumbers"><strong>${futureValue}</strong><span class="${p.futuresPnl==null?'neutral':cls(p.futuresPnl)}">${p.futuresPnl==null?'Нет подключения':signed(p.futuresPnl)}</span></span></button>
+   <button class="assetSummary" type="button" data-action="gotoSpot"><span class="assetTitle">Спот</span><span class="assetNumbers"><strong>${dollars(a.holdings)}</strong><span class="${cls(a.profit)}">${signed(a.profit)}</span></span></button>
+   <button class="assetSummary" type="button" data-action="gotoFutures"><span class="assetTitle">Фьючерсы</span><span class="assetNumbers"><strong>${futureValue}</strong><span class="${p.futuresPnl==null?'neutral':cls(p.futuresPnl)}">${p.futuresPnl==null?'Нет подключения':signed(p.futuresPnl)}</span></span></button>
    </div></div>`;
 }
 function spotRow(symbol){
@@ -360,6 +368,15 @@ function bybitConnectorHead(){
 function connections(){
  return `<div class="hrow"><div><div class="sectitle">Настройки портфеля</div><div class="tiny">Подключения, субаккаунты и капитал</div></div></div><div class="settingsTabs" role="tablist" aria-label="Настройки">${[['connections','Подключения'],['capital','Капитал']].map(([key,name])=>`<button type="button" role="tab" aria-selected="${s.settingsPane===key}" class="${s.settingsPane===key?'active':''}" data-settings-pane="${key}">${name}</button>`).join('')}</div>${s.settingsPane==='capital'?capitalSettings():`<div class="card connectorCard">${bybitConnectorHead()}<div id="bybitConnectionPanel"></div><div class="safeNote">Ключ вводится на защищённом сервере FXMR4 и хранится там зашифрованным. Права ключа — только чтение, торговля недоступна.</div></div>${accountSettings()}`}`;
 }
+function exchangeFooterStatus(){
+ const all=Array.isArray(s.sources)?s.sources:[];
+ const failed=all.find(ex=>ex.connectionError||ex.needsReconnect||ex.status==='error');
+ if(s.backendConnection.error&&s.backendConnection.configured&&!s.backendConnection.connected)
+  return {text:'Bybit · нет связи',error:true,details:String(s.backendConnection.error)};
+ if(failed)return {text:String(failed.name||'Биржа')+' · требуется проверка',error:true,details:String(failed.connectionError||'Нет подключения')};
+ const connected=all.filter(ex=>ex.connected);
+ return connected.length?{text:connected.length===1?'Биржа подключена':'Биржи подключены',error:false,details:connected.map(ex=>ex.name).join(', ')}:{text:'Биржи не подключены',error:false,details:''};
+}
 function render(){
  const views={overview,positions,futures,connections};
  $('content').innerHTML=(views[s.tab]||overview)();
@@ -367,8 +384,11 @@ function render(){
  const titles={overview:'Обзор',positions:'Спот',futures:'Фьючерсы',connections:'Настройки'};
  $('pageTitle').textContent=titles[s.tab];
  $('sidebarTotal').textContent=dollars(accountTotal());
- $('connectionStatusText').textContent=s.backendConnection.connected?'Bybit подключён':'Биржи не подключены';
- $('connectionDot').classList.toggle('isDisconnected',!s.backendConnection.connected);
+ const status=exchangeFooterStatus();
+ $('connectionStatusText').textContent=status.text;
+ $('connectionStatusText').title=status.details;
+ $('connectionDot').classList.toggle('isDisconnected',!s.backendConnection.connected&&!status.error);
+ $('connectionDot').classList.toggle('isError',status.error);
  document.querySelector('.tabs').dataset.active=s.tab;
  document.querySelectorAll('[data-tab]').forEach(b=>{const active=b.dataset.tab===s.tab;b.classList.toggle('active',active);b.setAttribute('aria-selected',active?'true':'false')});
  $('message').innerHTML=s.flash?`<div class="toast">${escape(s.flash)}</div>`:'';
