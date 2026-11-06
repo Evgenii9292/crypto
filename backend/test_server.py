@@ -173,9 +173,11 @@ class TestHistorySampler(TestCase):
                                         "trades": [{"coin": "BTC", "spent": 100, "entry": 50}],
                                         "quotes": {"BTC": {"price": 60}}}})
         self.profile.start()
+        self.extras = patch.object(server.saved_state, "list_extra_accounts", return_value=[])
+        self.extras.start()
 
     def tearDown(self):
-        for p in (self.merge, self.creds, self.profile):
+        for p in (self.merge, self.creds, self.profile, self.extras):
             p.stop()
 
     def _snapshot(self, perp_upl):
