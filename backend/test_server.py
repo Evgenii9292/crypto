@@ -19,11 +19,15 @@ class TestReadOnlySubaccount(TestCase):
             "BYBIT_SUBACCOUNT_LABEL": "Sub Test",
         })
         self.env.start()
+        # Tests must never read real encrypted API credentials on a production VPS.
+        self.disk = patch.object(server.saved_state, "read_credentials", return_value=None)
+        self.disk.start()
         with server.LOCK:
             server.EPHEMERAL.update(key=None, secret=None, label="Subaccount")
             server.CACHE.update(at=0.0, data=None)
 
     def tearDown(self):
+        self.disk.stop()
         self.env.stop()
         with server.LOCK:
             server.EPHEMERAL.update(key=None, secret=None, label="Subaccount")
