@@ -7,6 +7,7 @@
   const PORTFOLIO="fxmr4_portfolio_public_preview_v1";
   const LEVELS="fxmr4_spot_levels_v1";
   const BACKUP="fxmr4_pending_local_backup";
+  const hadPortfolioAtLoad=localStorage.getItem(PORTFOLIO)!==null;
   let active=false,ready=false,rev=0,waiting=false,writing=false,pending=false,remoteApplying=false;
   let lastWritten={};
   const $=id=>document.getElementById(id);
@@ -126,11 +127,15 @@
         }
       }else{
         rev=0;ready=true;
-        pending=true;
-        info("Переносим портфель на VPS…");
-        await write();
+        if(hadPortfolioAtLoad){
+          pending=true;
+          info("Переносим портфель с этого устройства на VPS…");
+          await write();
+        }else{
+          info("На VPS пока нет портфеля. Открой FXMR4 на устройстве с покупками.",true);
+        }
       }
-      if(active)info("Сохранено на VPS");
+      if(active&&(remote.exists||hadPortfolioAtLoad))info("Сохранено на VPS");
     }catch(err){
       info("Синхронизация с VPS недоступна",true);
       console.warn("FXMR4 sync:",err.message);
