@@ -9,6 +9,7 @@ Never commit credentials to GitHub or pass them to a public static site.
 from __future__ import annotations
 
 import base64
+import binascii
 import hashlib
 import hmac
 import json
@@ -132,6 +133,11 @@ def snapshot():
     with LOCK:
         if CACHE["data"] is not None and now - CACHE["at"] < 30:
             return CACHE["data"]
+    info = request_bybit("/v5/user/query-api", {}, key, secret)
+    if info.get("readOnly") != 1:
+        raise BybitFailure("Ключ имеет право записи. Нужен API-ключ Read-Only.")
+    if info.get("isMaster") is True:
+        raise BybitFailure("Этот ключ принадлежит основному аккаунту. Нужен ключ субаккаунта.")
     wallet = request_bybit("/v5/account/wallet-balance", {"accountType": "UNIFIED"}, key, secret)
     accounts = wallet.get("list") or []
     if not accounts:
@@ -195,7 +201,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             raw = base64.b64decode(value[6:], validate=True).decode("utf-8")
             uname, password = raw.split(":", 1)
-        except (ValueError, UnicodeError):
+        except (ValueError, UnicodeError, binascii.Error):
             return False
         return secrets.compare_digest(uname, USER) and secrets.compare_digest(password, PASSWORD)
 
@@ -279,6 +285,11 @@ class Handler(BaseHTTPRequestHandler):
             return
         # Validate BEFORE activating credentials, do not store on disk.
         try:
+            meta = request_bybit("/v5/user/query-api", {}, key, secret)
+            if meta.get("readOnly") != 1:
+                raise BybitFailure("Ключ допускает торговлю или изменение счёта. Создай Read-Only.")
+            if meta.get("isMaster") is True:
+                raise BybitFailure("Это основной аккаунт. Нужен API-ключ субаккаунта.")
             test = request_bybit("/v5/account/wallet-balance", {"accountType": "UNIFIED"}, key, secret)
             if not test.get("list"):
                 raise BybitFailure("Ключ не даёт доступа к Unified Account")
