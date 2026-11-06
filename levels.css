@@ -68,3 +68,21 @@
 @media(max-width:600px){.sl-shell{margin-top:21px}.sl-top{flex-direction:column;align-items:stretch}.sl-controls{justify-content:space-between}.sl-grid-cards{grid-template-columns:1fr}.sl-card{padding:14px}.sl-meta{margin-top:12px}.sl-edit-btn{font-size:11px}.sl-heading strong{font-size:12px}}
 @media(max-width:390px){.sl-level{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px}.sl-edit-btn{grid-column:2;justify-self:end;min-height:26px}.sl-level-middle{align-items:flex-end;text-align:right}.sl-fields{grid-template-columns:1fr}}
 @media(prefers-reduced-motion:reduce){.sl-button,.sl-period button{transition:none}}
+
+/* Real historical price-chart controls and interaction */
+.sl-chart-tools{display:flex;justify-content:flex-end;align-items:center;gap:4px;margin:11px 0 -3px}
+.sl-chart-tools button{display:grid;place-items:center;min-height:28px;min-width:29px;padding:3px 7px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--sub);font:inherit;font-size:16px;font-weight:520;line-height:1;cursor:pointer}
+.sl-chart-tools button:hover{background:var(--surface2);color:var(--text)}
+.sl-chart-tools button:active{transform:scale(.97)}
+.sl-chart-tools .sl-chart-reset{font-size:10px;font-weight:640;min-width:49px}
+.sl-chart-tools button:focus-visible,.sl-interactive:focus-visible{outline:2px solid var(--eth);outline-offset:2px}
+.sl-interactive{position:relative;cursor:crosshair;touch-action:pan-y;user-select:none;-webkit-user-select:none}
+.sl-interactive:active{cursor:grabbing}
+.sl-interactive .sl-price-line{stroke-width:2.1}
+.sl-hover-line{position:absolute;pointer-events:none;top:13px;bottom:29px;width:1px;border-left:1px dashed var(--sub);opacity:.65}
+.sl-hover-tip{position:absolute;top:10px;transform:translateX(-50%);border:1px solid var(--border);background:var(--surface);color:var(--text);box-shadow:0 2px 10px #00000012;border-radius:7px;padding:5px 8px;font-size:10px;font-weight:650;white-space:nowrap;pointer-events:none;z-index:2;font-variant-numeric:tabular-nums}
+.sl-hover-line[hidden],.sl-hover-tip[hidden]{display:none!important}
+@media(max-width:600px){
+ .sl-chart-tools{margin-top:10px;gap:5px}
+ .sl-chart-tools button{min-width:32px;min-height:32px}
+}
