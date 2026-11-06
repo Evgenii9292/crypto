@@ -38,5 +38,7 @@ jobs:
           Path("/tmp/fxmr4-main.js").write_text(m.group(1), encoding="utf-8")
           PY
           node --check /tmp/fxmr4-main.js
+      - name: Cloud sync reload regression
+        run: node --test tests/cloud-sync.test.js
       - name: Deployment bash syntax
         run: bash -n deploy/upgrade-v2.sh
