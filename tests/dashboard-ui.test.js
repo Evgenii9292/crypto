@@ -41,11 +41,16 @@ function mount(sources){
  return {elements,window:context.window,element};
 }
 
-test('dashboard keeps only balance, PNL and two account tiles',()=>{
+test('dashboard shows labeled current and monthly PNL with top-aligned Spot/Futures tiles',()=>{
  const {element}=mount([{id:'bybit',name:'Bybit',accounts:[]}]);
  const overview=element('content').innerHTML;
  assert.match(overview,/class="card tint overviewHero"/);
+ assert.match(overview,/Баланс портфеля/);
  assert.match(overview,/class="sectitle">Портфель<\/div>/);
+ assert.equal((overview.match(/Текущий PNL/g)||[]).length,3);
+ assert.equal((overview.match(/Месячный PNL/g)||[]).length,3);
+ assert.match(overview,/class="assetTopline"/);
+ assert.match(overview,/class="assetPnlMetrics"/);
  for(const noise of ['Всего на счетах','Общий текущий PNL','heroBreakdown','assetSub','Весь портфель, спот или фьючерсы отдельно']){
   assert.ok(!overview.includes(noise),'unexpected UI noise: '+noise);
  }
