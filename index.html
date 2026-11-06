@@ -166,6 +166,7 @@ function positions(){
  return `<div class="spotTop"><div class="card tint"><div class="eyebrow">Spot · выделенный капитал</div><div class="total">${dollars(a.total)}</div><div class="performance"><span class="metric ${cls(a.profit)}">${signed(a.profit)} (${signed(a.invested?a.profit/a.invested*100:0,'pct')})</span><span class="tiny">PNL Spot</span></div></div>
  <div class="spotStats"><div class="card"><div class="eyebrow">В монетах</div><div class="num">${dollars(a.holdings)}</div></div><div class="card"><div class="eyebrow">Резерв</div><div class="num">${dollars(a.cash)}</div></div></div></div>
  <section class="section"><div class="hrow"><div><div class="sectitle">Монеты</div><div class="tiny">Нажми на строку для подробностей</div></div><button type="button" class="btn primary" data-action="new">${icon('plus')} Покупка</button></div><div class="spotList">${['BTC','ETH'].map(spotRow).join('')}</div></section>
+ <section class="section spotAllocation"><div class="hrow"><div><div class="sectitle">Распределение спота</div><div class="tiny">Монеты и резерв из ${dollars(a.total)}</div></div><button class="btn" type="button" data-action="gotoCapital">План капитала</button></div>${spotDistribution()}</section>
  ${quoteStrip()}
  <div id="strategyMount" aria-label="Графики уровней покупок BTC и ETH"></div>
  <div class="spotHistoryToggle"><button class="historyToggle" type="button" data-action="toggleHistory"><span>${icon('calendar')} История покупок <span class="historyCount">${s.trades.length}</span></span><span class="chev ${s.spotHistoryOpen?'rotated':''}">⌄</span></button>${s.spotHistoryOpen||s.form?history():''}</div>`;
@@ -175,7 +176,7 @@ function futuresSorted(){
 }
 function futurePositionLine(p){
  const extra=[p.entryPrice!=null?'Вход '+dollars(p.entryPrice):null,p.markPrice!=null?'Марк '+dollars(p.markPrice):null,p.liqPrice!=null&&p.liqPrice>0?'Ликв. '+dollars(p.liqPrice):null].filter(Boolean).join(' · ');
- return `<div class="futurePosition"><span><strong>${escape(p.symbol)}</strong><span class="tiny">${escape(p.side||'')} ${p.leverage?escape(p.leverage+'×'):''}</span><span class="tiny">${extra||'—'}</span></span><span class="right"><strong>${dollars(p.size)}</strong><span class="tiny">Объём · USD</span></span><span class="right ${cls(Number(p.pnl||0))}">${signed(Number(p.pnl||0))}<span class="tiny">Плавающий PNL</span></span></div>`;
+ return `<div class="futurePosition"><span><strong>${escape(p.symbol)}</strong><span class="tiny">${escape(p.side||'')} ${p.leverage?escape(p.leverage+'×'):''}</span><span class="tiny">${extra||'—'}</span></span><span class="right"><strong>${dollars(p.size)}</strong><span class="tiny">Объём · USD</span></span><span class="right ${p.pnl==null?'neutral':cls(Number(p.pnl))}">${p.pnl==null?'—':signed(Number(p.pnl))}<span class="tiny">Плавающий PNL</span></span></div>`;
 }
 function futureExchangeCard(ex){
  const opened=!!s.openedExchanges[ex.id],positions=futuresSorted().filter(p=>p.exchangeId===ex.id);
@@ -198,21 +199,13 @@ function futuresForm(){
  <button class="btn primary full" type="submit">Сохранить</button><p class="tiny">Добавится только название. Биржевые деньги и позиции пока не загружаются.</p></form>`;
 }
 function futures(){
- const body=s.futureMode==='exchange'?s.sources.map(futureExchangeCard).join(''):s.futureMode==='account'?futuresByAccount():futuresSorted().length?futuresSorted().map(futurePositionLine).join(''):'<div class="card emptyState"><div class="sectitle">Нет загруженных позиций</div><p>После подключения появятся открытые сделки со всех бирж. Сортировка начнёт работать на полученных позициях.</p></div>';
- return `<div class="hrow"><div><div class="sectitle">Futures · Все биржи</div><div class="tiny">Баланс и позиции по биржам и субаккаунтам</div></div><span class="pill">${s.backendConnection.connected?"Bybit · Read-Only":"API не подключён"}</span></div>
- <div class="futureMetrics">${(()=>{
- const snap=s.bybitSnapshot?.totals;
- const ready=!!s.backendConnection.connected && !!snap;
- return [['Equity UTA',ready&&snap.equity!=null?dollars(snap.equity):'—'],
+ const body=s.futureMode==='exchange'?s.sources.map(futureExchangeCard).join(''):s.futureMode==='account'?futuresByAccount():futuresSorted().length?futuresSorted().map(futurePositionLine).join(''):'<div class="card emptyState"><div class="sectitle">Нет открытых позиций</div><p>После подключения появятся позиции субаккаунта.</p></div>';
+ const snap=s.bybitSnapshot?.totals,ready=!!s.backendConnection.connected&&!!snap;
+ const metrics=[['Баланс субаккаунта',ready&&snap.equity!=null?dollars(snap.equity):'—'],
  ['Плавающий PNL',ready&&snap.perpUPL!=null?signed(snap.perpUPL):'—'],
  ['Доступно',ready&&snap.availableBalance!=null?dollars(snap.availableBalance):'—'],
- ['Открытые позиции',ready?String(s.futuresPositions.length):'—']].map(([name,value])=>`<div class="card tint"><div class="eyebrow">${name}</div><div class="num">${value}</div></div>`).join('');
- })()}</div>
- <section class="section pnlChart card"><div class="hrow"><div class="sectitle">PNL · Futures</div><span class="pill">Ожидается API</span></div><div class="chartbox"><div class="emptychart"><strong>Пока нет данных для графика</strong><span>После подключения фьючерсов здесь будет PNL с датами, временной осью и шкалой USD.</span></div></div></section>
- <section class="section"><div class="futureToolbar"><div><div class="sectitle">Позиции и аккаунты</div><div class="tiny">Раскрывай биржи и выбирай способ группировки</div></div><button class="btn" type="button" data-action="addExchange">${icon('plus')} Биржа</button></div>
- <div class="futureFilters"><div class="tradeSwitch" role="tablist" aria-label="Группировка фьючерсов">${[['all','Все позиции'],['exchange','По биржам'],['account','По субаккаунтам']].map(([id,name])=>`<button type="button" data-future-mode="${id}" class="${s.futureMode===id?'active':''}">${name}</button>`).join('')}</div><label class="sortLabel">Сортировка <select id="futureSort"><option value="pnl" ${s.futureSort==='pnl'?'selected':''}>PNL</option><option value="size" ${s.futureSort==='size'?'selected':''}>Размер</option><option value="symbol" ${s.futureSort==='symbol'?'selected':''}>Монета</option></select></label></div>
- <div class="sourceList futureResults">${body}</div>${futuresForm()}
- <p class="tiny noteBelow">«—» означает отсутствие подключения, а не нулевой баланс. Биржи и имена аккаунтов сохраняются локально. Управление сделками пока недоступно.</p></section>`;
+ ['Открытых позиций',ready?String(s.futuresPositions.filter(p=>p.exchangeId==='bybit').length):'—']];
+ return `<div class="hrow"><div><div class="sectitle">Фьючерсы</div><div class="tiny">Позиции по биржам и субаккаунтам</div></div><span class="pill">${ready?'Bybit подключён':'Нет подключения'}</span></div><div class="futureMetrics">${metrics.map(([name,value])=>`<div class="card tint"><div class="eyebrow">${name}</div><div class="num">${value}</div></div>`).join('')}</div><div class="section futurePnlLink"><div><strong>Общий график PNL</strong><span class="tiny">Весь портфель, спот или фьючерсы отдельно</span></div><button class="btn" type="button" data-action="gotoOverview">Посмотреть в обзоре</button></div><section class="section"><div class="futureToolbar"><div><div class="sectitle">Позиции и аккаунты</div><div class="tiny">Раскрывай биржи и выбирай группировку</div></div><button class="btn" type="button" data-action="goConnections">${icon('settings')} Настройки</button></div><div class="futureFilters"><div class="tradeSwitch" role="tablist" aria-label="Группировка фьючерсов">${[['all','Все позиции'],['exchange','По биржам'],['account','По субаккаунтам']].map(([id,name])=>`<button type="button" data-future-mode="${id}" class="${s.futureMode===id?'active':''}">${name}</button>`).join('')}</div><label class="sortLabel">Сортировка <select id="futureSort"><option value="pnl" ${s.futureSort==='pnl'?'selected':''}>PNL</option><option value="size" ${s.futureSort==='size'?'selected':''}>Размер</option><option value="symbol" ${s.futureSort==='symbol'?'selected':''}>Монета</option></select></label></div><div class="sourceList futureResults">${body}</div>${s.futureForm?futuresForm():''}<p class="tiny noteBelow">Торговые операции из FXMR4 недоступны.</p></section>`;
 }
 function capitalSettings(){
  const a=sums();
@@ -275,8 +268,8 @@ function onSnapshot(data){
  bybit.connected=true;
  const accountId='bybit-subaccount';
  const acc=bybit.accounts.find(a=>a.id===accountId);
- const equity=Number(data.totals.equity);
- const account={id:accountId,name,balance:Number.isFinite(equity)?equity:null};
+ const equity=data.totals.equity==null?null:Number(data.totals.equity);
+ const account={id:accountId,name,balance:equity!=null&&Number.isFinite(equity)?equity:null};
  if(acc)Object.assign(acc,account);else bybit.accounts.push(account);
  s.futuresPositions=s.futuresPositions.filter(p=>p.exchangeId!=='bybit').concat(
   data.positions.filter(p=>p&&typeof p.symbol==='string'&&Number.isFinite(Number(p.size))).map(p=>({
@@ -287,7 +280,7 @@ function onSnapshot(data){
    markPrice:p.markPrice!=null&&Number.isFinite(Number(p.markPrice))?Number(p.markPrice):null,
    liqPrice:p.liqPrice!=null&&Number.isFinite(Number(p.liqPrice))?Number(p.liqPrice):null,
    leverage:Number(p.leverage)||null,
-   pnl:Number(p.pnl)||0,initialMargin:p.initialMargin==null?null:Number(p.initialMargin),cumulativeRealisedPnl:p.cumulativeRealisedPnl==null?null:Number(p.cumulativeRealisedPnl)
+   pnl:p.pnl==null?null:Number(p.pnl),initialMargin:p.initialMargin==null?null:Number(p.initialMargin),cumulativeRealisedPnl:p.cumulativeRealisedPnl==null?null:Number(p.cumulativeRealisedPnl)
   }))
  );
  s.bybitSnapshot={totals:data.totals,account:data.account,updatedAt:data.updatedAt,warning:data.balanceNote};
@@ -441,6 +434,8 @@ function handleClick(e){
  if(act==='gotoSpot'){s.tab='positions';render();return}
  if(act==='gotoFutures'||act==='backToFutures'){s.tab='futures';s.futureMode='exchange';render();return}
  if(act==='goConnections'){s.tab='connections';s.settingsPane='connections';render();return}
+ if(act==='gotoCapital'){s.tab='connections';s.settingsPane='capital';render();return}
+ if(act==='gotoOverview'){s.tab='overview';render();return}
  if(act==='manageAccount'){s.tab='connections';s.settingsPane='connections';s.pendingRemove=null;render();return}
  if(act==='removeAccount'){s.pendingRemove=id;render();return}
  if(act==='cancelRemoveAccount'){s.pendingRemove=null;render();return}
