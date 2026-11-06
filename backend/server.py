@@ -196,9 +196,13 @@ def linked_accounts():
     key, secret, label = credentials()
     out = []
     if key and secret:
-        out.append({"id": "bybit-subaccount", "label": label, "exchange": "Bybit", "legacy": True})
+        existing = saved_state.read_credentials()
+        out.append({"id": "bybit-subaccount", "label": label, "exchange": "Bybit",
+                    "icon": existing.get("icon", "wallet") if existing else "wallet",
+                    "legacy": True})
     for a in saved_state.list_extra_accounts():
-        out.append({"id": a["id"], "label": a["label"], "exchange": "Bybit", "legacy": False})
+        out.append({"id": a["id"], "label": a["label"], "exchange": "Bybit",
+                    "icon": a.get("icon", "wallet"), "legacy": False})
     return out
 
 
@@ -412,6 +416,7 @@ class Handler(BaseHTTPRequestHandler):
             key = str(data.get("key", "")).strip()
             secret = str(data.get("secret", "")).strip()
             label = str(data.get("label", "")).strip()
+            icon = str(data.get("icon") or "wallet")
             if not (10 <= len(key) <= 256 and 10 <= len(secret) <= 256 and 1 <= len(label) <= 40):
                 self._json({"error": "Проверь название и API-ключ"}, 422)
                 return
@@ -437,7 +442,7 @@ class Handler(BaseHTTPRequestHandler):
                             if "уже подключён" in str(exc):
                                 raise
                             # Offline old key must not block an otherwise valid new connection.
-                created = saved_state.add_extra_account(key, secret, label, uid=uid)
+                created = saved_state.add_extra_account(key, secret, label, uid=uid, icon=icon)
                 self._json({"connected": True, "account": created, "persisted": True})
             except BybitFailure as exc:
                 self._json({"error": str(exc)}, 422)
@@ -446,7 +451,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/account-rename":
             try:
-                result = saved_state.rename_extra_account(str(data.get("id", "")), str(data.get("label", "")))
+                result = saved_state.rename_extra_account(str(data.get("id", "")),
+                                                         str(data.get("label", "")),
+                                                         icon=data.get("icon"))
                 with LOCK:
                     EXTRA_CACHE.pop(result["id"], None)
                 self._json({"renamed": True, "account": result})
@@ -476,7 +483,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             try:
                 with LOCK:
-                    result = saved_state.rename_credentials(label)
+                    result = saved_state.rename_credentials(label, icon=data.get("icon"))
                     if EPHEMERAL["key"]:
                         EPHEMERAL["label"] = result["label"]
                     if CACHE["data"] is not None:
