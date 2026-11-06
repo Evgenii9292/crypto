@@ -33,7 +33,7 @@
         <button class="tab" type="button" role="tab" aria-selected="false" data-tab="positions"><svg class="icon"><use href="#wallet"/></svg><span>Спот</span></button>
         <button class="tab" type="button" role="tab" aria-selected="false" data-tab="futures"><svg class="icon"><use href="#trend"/></svg><span>Фьючерсы</span></button>
       </nav>
-      <div class="sideFooter"><div class="connectionStatus"><span class="status-dot" id="connectionDot"></span><span id="connectionStatusText">Биржи не подключены</span></div><button class="btn navConfig" type="button" data-action="goConnections"><svg class="icon" aria-hidden="true"><use href="#settings"></use></svg> Настройки</button></div>
+      <div class="sideFooter"><div id="cloudStatus" class="cloudSyncStatus" aria-live="polite"></div><div class="connectionStatus"><span class="status-dot" id="connectionDot"></span><span id="connectionStatusText">Биржи не подключены</span></div><button class="btn navConfig" type="button" data-action="goConnections"><svg class="icon" aria-hidden="true"><use href="#settings"></use></svg> Настройки</button></div>
     </aside>
     <section class="workspace">
       <div class="workspaceHead"><div class="workspaceTitleLine"><h1 id="pageTitle">Обзор</h1><span class="brandBadge">FXMR4</span></div></div>
@@ -327,7 +327,24 @@ window.fxmr4App={onBackendStatus,onSnapshot,onDisconnected};
     }catch(e){console.warn('Локальное сохранение:',e)}
   }
   function saveLocal(){
-    try{localStorage.setItem(storageKey,JSON.stringify({capital:C,trades:s.trades,quotes:s.quotes,snapshots:s.snapshots,portfolioSnapshots:s.portfolioSnapshots,sources:s.sources.map(ex=>({id:ex.id,name:ex.name,accounts:ex.accounts.filter(ac=>ac.id!=='bybit-subaccount').map(ac=>({id:ac.id,name:ac.name}))}))}))}catch(e){s.flash='Не удалось сохранить в браузере. Проверь режим приватности.';console.warn(e)}
+    try{
+      const payload={
+        capital:C,
+        trades:s.trades,
+        quotes:s.quotes,
+        snapshots:s.snapshots,
+        portfolioSnapshots:s.portfolioSnapshots,
+        sources:s.sources.map(ex=>({
+          id:ex.id,name:ex.name,
+          accounts:ex.accounts.filter(ac=>ac.id!=='bybit-subaccount').map(ac=>({id:ac.id,name:ac.name}))
+        }))
+      };
+      localStorage.setItem(storageKey,JSON.stringify(payload));
+      window.fxmr4Cloud?.schedule?.();
+    }catch(e){
+      s.flash='Не удалось сохранить портфель.';
+      console.warn(e);
+    }
   }
   function chart(){
     const windows={'24h':86400000,'7d':604800000,'30d':2592000000,'90d':7776000000};
@@ -500,5 +517,6 @@ function handleChange(e){
 </script>
 <script src="./levels.js"></script>
 <script src="./bybit-account.js"></script>
+<script src="./cloud-sync.js"></script>
 </body>
 </html>
