@@ -327,17 +327,24 @@ function futuresSortBar(){
  const arrow=s.futureSortDir<0?'↓':'↑';
  return `<div class="futureSortBar">${FUTURE_SORTS.map(([key,name])=>`<button type="button" class="sortChip ${s.futureSort===key?'active':''}" data-sort="${key}" title="Сортировать по «${name}»">${name}${s.futureSort===key?`<span class="sortDir">${arrow}</span>`:''}</button>`).join('')}</div>`;
 }
+function positionAge(time,now=Date.now()){
+ const opened=Number(time);
+ if(!Number.isFinite(opened)||opened<1e12||opened>now)return '—';
+ const minutes=Math.max(0,Math.floor((now-opened)/60000));
+ const days=Math.floor(minutes/1440),hours=Math.floor(minutes%1440/60);
+ if(days>=1)return days+' д '+hours+' ч';
+ if(hours>=1)return hours+' ч '+(minutes%60)+' мин';
+ return minutes+' мин';
+}
 function futuresTableHead(){
- return `<div class="futurePosition futureHead"><span>Монета</span><span class="right"><span class="hLong">Объём · USD</span><span class="hShort">Объём</span></span><span class="right"><span class="hLong">Плавающий PNL</span><span class="hShort">PNL</span></span></div>`;
+ return `<div class="futurePosition futureHead"><span>Монета</span><span>В сделке</span><span class="right"><span class="hLong">Объём · USD</span><span class="hShort">Объём</span></span><span class="right"><span class="hLong">Плавающий PNL</span><span class="hShort">PNL</span></span></div>`;
 }
 function futurePositionLine(p){
  const side=String(p.side||'').toLowerCase();
  const sideName=side==='buy'||side==='long'?'Long':side==='sell'||side==='short'?'Short':'—';
  const badge=`<span class="posBadges"><i class="posBadge ${sideName==='Short'?'short':'long'}">${sideName}</i>${p.leverage?`<i class="posBadge lev">${escape(String(p.leverage))}×</i>`:''}</span>`;
- const opened=p.openedAt?new Date(Number(p.openedAt)).toLocaleDateString('ru-RU',{day:'numeric',month:'short'}):null;
- const meta=[p.markPrice!=null?'Марк '+dollars(p.markPrice):null,p.liqPrice!=null&&p.liqPrice>0?'Ликв. '+dollars(p.liqPrice):null,opened?'с '+opened:null].filter(Boolean).join(' · ');
- const share=Math.max(0,Math.min(100,Number(s.futuresPositions.reduce((m,x)=>m+Math.abs(Number(x.size)||0),0))>0?Math.abs(Number(p.size)||0)/s.futuresPositions.reduce((m,x)=>m+Math.abs(Number(x.size)||0),0)*100:0));
- return `<div class="futurePosition"><span><span class="futureCoin"><strong>${escape(p.symbol)}</strong>${badge}</span><span class="tiny">${meta||'—'}</span><span class="posBar"><i style="width:${share.toFixed(1)}%"></i></span></span><span class="right"><strong>${dollars(p.size)}</strong></span><span class="right ${p.pnl==null?'neutral':cls(Number(p.pnl))}"><strong>${p.pnl==null?'—':signed(Number(p.pnl))}</strong></span></div>`;
+ const age=positionAge(p.openedAt);
+ return `<div class="futurePosition"><span><span class="futureCoin"><strong>${escape(p.symbol)}</strong>${badge}</span></span><span class="posDuration" title="Время с открытия позиции">${age}</span><span class="right"><strong>${dollars(p.size)}</strong></span><span class="right ${p.pnl==null?'neutral':cls(Number(p.pnl))}"><strong>${p.pnl==null?'—':signed(Number(p.pnl))}</strong></span></div>`;
 }
 function futureAccountRow(ex,ac){
  const id=ex.id+':'+ac.id,pp=futuresSorted().filter(p=>p.exchangeId===ex.id&&p.accountId===ac.id);
