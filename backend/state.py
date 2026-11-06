@@ -22,6 +22,7 @@ DATA_DIR = Path(os.environ.get("FXMR4_STATE_DIR", "/var/lib/fxmr4"))
 SEAL_KEY_HEX = os.environ.get("FXMR4_SEAL_KEY", "")
 LOCK = threading.RLock()
 CREDS_PATH = DATA_DIR / "bybit.cred"
+EXTRA_ACCOUNTS_PATH = DATA_DIR / "bybit-accounts.cred"
 PROFILE_PATH = DATA_DIR / "user-data.json"
 HISTORY_PATH = DATA_DIR / "pnl-history.json"
 
@@ -138,6 +139,87 @@ def delete_credentials():
     with LOCK:
         CREDS_PATH.unlink(missing_ok=True)
 
+
+
+def _extra_accounts_locked():
+    """Return decrypted extra Bybit accounts. Call only under LOCK."""
+    if not EXTRA_ACCOUNTS_PATH.is_file():
+        return []
+    try:
+        blob = EXTRA_ACCOUNTS_PATH.read_bytes()
+        prefix = b"FXMR4accounts1:"
+        if not blob.startswith(prefix):
+            raise StateError("Неизвестный формат субаккаунтов")
+        offset = len(prefix)
+        decoded = _cipher().decrypt(blob[offset:offset+12], blob[offset+12:], b"fxmr4-bybit-accounts-v1")
+        accounts = json.loads(decoded)
+        if not isinstance(accounts, list) or any(
+            not isinstance(a, dict) or not all(isinstance(a.get(k), str) for k in ("id", "label", "key", "secret"))
+            for a in accounts
+        ):
+            raise StateError("Некорректное состояние субаккаунтов")
+        return accounts
+    except StateError:
+        raise
+    except Exception as exc:
+        raise StateError("Не удалось расшифровать субаккаунты Bybit") from exc
+
+
+def _write_extra_locked(accounts):
+    """Encrypt every extra account with AES-GCM; never place keys in plain JSON."""
+    raw = json.dumps(accounts, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    nonce = os.urandom(12)
+    payload = b"FXMR4accounts1:" + nonce + _cipher().encrypt(nonce, raw, b"fxmr4-bybit-accounts-v1")
+    _write_private(EXTRA_ACCOUNTS_PATH, payload)
+
+
+def list_extra_accounts():
+    """Private server-side credential list; never serialize this API response."""
+    with LOCK:
+        return _extra_accounts_locked()
+
+
+def add_extra_account(key, secret, label):
+    if not isinstance(key, str) or not isinstance(secret, str) or not (
+        10 <= len(key) <= 256 and 10 <= len(secret) <= 256
+    ):
+        raise StateError("Неверный API-ключ")
+    if not isinstance(label, str) or not (1 <= len(label.strip()) <= 40):
+        raise StateError("Укажи имя субаккаунта")
+    label = label.strip()
+    with LOCK:
+        accounts = _extra_accounts_locked()
+        if len(accounts) >= 20:
+            raise StateError("Не более 20 субаккаунтов Bybit")
+        legacy = read_credentials()
+        if (legacy and legacy["key"] == key) or any(item["key"] == key for item in accounts):
+            raise StateError("Этот API-ключ уже подключён")
+        account = {"id": "sub-" + secrets.token_hex(12), "label": label, "key": key, "secret": secret}
+        _write_extra_locked(accounts + [account])
+        return {"id": account["id"], "label": label}
+
+
+def rename_extra_account(account_id, label):
+    if not isinstance(label, str) or not (1 <= len(label.strip()) <= 40):
+        raise StateError("Некорректное имя субаккаунта")
+    with LOCK:
+        accounts = _extra_accounts_locked()
+        target = next((a for a in accounts if a["id"] == account_id), None)
+        if target is None:
+            raise StateError("Субаккаунт не найден")
+        target["label"] = label.strip()
+        _write_extra_locked(accounts)
+        return {"id": target["id"], "label": target["label"]}
+
+
+def delete_extra_account(account_id):
+    with LOCK:
+        accounts = _extra_accounts_locked()
+        retained = [a for a in accounts if a["id"] != account_id]
+        if len(retained) == len(accounts):
+            raise StateError("Субаккаунт не найден")
+        _write_extra_locked(retained)
+        return {"id": account_id}
 
 def read_profile():
     with LOCK:
