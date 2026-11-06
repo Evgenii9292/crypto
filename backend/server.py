@@ -269,11 +269,16 @@ class Handler(BaseHTTPRequestHandler):
         if not local and self.headers.get("X-Forwarded-Proto") != "https":
             self._json({"error": "HTTPS required"}, 403)
             return
-        if int(self.headers.get("Content-Length", "0")) not in range(1, 5000):
+        try:
+            body_length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            self._json({"error": "Invalid content length"}, 400)
+            return
+        if not 1 <= body_length < 5000:
             self._json({"error": "Invalid content length"}, 400)
             return
         try:
-            data = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            data = json.loads(self.rfile.read(body_length))
             key = str(data.get("key", "")).strip()
             secret = str(data.get("secret", "")).strip()
             label = str(data.get("label", "Subaccount")).strip()[:40] or "Subaccount"
@@ -304,7 +309,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
-    if not PASSWORD or len(PASSWORD) < 16:
+    if not PASSWORD or len(PASSWORD) < 16 or PASSWORD.startswith("REPLACE_WITH_"):
         raise SystemExit("FXMR4_PASSWORD must be set to a strong password (16+ chars)")
     if BIND not in ("127.0.0.1", "::1", "localhost"):
         raise SystemExit("Refusing public bind. Put HTTPS reverse proxy in front of 127.0.0.1.")
