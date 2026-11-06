@@ -308,6 +308,22 @@ class Handler(BaseHTTPRequestHandler):
                         "account": label, "exchange": "Bybit", "readOnly": True,
                         "persisted": bool(saved_state.read_credentials())})
             return
+        if path == "/api/accounts":
+            try:
+                self._json({"accounts": linked_accounts()})
+            except saved_state.StateError as exc:
+                self._json({"error": str(exc)}, 500)
+            return
+        if path == "/api/account-snapshot":
+            try:
+                account_id = parse_qs(urlsplit(self.path).query).get("id", [""])[0]
+                value = snapshot() if account_id == "bybit-subaccount" else snapshot_extra(account_id)
+                self._json({"connected": True, "data": value})
+            except BybitFailure as exc:
+                self._json({"connected": False, "error": str(exc)}, 503)
+            except saved_state.StateError as exc:
+                self._json({"connected": False, "error": str(exc)}, 500)
+            return
         if path == "/api/user-data":
             try:
                 self._json(saved_state.read_profile())
@@ -343,7 +359,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         path = urlsplit(self.path).path
         if path not in ("/api/connect", "/api/disconnect", "/api/user-data",
-                       "/api/rename", "/api/pnl-history"):
+                       "/api/rename", "/api/pnl-history", "/api/account-connect",
+                       "/api/account-rename", "/api/account-delete"):
             self._json({"error": "Not found"}, 404)
             return
         if not self._same_origin_action():
