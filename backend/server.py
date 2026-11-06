@@ -408,6 +408,46 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"error": str(exc)}, 422)
             return
 
+        if path == "/api/account-connect":
+            key = str(data.get("key", "")).strip()
+            secret = str(data.get("secret", "")).strip()
+            label = str(data.get("label", "")).strip()
+            if not (10 <= len(key) <= 256 and 10 <= len(secret) <= 256 and 1 <= len(label) <= 40):
+                self._json({"error": "Проверь название и API-ключ"}, 422)
+                return
+            try:
+                meta = request_bybit("/v5/user/query-api", {}, key, secret)
+                if meta.get("readOnly") != 1 or meta.get("isMaster") is True:
+                    raise BybitFailure("Нужен ключ Read-Only от субаккаунта")
+                wallet = request_bybit("/v5/account/wallet-balance", {"accountType": "UNIFIED"}, key, secret)
+                if not wallet.get("list"):
+                    raise BybitFailure("Нет доступа к Unified Account")
+                created = saved_state.add_extra_account(key, secret, label)
+                self._json({"connected": True, "account": created, "persisted": True})
+            except BybitFailure as exc:
+                self._json({"error": str(exc)}, 422)
+            except saved_state.StateError as exc:
+                self._json({"error": str(exc)}, 409)
+            return
+        if path == "/api/account-rename":
+            try:
+                result = saved_state.rename_extra_account(str(data.get("id", "")), str(data.get("label", "")))
+                with LOCK:
+                    EXTRA_CACHE.pop(result["id"], None)
+                self._json({"renamed": True, "account": result})
+            except saved_state.StateError as exc:
+                self._json({"error": str(exc)}, 422)
+            return
+        if path == "/api/account-delete":
+            try:
+                result = saved_state.delete_extra_account(str(data.get("id", "")))
+                with LOCK:
+                    EXTRA_CACHE.pop(result["id"], None)
+                self._json({"disconnected": True, "id": result["id"]})
+            except saved_state.StateError as exc:
+                self._json({"error": str(exc)}, 422)
+            return
+
         if path == "/api/rename":
             # Renaming only changes the display label. The key and secret are
             # re-encrypted unchanged, so this never touches Bybit permissions.
