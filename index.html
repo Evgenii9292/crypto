@@ -73,13 +73,14 @@
   }
 function axisMoney(n){return (n<0?'−':n>0?'+':'')+'$'+(Math.abs(n)<10?Math.abs(n).toFixed(2):Math.abs(n)<100?Math.abs(n).toFixed(1):Math.round(Math.abs(n)).toLocaleString('en-US'))}
 function portfolioSummary(){
- const a=sums(),snap=s.backendConnection.connected?s.bybitSnapshot:null;
+ const a=sums(),snap=s.bybitSnapshot,fresh=!!s.backendConnection.connected;
  const positions=s.futuresPositions.filter(p=>p.exchangeId==='bybit');
- const known=!!snap&&positions.every(p=>p.initialMargin!=null&&Number.isFinite(Number(p.initialMargin)));
+ const known=!!snap&&fresh&&positions.every(p=>p.initialMargin!=null&&Number.isFinite(Number(p.initialMargin)));
  const margin=known?positions.reduce((v,p)=>v+Number(p.initialMargin),0):null;
- const futuresPnl=snap&&snap.totals?.perpUPL!=null&&Number.isFinite(Number(snap.totals.perpUPL))?Number(snap.totals.perpUPL):null;
+ const futuresPnl=snap&&fresh&&snap.totals?.perpUPL!=null&&Number.isFinite(Number(snap.totals.perpUPL))?Number(snap.totals.perpUPL):null;
+ const pnl=futuresPnl!=null?a.profit+futuresPnl:hasTrackedFutures()?null:a.profit;
  return {spot:a,hasFutures:!!snap,margin,invested:!snap?a.invested:margin===null?null:a.invested+margin,
-  futuresPnl,pnl:!snap?a.profit:futuresPnl===null?null:a.profit+futuresPnl};
+  futuresPnl,pnl};
 }
 const PERIODS={'24h':86400000,'7d':604800000,'30d':2592000000,'90d':7776000000,'6m':15552000000};
 const PERIOD_NAMES={'24h':'24 часа','7d':'7 дней','30d':'30 дней','90d':'90 дней','6m':'6 месяцев'};
