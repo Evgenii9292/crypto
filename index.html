@@ -201,28 +201,54 @@ function accountTotal(){
  const equity=p.hasFutures&&s.bybitSnapshot?.totals?.equity!=null?Number(s.bybitSnapshot.totals.equity):null;
  return equity==null?a.holdings:a.holdings+equity;
 }
-function pnlThirtyDayDelta(){
- // Monthly change in recorded floating PNL; never mislabel a short history
- // as a full-month result or invent one from live quotes.
- const series=pnlSeries('all').points,cutoff=Date.now()-PERIODS['30d'];
+function pnlThirtyDayDelta(kind='all'){
+ // Difference in observed floating PNL, not exchange-reported realized profit.
+ // Only show it when we really have a baseline around 30 days ago.
+ const series=pnlSeries(kind).points,cutoff=Date.now()-PERIODS['30d'];
  if(series.length<2)return null;
- const baseline=series.filter(p=>p.t<=cutoff&&p.t>=cutoff-12*3600000).at(-1);
+ const baseline=series.filter(p=>Math.abs(p.t-cutoff)<=12*3600000)
+  .sort((a,b)=>Math.abs(a.t-cutoff)-Math.abs(b.t-cutoff))[0];
  const latest=series.at(-1);
  if(!baseline||!latest||latest.t<=cutoff||Date.now()-latest.t>6*3600000)return null;
  return latest.v-baseline.v;
 }
+function monthlyMarkup(value){
+ const note='Изменение наблюдаемого плавающего PNL за последние 30 дней. Закрытые сделки и движения средств не учтены.';
+ return `<span class="${value==null?'neutral':cls(value)}" title="${note}">${value==null?'—':signed(value)}</span>`;
+}
 function overview(){
- const p=portfolioSummary(),a=p.spot,has=p.hasFutures;
- const equity=has&&s.bybitSnapshot?.totals?.equity!=null?Number(s.bybitSnapshot.totals.equity):null;
- const total=accountTotal(),pnl=p.pnl==null?'—':signed(p.pnl);
- const futureValue=equity==null?'—':dollars(equity);
- const month=pnlThirtyDayDelta();
+ const p=portfolioSummary(),a=p.spot;
+ const raw=s.bybitSnapshot?.totals?.equity;
+ const equity=p.hasFutures&&raw!=null&&Number.isFinite(Number(raw))?Number(raw):null;
+ const total=accountTotal(),futureValue=equity==null?'—':dollars(equity);
+ const pnl=p.pnl==null?'—':signed(p.pnl);
+ const month=pnlThirtyDayDelta('all'),spotMonth=pnlThirtyDayDelta('spot'),futureMonth=pnlThirtyDayDelta('futures');
  return `<div class="overview-layout"><div class="overview-primary">
-   <div class="card tint overviewHero"><div class="total">${dollars(total)}</div><div class="overviewPnlLine"><span class="metric ${p.pnl==null?'neutral':cls(p.pnl)}">${pnl}</span>${month==null?'':`<span class="overviewMonth" title="Изменение отслеживаемого PNL за 30 дней">30д <strong class="${cls(month)}">${signed(month)}</strong></span>`}</div></div>
-   ${spotPnlChart()}</div><div class="overview-aside">
-   <button class="assetSummary" type="button" data-action="gotoSpot"><span class="assetTitle">Спот</span><span class="assetNumbers"><strong>${dollars(a.holdings)}</strong><span class="${cls(a.profit)}">${signed(a.profit)}</span></span></button>
-   <button class="assetSummary" type="button" data-action="gotoFutures"><span class="assetTitle">Фьючерсы</span><span class="assetNumbers"><strong>${futureValue}</strong><span class="${p.futuresPnl==null?'neutral':cls(p.futuresPnl)}">${p.futuresPnl==null?'Нет подключения':signed(p.futuresPnl)}</span></span></button>
-   </div></div>`;
+  <div class="card tint overviewHero">
+   <div class="overviewEyebrow">Баланс портфеля</div>
+   <div class="total">${dollars(total)}</div>
+   <div class="overviewHeroMetrics">
+    <div class="overviewMetric"><span>Текущий PNL</span><strong class="${p.pnl==null?'neutral':cls(p.pnl)}">${pnl}</strong></div>
+    <div class="overviewMetric"><span>Месячный PNL</span><strong>${monthlyMarkup(month)}</strong></div>
+   </div>
+  </div>
+  ${spotPnlChart()}</div>
+  <div class="overview-aside">
+   <button class="assetSummary" type="button" data-action="gotoSpot">
+    <div class="assetTopline"><span class="assetTitle">Спот</span><strong>${dollars(a.holdings)}</strong></div>
+    <div class="assetPnlMetrics">
+     <span class="assetPnlMetric"><small>Текущий PNL</small><strong class="${cls(a.profit)}">${signed(a.profit)}</strong></span>
+     <span class="assetPnlMetric"><small>Месячный PNL</small><strong>${monthlyMarkup(spotMonth)}</strong></span>
+    </div>
+   </button>
+   <button class="assetSummary" type="button" data-action="gotoFutures">
+    <div class="assetTopline"><span class="assetTitle">Фьючерсы</span><strong>${futureValue}</strong></div>
+    <div class="assetPnlMetrics">
+     <span class="assetPnlMetric"><small>Текущий PNL</small><strong class="${p.futuresPnl==null?'neutral':cls(p.futuresPnl)}">${p.futuresPnl==null?'—':signed(p.futuresPnl)}</strong></span>
+     <span class="assetPnlMetric"><small>Месячный PNL</small><strong>${monthlyMarkup(futureMonth)}</strong></span>
+    </div>
+   </button>
+  </div></div>`;
 }
 function spotRow(symbol){
  const x=coin(symbol),a=sums(),open=!!s.spotOpen[symbol],tx=s.trades.filter(t=>t.coin===symbol),accounts=[...new Set(tx.map(t=>t.account||'fxmr4'))].join(', ')||'fxmr4';
