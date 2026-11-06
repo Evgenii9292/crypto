@@ -1,0 +1,37 @@
+name: FXMR4 checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  backend-and-ui:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Python syntax
+        run: python -m py_compile backend/server.py
+      - name: Backend tests (mocked Bybit)
+        run: python -m unittest discover -s backend -p 'test_*.py' -v
+      - name: Frontend syntax
+        run: |
+          node --check bybit-account.js
+          node --check levels.js
+          python - <<'PY'
+          import re
+          from pathlib import Path
+          html = Path("index.html").read_text(encoding="utf-8")
+          m = re.search(r"<script>(.*?)</script>", html, re.S)
+          assert m, "inline portfolio script not found"
+          Path("/tmp/fxmr4-main.js").write_text(m.group(1), encoding="utf-8")
+          PY
+          node --check /tmp/fxmr4-main.js
