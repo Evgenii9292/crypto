@@ -222,7 +222,7 @@ function futures(){
  ['Плавающий PNL',ready&&snap.perpUPL!=null?signed(snap.perpUPL):'—'],
  ['Доступно',ready&&snap.availableBalance!=null?dollars(snap.availableBalance):'—'],
  ['Открытых позиций',ready?String(s.futuresPositions.filter(p=>p.exchangeId==='bybit').length):'—']];
- return `<div class="hrow"><div><div class="sectitle">Фьючерсы</div><div class="tiny">Позиции по биржам и субаккаунтам</div></div><span class="pill">${ready?'Bybit подключён':'Нет подключения'}</span></div><div class="futureMetrics">${metrics.map(([name,value])=>`<div class="card tint"><div class="eyebrow">${name}</div><div class="num">${value}</div></div>`).join('')}</div><div class="section futurePnlLink"><div><strong>Общий график PNL</strong><span class="tiny">Весь портфель, спот или фьючерсы отдельно</span></div><button class="btn" type="button" data-action="gotoOverview">Посмотреть в обзоре</button></div><section class="section"><div class="futureToolbar"><div><div class="sectitle">Позиции и аккаунты</div><div class="tiny">Раскрывай биржи и выбирай группировку</div></div><button class="btn" type="button" data-action="goConnections">${icon('settings')} Настройки</button></div><div class="futureFilters"><div class="tradeSwitch" role="tablist" aria-label="Группировка фьючерсов">${[['all','Все позиции'],['exchange','По биржам'],['account','По субаккаунтам']].map(([id,name])=>`<button type="button" data-future-mode="${id}" class="${s.futureMode===id?'active':''}">${name}</button>`).join('')}</div><label class="sortLabel">Сортировка <select id="futureSort"><option value="pnl" ${s.futureSort==='pnl'?'selected':''}>PNL</option><option value="size" ${s.futureSort==='size'?'selected':''}>Размер</option><option value="symbol" ${s.futureSort==='symbol'?'selected':''}>Монета</option></select></label></div><div class="sourceList futureResults">${body}</div>${s.futureForm?futuresForm():''}<p class="tiny noteBelow">Торговые операции из FXMR4 недоступны.</p></section>`;
+ return `<div class="hrow"><div><div class="sectitle">Фьючерсы</div><div class="tiny">Позиции по биржам и субаккаунтам</div></div><span class="pill">${ready?'Bybit подключён':'Нет подключения'}</span></div><div class="futureMetrics">${metrics.map(([name,value])=>`<div class="card tint"><div class="eyebrow">${name}</div><div class="num">${value}</div></div>`).join('')}</div><div class="section futurePnlLink"><div><strong>Общий график PNL</strong><span class="tiny">Весь портфель, спот или фьючерсы отдельно</span></div><button class="btn" type="button" data-action="gotoOverview">Посмотреть в обзоре</button></div><section class="section"><div class="futureToolbar"><div><div class="sectitle">Позиции и аккаунты</div><div class="tiny">Раскрывай биржи и выбирай группировку</div></div><button class="btn" type="button" data-action="goConnections">${icon('settings')} Настройки</button></div><div class="futureFilters"><div class="tradeSwitch" role="tablist" aria-label="Группировка фьючерсов">${[['all','Все позиции'],['exchange','По биржам'],['account','По субаккаунтам']].map(([id,name])=>`<button type="button" data-future-mode="${id}" class="${s.futureMode===id?'active':''}">${name}</button>`).join('')}</div><label class="sortLabel">Сортировка <select id="futureSort"><option value="pnl" ${s.futureSort==='pnl'?'selected':''}>PNL</option><option value="size" ${s.futureSort==='size'?'selected':''}>Размер</option><option value="symbol" ${s.futureSort==='symbol'?'selected':''}>Монета</option></select></label></div><div class="sourceList futureResults">${body}</div>${s.futureForm?futuresForm():''}</section>`;
 }
 function capitalSettings(){
  const a=sums();
@@ -244,7 +244,7 @@ function render(){
  const a=sums(),equity=s.backendConnection.connected?s.bybitSnapshot?.totals?.equity:null;
  const distinctEquity=equity!=null&&Number.isFinite(Number(equity))?Number(equity):null;
  $('sidebarTotal').textContent=dollars(a.total+(distinctEquity??0));
- $('sidebarTotalDetail').textContent=distinctEquity===null?'Спот': 'Спот + Bybit';
+ $('sidebarTotalDetail').textContent=distinctEquity===null?'Спот (учёт)': 'Спот (учёт) + Bybit';
  $('connectionStatusText').textContent=s.backendConnection.connected?'Bybit подключён':'Биржи не подключены';
  $('connectionDot').classList.toggle('isDisconnected',!s.backendConnection.connected);
  document.querySelector('.tabs').dataset.active=s.tab;
@@ -389,7 +389,7 @@ function bybitQuotes(){
         const q=await provider(),when=new Date().toISOString();
         s.quotes={BTC:{price:q.BTC,source:q.source,updated_at:when},ETH:{price:q.ETH,source:q.source,updated_at:when}};
         s.sync={source:q.source};
-        if(!quiet)s.flash='Цены обновлены: '+q.source+'.';
+        if(!quiet)s.flash='Цены обновлены.';
         recordSnapshot();success=true;break;
       }catch(e){console.warn('Источник цен недоступен:',e.message)}
     }
