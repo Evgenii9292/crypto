@@ -60,7 +60,7 @@ test('period change resets chart zoom without erasing target data',()=>{
  chart.render('BTC','all',weekly,{price:75000},[{price:75000}]);
  chart.zoom('BTC',3);
  assert.ok(chart.viewport('BTC').width<chart.viewport('BTC').full);
- const markup=chart.render('BTC','90d',weekly.slice(-13),{price:75000},[{price:75000}]);
+ const markup=chart.render('BTC','90d',weekly.slice(-13),{price:69000},[{price:69000}]);
  assert.equal(chart.viewport('BTC').width,chart.viewport('BTC').full);
  assert.match(markup,/sl-target-line/);
 });
