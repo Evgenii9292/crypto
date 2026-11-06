@@ -117,46 +117,49 @@ function pnlWindow(kind,period){
  const all=pnlSeries(kind).points,points=all.filter(p=>p.t>=from).slice(-1500);
  return {all,points,from,first:points.length?points[0].t:null,last:points.length?points[points.length-1].t:null};
 }
-function chartHTML(kind,period,shift){
- const win=pnlWindow(kind,period);
- // A balance view is the same series lifted by the money currently invested.
- // It is a derived line, not a second measurement, and the caption says so.
- const data=shift?win.points.map(p=>({t:p.t,v:p.v+shift})):win.points;
- if(data.length<2)return '<div class="emptychart"><strong>История PNL формируется</strong><span>После нескольких обновлений появится график с реальными датами. Историю не придумываем.</span></div>';
+function balanceSeries(kind,period){
+ const from=Date.now()-(PERIODS[period]||PERIODS['7d']);
+ const field=kind==='spot'?'spotBalance':'futuresBalance';
+ const points=s.portfolioSnapshots.map(p=>({t:Number(p.time),v:p[field]==null?null:Number(p[field])}))
+  .filter(p=>Number.isFinite(p.t)&&p.t>=from&&p.v!==null&&Number.isFinite(p.v)&&p.v>=0)
+  .sort((a,b)=>a.t-b.t).slice(-1500);
+ return {points,from,first:points[0]?.t??null,last:points.at(-1)?.t??null};
+}
+function chartHTML(kind,period,metric='pnl'){
+ const balance=metric==='balance',win=balance?balanceSeries(kind,period):pnlWindow(kind,period),data=win.points;
+ if(data.length<2)return '<div class="emptychart"><strong>История '+(balance?'баланса':'PNL')+' формируется</strong><span>Здесь появится история измерений без выдуманных значений.</span></div>';
  const start=data[0].t,end=data[data.length-1].t,W=660,H=224,L=65,R=16,T=14,B=39;
- const vals=data.map(x=>x.v),min=Math.min(0,...vals),max=Math.max(0,...vals),spread=Math.max(max-min,.25),low=min-.18*spread,high=max+.18*spread;
+ const vals=data.map(x=>x.v),min=balance?Math.min(...vals):Math.min(0,...vals),max=balance?Math.max(...vals):Math.max(0,...vals);
+ const spread=Math.max(max-min,balance?Math.abs(max)*.003:.25,.01),low=min-.18*spread,high=max+.18*spread;
  const x=t=>L+(t-start)/Math.max(1,end-start)*(W-L-R),y=v=>T+(high-v)/(high-low)*(H-T-B);
+ const axis=n=>balance?dollars(n):axisMoney(n);
  let guide='';
- for(let k=0;k<=4;k++){let value=high-(high-low)*k/4,cy=y(value);guide+='<line x1="'+L+'" x2="'+(W-R)+'" y1="'+cy.toFixed(1)+'" y2="'+cy.toFixed(1)+'" class="chartGrid"/><text x="'+(L-9)+'" y="'+(cy+4).toFixed(1)+'" text-anchor="end" class="chartAxis">'+axisMoney(value)+'</text>'}
+ for(let k=0;k<=4;k++){let value=high-(high-low)*k/4,cy=y(value);guide+='<line x1="'+L+'" x2="'+(W-R)+'" y1="'+cy.toFixed(1)+'" y2="'+cy.toFixed(1)+'" class="chartGrid"/><text x="'+(L-9)+'" y="'+(cy+4).toFixed(1)+'" text-anchor="end" class="chartAxis">'+axis(value)+'</text>'}
  const f=t=>period==='24h'?new Date(t).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}):new Date(t).toLocaleDateString('ru-RU',{month:'short',day:'numeric'});
  for(const fraction of [0,.5,1]){const tick=L+fraction*(W-L-R);guide+='<text x="'+tick+'" y="'+(H-10)+'" text-anchor="'+(fraction===0?'start':fraction===1?'end':'middle')+'" class="chartAxis">'+escape(f(start+(end-start)*fraction))+'</text>'}
- const pts=data.map(p=>x(p.t).toFixed(1)+','+y(p.v).toFixed(1)).join(' '),last=data[data.length-1],color=last.v<0?'var(--red)':'var(--green)';
- return '<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="xMidYMid meet" role="img" aria-label="График PNL с датами и значениями"><g>'+guide+'</g><line x1="'+L+'" x2="'+(W-R)+'" y1="'+y(0).toFixed(1)+'" y2="'+y(0).toFixed(1)+'" class="chartZero"/><polyline points="'+pts+'" fill="none" stroke="'+color+'" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="'+x(last.t).toFixed(1)+'" cy="'+y(last.v).toFixed(1)+'" r="4" fill="'+color+'"><title>'+escape(axisMoney(last.v)+' · '+new Date(last.t).toLocaleString('ru-RU'))+'</title></circle></svg>';
+ const pts=data.map(p=>x(p.t).toFixed(1)+','+y(p.v).toFixed(1)).join(' '),last=data[data.length-1],color=balance?'var(--text)':last.v<0?'var(--red)':'var(--green)';
+ return '<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="xMidYMid meet" role="img" aria-label="График '+(balance?'баланса':'PNL')+' с датами и значениями"><g>'+guide+'</g>'+(balance?'':'<line x1="'+L+'" x2="'+(W-R)+'" y1="'+y(0).toFixed(1)+'" y2="'+y(0).toFixed(1)+'" class="chartZero"/>')+'<polyline points="'+pts+'" fill="none" stroke="'+color+'" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="'+x(last.t).toFixed(1)+'" cy="'+y(last.v).toFixed(1)+'" r="4" fill="'+color+'"><title>'+escape(axis(last.v)+' · '+new Date(last.t).toLocaleString('ru-RU'))+'</title></circle></svg>';
 }
-function chartCaption(kind,period,p,shift){
- const win=pnlWindow(kind,period);
+function chartCaption(kind,period,p,metric='pnl'){
+ const balance=metric==='balance',win=balance?balanceSeries(kind,period):pnlWindow(kind,period);
  const scope=kind==='spot'?'Спот':kind==='futures'?'Фьючерсы':'Портфель';
- if(!win.points.length)return 'USD · '+scope+' · нет данных за '+PERIOD_NAMES[period];
+ if(!win.points.length)return scope+' · нет истории за '+PERIOD_NAMES[period];
  const days=Math.max(1,Math.round((win.last-win.first)/86400000));
  const span=days>=2?days+' дн.':Math.max(1,Math.round((win.last-win.first)/3600000))+' ч';
- const partial=win.first>win.from+86400000?' · история короче периода':'';
- const derived=shift?' · баланс = вложено сейчас + PNL':'';
- return 'USD · '+scope+' · '+span+partial+derived+(kind==='all'&&!p.hasFutures?' · сейчас только Спот':'');
+ return scope+' · '+(balance?'баланс':'PNL')+' · '+span;
 }
 function periodButtons(period,chart){
  return `<div class="periods">${[['24h','24ч'],['7d','7д'],['30d','30д'],['90d','90д'],['6m','6 мес']].map(([q,name])=>`<button type="button" data-period="${q}" data-chart="${chart}" class="period ${period===q?'active':''}">${name}</button>`).join('')}</div>`;
 }
 function pnlChartBlock(opts){
- // One chart component reused in three places (overview, spot, futures). Each
- // place owns its own period and metric so switching one does not move another.
  const key=opts.key,kind=opts.kind||s.pnlMode,period=s.chartPeriod[key]||'7d';
  const metric=opts.metricSwitch?(s.chartMetric[key]||'pnl'):'pnl';
- const current=opts.current==null?null:Number(opts.current);
  const subtitle=opts.subtitle===undefined?'Динамика результатов по позициям':opts.subtitle;
- const shift=metric==='balance'&&opts.invested!=null?Number(opts.invested):null;
  const showModes=!!opts.modes;
  const metricSwitch=opts.metricSwitch?`<div class="pnlMode"><button class="${metric==='pnl'?'active':''}" data-metric="pnl" data-chart="${key}" type="button">PNL</button><button class="${metric==='balance'?'active':''}" data-metric="balance" data-chart="${key}" type="button">Баланс</button></div>`:'';
- return `<section class="section pnlChart card"><div class="hrow pnlChartHead"><div><div class="sectitle">${opts.title||'Портфель'}</div>${subtitle?`<div class="tiny">${escape(subtitle)}</div>`:''}</div>${periodButtons(period,key)}</div>${showModes?`<div class="pnlMode">${[['all','Все'],['spot','Спот'],['futures','Фьючерсы']].map(([k,name])=>`<button class="${kind===k?'active':''}" data-pnl-mode="${k}" type="button">${name}</button>`).join('')}</div>`:''}${metricSwitch}<div class="chartbox">${chartHTML(kind,period,shift)}</div><div class="chartlegend"><span>${chartCaption(kind,period,opts.summary,shift)}</span><strong class="${current==null?'neutral':cls(current)}">${current==null?'—':signed(current)}</strong></div></section>`;
+ const balanceValue=metric==='balance'?(kind==='spot'?sums().holdings:s.bybitSnapshot?.totals?.equity):null;
+ const current=metric==='balance'?(balanceValue!=null&&Number.isFinite(Number(balanceValue))?Number(balanceValue):null):opts.current==null?null:Number(opts.current);
+ return `<section class="section pnlChart card"><div class="hrow pnlChartHead"><div><div class="sectitle">${opts.title||'Портфель'}</div>${subtitle?`<div class="tiny">${escape(subtitle)}</div>`:''}</div>${periodButtons(period,key)}</div>${showModes?`<div class="pnlMode">${[['all','Все'],['spot','Спот'],['futures','Фьючерсы']].map(([k,name])=>`<button class="${kind===k?'active':''}" data-pnl-mode="${k}" type="button">${name}</button>`).join('')}</div>`:''}${metricSwitch}<div class="chartbox">${chartHTML(kind,period,metric)}</div><div class="chartlegend"><span>${chartCaption(kind,period,opts.summary,metric)}</span><strong class="${current==null||metric==='balance'?'neutral':cls(current)}">${current==null?'—':metric==='balance'?dollars(current):signed(current)}</strong></div></section>`;
 }
 function spotPnlChart(){
  const p=portfolioSummary();
@@ -503,7 +506,7 @@ window.fxmr4App={onBackendStatus,onSnapshot,onDisconnected,applyCloudState};
         if(q&&Number(q.price)>0&&Number.isFinite(Number(q.price)))s.quotes[coin]={price:Number(q.price),source:String(q.source||'Сохранено'),updated_at:q.updated_at||null};
       }
       if(Array.isArray(saved.snapshots))s.snapshots=saved.snapshots.filter(p=>Number.isFinite(p.time)&&Number.isFinite(p.pnl)).slice(-1500);
-      if(Array.isArray(saved.portfolioSnapshots))s.portfolioSnapshots=saved.portfolioSnapshots.filter(p=>p&&Number.isFinite(Number(p.time))&&Number.isFinite(Number(p.total))&&Number.isFinite(Number(p.futures))).slice(-1500);
+      if(Array.isArray(saved.portfolioSnapshots))s.portfolioSnapshots=saved.portfolioSnapshots.filter(p=>p&&Number.isFinite(Number(p.time))&&p.spot!=null&&Number.isFinite(Number(p.spot))).slice(-1500);
       if(saved.chartPeriod&&typeof saved.chartPeriod==='object'){
         for(const k of ['overview','spot','futures'])if(PERIODS[saved.chartPeriod[k]])s.chartPeriod[k]=saved.chartPeriod[k];
         s.period=s.chartPeriod.overview;
