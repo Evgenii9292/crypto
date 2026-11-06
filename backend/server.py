@@ -17,6 +17,8 @@ import os
 import secrets
 import threading
 import time
+
+import state as saved_state
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -49,9 +51,11 @@ class BybitFailure(Exception):
 
 def credentials():
     with LOCK:
-        key = EPHEMERAL["key"] or os.environ.get("BYBIT_SUBACCOUNT_KEY", "")
-        secret = EPHEMERAL["secret"] or os.environ.get("BYBIT_SUBACCOUNT_SECRET", "")
-        label = EPHEMERAL["label"] if EPHEMERAL["key"] else os.environ.get("BYBIT_SUBACCOUNT_LABEL", "Subaccount")
+        disk = saved_state.read_credentials()
+        key = EPHEMERAL["key"] or (disk["key"] if disk else None) or os.environ.get("BYBIT_SUBACCOUNT_KEY", "")
+        secret = EPHEMERAL["secret"] or (disk["secret"] if disk else None) or os.environ.get("BYBIT_SUBACCOUNT_SECRET", "")
+        label = (EPHEMERAL["label"] if EPHEMERAL["key"] else
+                 disk["label"] if disk else os.environ.get("BYBIT_SUBACCOUNT_LABEL", "Subaccount"))
     return key, secret, label
 
 
@@ -238,7 +242,14 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/status":
             key, secret, label = credentials()
             self._json({"backend": True, "configured": bool(key and secret),
-                        "account": label, "exchange": "Bybit", "readOnly": True})
+                        "account": label, "exchange": "Bybit", "readOnly": True,
+                        "persisted": bool(saved_state.read_credentials())})
+            return
+        if path == "/api/user-data":
+            try:
+                self._json(saved_state.read_profile())
+            except saved_state.StateError as exc:
+                self._json({"error": str(exc)}, 500)
             return
         if path == "/api/snapshot":
             try:
@@ -261,22 +272,15 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if not self._require_login():
             return
-        if self.path not in ("/api/connect", "/api/disconnect"):
+        path = urlsplit(self.path).path
+        if path not in ("/api/connect", "/api/disconnect", "/api/user-data"):
             self._json({"error": "Not found"}, 404)
             return
         if not self._same_origin_action():
             self._json({"error": "Invalid request origin"}, 403)
             return
-        if self.path == "/api/disconnect":
-            with LOCK:
-                if os.environ.get("BYBIT_SUBACCOUNT_KEY") or os.environ.get("BYBIT_SUBACCOUNT_SECRET"):
-                    self._json({"error": "Ключ задан в конфигурации VPS. Удали его там и перезапусти службу."}, 409)
-                    return
-                EPHEMERAL.update({"key": None, "secret": None, "label": "Subaccount"})
-                CACHE.update({"at": 0.0, "data": None})
-            self._json({"connected": False, "disconnected": True})
-            return
-        # Secrets must NEVER traverse the internet in cleartext.
+        # Browser HTTPS is terminated by Caddy on the SAME VPS. Localhost
+        # access is allowed for the SSH-encrypted loopback tunnel.
         local = self.headers.get("Host", "").split(":")[0] in ("127.0.0.1", "localhost")
         if not local and self.headers.get("X-Forwarded-Proto") != "https":
             self._json({"error": "HTTPS required"}, 403)
@@ -286,21 +290,53 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError:
             self._json({"error": "Invalid content length"}, 400)
             return
-        if not 1 <= body_length < 5000:
-            self._json({"error": "Invalid content length"}, 400)
+        limit = 470_000 if path == "/api/user-data" else 5_000
+        if not 1 <= body_length < limit:
+            self._json({"error": "Invalid content length"}, 413)
             return
         try:
             data = json.loads(self.rfile.read(body_length))
+        except (ValueError, TypeError, UnicodeError, json.JSONDecodeError):
+            self._json({"error": "Invalid JSON"}, 400)
+            return
+
+        if path == "/api/user-data":
+            try:
+                result = saved_state.write_profile(
+                    data.get("revision"), data.get("portfolio"), data.get("levels")
+                )
+                self._json(result)
+            except saved_state.StateError as exc:
+                msg = str(exc)
+                self._json({"error": msg}, 409 if msg.startswith("CONFLICT") else 422)
+            return
+
+        if path == "/api/disconnect":
+            try:
+                with LOCK:
+                    if os.environ.get("BYBIT_SUBACCOUNT_KEY") or os.environ.get("BYBIT_SUBACCOUNT_SECRET"):
+                        self._json({"error": "Ключ задан в конфигурации VPS. Удали его там и перезапусти службу."}, 409)
+                        return
+                    saved_state.delete_credentials()
+                    EPHEMERAL.update({"key": None, "secret": None, "label": "Subaccount"})
+                    CACHE.update({"at": 0.0, "data": None})
+                self._json({"connected": False, "disconnected": True})
+            except saved_state.StateError as exc:
+                self._json({"error": str(exc)}, 500)
+            return
+
+        # Bybit credentials must never be sent from a public static origin.
+        try:
             key = str(data.get("key", "")).strip()
             secret = str(data.get("secret", "")).strip()
             label = str(data.get("label", "Subaccount")).strip()[:40] or "Subaccount"
-        except (ValueError, TypeError, UnicodeError, json.JSONDecodeError):
+        except (ValueError, TypeError, UnicodeError):
             self._json({"error": "Invalid JSON"}, 400)
             return
         if not (10 <= len(key) <= 256 and 10 <= len(secret) <= 256):
             self._json({"error": "Invalid key/secret length"}, 400)
             return
-        # Validate BEFORE activating credentials, do not store on disk.
+        # Validate read-only subaccount permissions BEFORE encrypted storage.
         try:
             meta = request_bybit("/v5/user/query-api", {}, key, secret)
             if meta.get("readOnly") != 1:
@@ -313,11 +349,16 @@ class Handler(BaseHTTPRequestHandler):
         except BybitFailure as exc:
             self._json({"connected": False, "error": str(exc)}, 422)
             return
+        try:
+            saved_state.write_credentials(key, secret, label)
+        except saved_state.StateError as exc:
+            self._json({"error": str(exc)}, 500)
+            return
         with LOCK:
             EPHEMERAL.update({"key": key, "secret": secret, "label": label})
             CACHE.update({"at": 0.0, "data": None})
         self._json({"connected": True, "account": label,
-                    "message": "Ключ проверен. Хранится только в памяти процесса до перезапуска."})
+                    "persisted": True, "message": "Ключ шифруется и хранится на VPS даже после перезапуска."})
 
 
 def main():
@@ -327,6 +368,7 @@ def main():
         raise SystemExit("Refusing public bind. Put HTTPS reverse proxy in front of 127.0.0.1.")
     if API_HOST not in ALLOWED_HOSTS:
         raise SystemExit("BYBIT_API_HOST must be an approved official Bybit API host")
+    saved_state.is_ready()
     server = ThreadingHTTPServer((BIND, PORT), Handler)
     print("FXMR4 private app listening on http://%s:%d" % (BIND, PORT), flush=True)
     server.serve_forever()
