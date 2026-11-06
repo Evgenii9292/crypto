@@ -11,6 +11,7 @@ from __future__ import annotations
 import base64
 import binascii
 import hashlib
+import html
 import hmac
 import json
 import os
@@ -20,9 +21,10 @@ import time
 
 import state as saved_state
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.cookies import SimpleCookie, CookieError
 from pathlib import Path
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import urlencode, urlsplit, parse_qs
 from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -41,6 +43,31 @@ RECV_WINDOW = "5000"
 LOCK = threading.RLock()
 EPHEMERAL = {"key": None, "secret": None, "label": "Subaccount"}
 CACHE = {"at": 0.0, "data": None}
+TRADES_LOCK = threading.Lock()
+TRADES_CACHE = {"at": 0.0, "identity": None, "data": None}
+LOGIN_LOCK = threading.Lock()
+LOGIN_FAILURES = []
+SESSION_LIFETIME = 7 * 86_400
+
+
+def session_token():
+    payload = str(int(time.time()) + SESSION_LIFETIME) + "." + secrets.token_hex(24)
+    signature = hmac.new(PASSWORD.encode(), ("fxmr4-session-v1:" + USER + ":" + payload).encode(), hashlib.sha256).hexdigest()
+    return payload + "." + signature
+
+
+def session_valid(token):
+    if not PASSWORD or len(token) > 200:
+        return False
+    try:
+        expiry, nonce, signature = token.split(".")
+        remaining = int(expiry) - time.time()
+    except (ValueError, TypeError):
+        return False
+    if not 0 < remaining <= SESSION_LIFETIME or len(nonce) != 48:
+        return False
+    expected = hmac.new(PASSWORD.encode(), ("fxmr4-session-v1:" + USER + ":" + expiry + "." + nonce).encode(), hashlib.sha256).hexdigest()
+    return secrets.compare_digest(signature.encode(), expected.encode())
 MIME = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
         ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml"}
 
@@ -190,6 +217,78 @@ def snapshot():
     return data
 
 
+def closed_trades():
+    key, secret, label = credentials()
+    if not key or not secret:
+        raise BybitFailure("Ключ субаккаунта ещё не настроен")
+    identity = hashlib.sha256((API_HOST + key + secret).encode()).hexdigest()
+    with TRADES_LOCK:
+        if (TRADES_CACHE["identity"] == identity and TRADES_CACHE["data"] is not None
+                and time.monotonic() - TRADES_CACHE["at"] < 300):
+            return TRADES_CACHE["data"]
+        info = request_bybit("/v5/user/query-api", {}, key, secret)
+        if info.get("readOnly") != 1 or info.get("isMaster") is True:
+            raise BybitFailure("Нужен API-ключ Read-Only субаккаунта")
+        end = int(time.time() * 1000)
+        start = end - 30 * 86_400_000
+        window_start = start
+        records = {}
+        deadline = time.monotonic() + 90
+        while window_start <= end:
+            window_end = min(end, window_start + 7 * 86_400_000 - 1)
+            cursor = ""
+            seen_cursors = set()
+            for _ in range(20):
+                if time.monotonic() > deadline:
+                    raise BybitFailure("Загрузка истории заняла слишком долго. Попробуйте ещё раз")
+                params = {"category": "linear", "startTime": window_start,
+                          "endTime": window_end, "limit": 100}
+                if cursor:
+                    params["cursor"] = cursor
+                page = request_bybit("/v5/position/closed-pnl", params, key, secret)
+                items = page.get("list")
+                if not isinstance(items, list):
+                    raise BybitFailure("Bybit не вернул список закрытых сделок")
+                for item in items:
+                    order_id = item.get("orderId")
+                    closed_at = _int_ms(item.get("updatedTime"))
+                    if not order_id or closed_at is None or not window_start <= closed_at <= window_end:
+                        raise BybitFailure("Неполные данные закрытой сделки или дата вне запрошенного периода")
+                    row = {
+                        "id": str(order_id), "symbol": str(item.get("symbol", ""))[:30],
+                        "side": "Long" if item.get("side") == "Sell" else
+                                "Short" if item.get("side") == "Buy" else None,
+                        "quantity": _num(item.get("qty")),
+                        "entryPrice": _num(item.get("avgEntryPrice")),
+                        "exitPrice": _num(item.get("avgExitPrice")),
+                        "pnl": _num(item.get("closedPnl")),
+                        "openFee": _num(item.get("openFee")),
+                        "closeFee": _num(item.get("closeFee")),
+                        "closedAt": closed_at, "execType": str(item.get("execType", "")),
+                        "accountId": "bybit-subaccount", "exchangeId": "bybit",
+                    }
+                    record_id = (row["symbol"], row["id"])
+                    if record_id in records and records[record_id] != row:
+                        raise BybitFailure("История Bybit изменилась во время загрузки. Попробуйте ещё раз")
+                    records[record_id] = row
+                next_cursor = page.get("nextPageCursor") or ""
+                if not next_cursor:
+                    break
+                if next_cursor in seen_cursors:
+                    raise BybitFailure("Bybit повторил страницу истории")
+                seen_cursors.add(next_cursor)
+                cursor = next_cursor
+            else:
+                raise BybitFailure("История превышает лимит загрузки; результат не показан как полный")
+            window_start = window_end + 1
+        data = {"account": {"id": "bybit-subaccount", "name": label},
+                "from": start, "to": end, "updatedAt": int(time.time() * 1000),
+                "complete": True, "category": "linear",
+                "trades": sorted(records.values(), key=lambda row: row["closedAt"], reverse=True)}
+        TRADES_CACHE.update(at=time.monotonic(), identity=identity, data=data)
+        return data
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "FXMR4/1.0"
 
@@ -210,7 +309,7 @@ class Handler(BaseHTTPRequestHandler):
                          "style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
                          "connect-src 'self' https://api.bybit.com https://api.bybit.id "
                          "https://api.bytick.com https://api.coingecko.com "
-                         "https://min-api.cryptocompare.com; frame-ancestors 'none'")
+                         "https://min-api.cryptocompare.com; frame-ancestors 'none'; form-action 'self'; base-uri 'self'")
         if length is not None:
             self.send_header("Content-Length", str(length))
         self.end_headers()
@@ -221,6 +320,14 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(payload)
 
     def _authenticated(self):
+        try:
+            cookies = SimpleCookie()
+            cookies.load(self.headers.get("Cookie", ""))
+            token = cookies.get("fxmr4_session")
+            if token and session_valid(token.value):
+                return True
+        except CookieError:
+            pass
         value = self.headers.get("Authorization", "")
         if not value.startswith("Basic "):
             return False
@@ -234,12 +341,65 @@ class Handler(BaseHTTPRequestHandler):
     def _require_login(self):
         if self._authenticated():
             return True
-        self.send_response(401)
-        self.send_header("WWW-Authenticate", 'Basic realm="FXMR4 private"')
+        if urlsplit(self.path).path in ("/", "/index.html", "/login"):
+            self._login_page()
+        else:
+            self._json({"error": "Войдите в портфель", "loginRequired": True}, 401)
+        return False
+
+    def _login_page(self, error="", code=200):
+        page = """<!doctype html><html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Вход в портфель</title><style>
+*{box-sizing:border-box}body{margin:0;background:#fafbfc;color:#222730;font:16px system-ui,-apple-system,sans-serif;min-height:100svh;display:grid;place-items:center;padding:24px}
+main{width:100%;max-width:380px;padding:28px;background:white;border:1px solid #e1e4ea;border-radius:20px}h1{font-size:26px;margin:0 0 8px}p{color:#687180;line-height:1.5;margin:0 0 24px}label{display:block;font-size:14px;margin:18px 0 8px}input,button{width:100%;font:inherit;border-radius:10px;padding:14px}input{border:1px solid #d4d9e1;background:white;color:#222730}button{margin-top:24px;background:#222730;color:white;border:0;font-weight:600}.error{color:#b42b35;margin:16px 0 0}
+@media(prefers-color-scheme:dark){body{background:#101318;color:#f1f3f7}main{background:#191d24;border-color:#343b46}input{background:#222730;color:#f1f3f7;border-color:#485160}p{color:#a1a9b6}button{background:#f1f3f7;color:#191d24}.error{color:#ff9097}}
+</style></head><body><main><h1>Ваш портфель</h1><p>Введите логин и пароль для входа.</p>
+<form method="post" action="/api/login"><label for="username">Логин</label><input id="username" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" value="LOGIN_VALUE" required>
+<label for="password">Пароль</label><input id="password" name="password" type="password" autocomplete="current-password" required>
+ERROR_MESSAGE<button type="submit">Войти</button></form></main></body></html>"""
+        page = page.replace("LOGIN_VALUE", html.escape(USER, quote=True)).replace(
+            "ERROR_MESSAGE", '<p class="error" role="alert">' + html.escape(error) + '</p>' if error else "")
+        body = page.encode("utf-8")
+        self._headers(code, "text/html; charset=utf-8", len(body))
+        self.wfile.write(body)
+
+    def _login(self):
+        host = self.headers.get("Host", "")
+        local = host.split(":")[0] in ("127.0.0.1", "localhost")
+        origin = self.headers.get("Origin", "")
+        if (self.headers.get("Sec-Fetch-Site") == "cross-site"
+                or origin and urlsplit(origin).netloc.lower() != host.lower()
+                or origin and urlsplit(origin).scheme != "https" and not local
+                or not local and self.headers.get("X-Forwarded-Proto") != "https"):
+            self._login_page("Откройте страницу входа по защищённой ссылке.", 403)
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            if not 0 < length < 5000:
+                raise ValueError()
+            fields = parse_qs(self.rfile.read(length).decode("utf-8"), max_num_fields=4)
+        except (ValueError, UnicodeError):
+            self._login_page("Не удалось прочитать форму входа.", 400)
+            return
+        now = time.monotonic()
+        with LOGIN_LOCK:
+            LOGIN_FAILURES[:] = [stamp for stamp in LOGIN_FAILURES if now - stamp < 60]
+            if len(LOGIN_FAILURES) >= 12:
+                self._login_page("Слишком много попыток. Подождите минуту.", 429)
+                return
+            valid = bool(PASSWORD) and secrets.compare_digest(fields.get("username", [""])[0].encode(), USER.encode()) and secrets.compare_digest(fields.get("password", [""])[0].encode(), PASSWORD.encode())
+            if not valid:
+                LOGIN_FAILURES.append(now)
+        if not valid:
+            self._login_page("Неверный логин или пароль.", 401)
+            return
+        self.send_response(303)
+        self.send_header("Location", "/")
         self.send_header("Cache-Control", "no-store")
+        self.send_header("Set-Cookie", "fxmr4_session=" + session_token() + "; Path=/; HttpOnly; SameSite=Strict; Max-Age=" + str(SESSION_LIFETIME) + ("; Secure" if not local else ""))
         self.send_header("Content-Length", "0")
         self.end_headers()
-        return False
 
     def _same_origin_action(self):
         # A custom header prevents cross-site HTML forms; no CORS is enabled.
@@ -282,6 +442,12 @@ class Handler(BaseHTTPRequestHandler):
             except BybitFailure as exc:
                 self._json({"connected": False, "error": str(exc)}, 503)
             return
+        if path == "/api/closed-trades":
+            try:
+                self._json(closed_trades())
+            except (BybitFailure, saved_state.StateError) as exc:
+                self._json({"error": str(exc)}, 503)
+            return
         target = ROOT / ("index.html" if path == "/" else path.lstrip("/"))
         try:
             resolved = target.resolve()
@@ -295,6 +461,9 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"error": "Not found"}, 404)
 
     def do_POST(self):
+        if urlsplit(self.path).path == "/api/login":
+            self._login()
+            return
         if not self._require_login():
             return
         path = urlsplit(self.path).path

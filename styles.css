@@ -176,7 +176,7 @@
 .sortLabel{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);white-space:nowrap}
 .sortLabel select{border-radius:8px;padding:8px 9px;border:1px solid var(--border);color:var(--text);background:var(--surface)}
 .futureResults{margin-top:10px}
-.futurePosition{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;padding:13px;border-bottom:1px solid var(--border);font-size:12px}
+.futurePosition{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,.8fr) minmax(0,.8fr) minmax(0,1.35fr);gap:10px;padding:13px;border-bottom:1px solid var(--border);font-size:12px;align-items:center}
 .futurePosition>span{display:flex;flex-direction:column;gap:2px}
 @media(max-width:960px){
 .overview-layout{display:block}
@@ -394,8 +394,10 @@
 .posBadge.long{background:#e6f7ed;color:#196342}
 .posBadge.short{background:#fdeaea;color:#a52a2f}
 .posBadge.lev{background:var(--surface3);color:var(--sub)}
-.posBar{display:block;height:3px;border-radius:2px;background:var(--surface3);margin-top:6px;overflow:hidden;max-width:120px}
-.posBar>i{display:block;height:100%;background:var(--reserve);border-radius:2px}
+.positionVolume,.positionAge{color:var(--sub);font-weight:400;font-variant-numeric:tabular-nums}
+.positionPnl{font-variant-numeric:tabular-nums}
+.pnlPercent{font-size:10px;font-weight:450;white-space:nowrap}
+.futureHead small{font-size:9px;font-weight:400;text-transform:none}
 @media(prefers-color-scheme:dark){
  .posBadge.long{background:#1a422d;color:#a4f1c0}
  .posBadge.short{background:#4a2226;color:#ffb3b6}
@@ -405,7 +407,10 @@
  .futurePosition.futureHead{display:grid;padding:0 4px 7px;font-size:9px;letter-spacing:.2px}
  .futurePosition.futureHead .hLong{display:none}
  .futurePosition.futureHead .hShort{display:inline}
- .futurePosition{grid-template-columns:minmax(0,1fr) auto auto;gap:8px;padding:12px 4px}
+ .futurePosition{gap:6px;padding:12px 4px;font-size:11px}
+ .futureCoin{gap:4px}
+ .futureCoin>strong{font-size:11px;overflow-wrap:anywhere}
+ .positionPnl .pnlPercent{display:block;font-size:9px}
  .futurePosition .right strong{font-size:12px}
  .sortChip{padding:5px 9px;font-size:10px}
  .pnlChartHead .periods{justify-content:flex-start}
@@ -431,3 +436,11 @@
 .settingsExchanges{margin-top:16px;padding-top:14px;border-top:1px solid var(--border)}
 .settingsExchangesTitle{margin-bottom:8px;font-weight:620;color:var(--sub)}
 .settingsExchanges .sourceList{margin-top:0}
+.closedTable{margin-top:16px}
+.closedRow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,.9fr) minmax(0,1.2fr) minmax(0,.85fr);gap:10px;align-items:center;padding:13px 0;border-bottom:1px solid var(--border);font-size:12px}
+.closedRow>span{min-width:0}
+.closedRow small{display:block;color:var(--muted);font-size:10px;margin-top:3px}
+.closedHead{font-size:10px;color:var(--muted);padding-top:0}
+.closedDate,.closedPrices{color:var(--sub);font-variant-numeric:tabular-nums}
+.closedNote{line-height:1.55;margin:12px 0 0}
+@media(max-width:600px){.closedRow{gap:6px;font-size:10px}.closedRow strong{overflow-wrap:anywhere}.closedRow small{font-size:9px}}

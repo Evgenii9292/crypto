@@ -175,7 +175,7 @@ function overviewSource(ex){
   const id=ex.id+':'+ac.id,pp=s.futuresPositions.filter(p=>p.exchangeId===ex.id&&p.accountId===ac.id);
   const isLinked=isBybit&&ac.id==='bybit-subaccount'&&s.backendConnection.connected;
   const current=isLinked&&pp.every(p=>p.pnl!=null)?pp.reduce((sum,p)=>sum+Number(p.pnl),0):null;
-  return `<div class="sourceSub"><div class="accountRow"><button type="button" class="sourceSubHeader" data-action="toggleAccount" data-id="${escape(id)}"><span class="accountIdentity"><strong>${escape(ac.name)}</strong><span class="accountTag">Фьючерсы</span></span><span class="sourceSubRight">${inlineMetric(current,null)} <span class="chev ${s.openedAccounts[id]?'rotated':''}">⌄</span></span></button><button class="accountManage" type="button" data-action="manageAccount" data-id="${escape(id)}" aria-label="Настройки ${escape(ac.name)}" title="Управление субаккаунтом">${icon('settings')}</button></div>${s.openedAccounts[id]?(pp.length?pp.map(futurePositionLine).join(''):'<div class="sourceEmpty">Нет открытых позиций или счёт не подключён.</div>'):''}</div>`;
+return `<div class="sourceSub"><div class="accountRow"><button type="button" class="sourceSubHeader" data-action="toggleAccount" data-id="${escape(id)}"><span class="accountIdentity"><strong>${escape(ac.name)}</strong><span class="accountTag">Фьючерсы</span></span><span class="sourceSubRight">${inlineMetric(current,null)} <span class="chev ${s.openedAccounts[id]?'rotated':''}">⌄</span></span></button><button class="accountManage" type="button" data-action="manageAccount" data-id="${escape(id)}" aria-label="Настройки ${escape(ac.name)}" title="Управление субаккаунтом">${icon('settings')}</button></div>${s.openedAccounts[id]?(pp.length?futuresTableHead()+pp.map(futurePositionLine).join(''):'<div class="sourceEmpty">Нет открытых позиций или счёт не подключён.</div>'):''}</div>`;
  }).join('');
  const balance=isBybit&&s.backendConnection.connected&&s.bybitSnapshot?.totals?.equity!=null?dollars(s.bybitSnapshot.totals.equity):isBybit?dollars(a.total):'—';
  return `<div class="sourceCard"><button type="button" class="sourceHeader" data-action="toggleExchange" data-id="${escape(ex.id)}"><div class="sourceLogo">${escape(ex.name.slice(0,1))}</div><span class="sourceName"><strong>${escape(ex.name)}</strong><span class="tiny">${count} аккаунтов · ${ex.connected?'Подключено':'Не подключено'}</span></span><span class="sourceHeaderRight">${balance} <span class="chev ${open?'rotated':''}">⌄</span></span></button>${open?`<div class="sourceChildren">${spot}${accounts||''}${!count?'<div class="sourceEmpty">Аккаунтов пока нет.</div>':''}</div>`:''}</div>`;
@@ -264,12 +264,11 @@ function coinStack(symbols){
   return t.slice(0,4);};
  return `<span class="coinStack">${list.map(sym=>`<i class="coinChip" title="${escape(String(sym))}">${escape(label(sym))}</i>`).join('')}${extra?`<i class="coinChip more">+${extra}</i>`:''}</span>`;
 }
-const FUTURE_SORTS=[['pnl','Плавающий PNL'],['size','Объём'],['symbol','Монета'],['leverage','Плечо'],['opened','Дата открытия'],['side','Направление']];
+const FUTURE_SORTS=[['pnl','PNL'],['size','Объём'],['symbol','Монета'],['opened','Время в сделке'],['side','Направление']];
 function futureSortValue(p,key){
  if(key==='size')return Number(p.size)||0;
  if(key==='symbol')return String(p.symbol||'').toLowerCase();
- if(key==='leverage')return Number(p.leverage)||0;
- if(key==='opened')return p.openedAt==null?-Infinity:Number(p.openedAt);
+ if(key==='opened')return p.openedAt==null?-Infinity:Date.now()-Number(p.openedAt);
  if(key==='side')return String(p.side||'').toLowerCase();
  return Number(p.pnl||0);
 }
@@ -285,23 +284,55 @@ function futuresSortBar(){
  return `<div class="futureSortBar">${FUTURE_SORTS.map(([key,name])=>`<button type="button" class="sortChip ${s.futureSort===key?'active':''}" data-sort="${key}" title="Сортировать по «${name}»">${name}${s.futureSort===key?`<span class="sortDir">${arrow}</span>`:''}</button>`).join('')}</div>`;
 }
 function futuresTableHead(){
- return `<div class="futurePosition futureHead"><span>Монета</span><span class="right"><span class="hLong">Объём · USD</span><span class="hShort">Объём</span></span><span class="right"><span class="hLong">Плавающий PNL</span><span class="hShort">PNL</span></span></div>`;
+ return `<div class="futurePosition futureHead"><span>Монета</span><span class="right">Время<br>в сделке</span><span class="right">Объём<br>USD</span><span class="right">PNL<br><small>% баланса</small></span></div>`;
+}
+function positionAge(timestamp){
+ const opened=Number(timestamp),elapsed=Date.now()-opened;
+ if(!Number.isFinite(opened)||opened<=0||elapsed<0)return '—';
+ const minutes=Math.floor(elapsed/60000),hours=Math.floor(minutes/60),days=Math.floor(hours/24);
+ return days?`${days} д ${hours%24} ч`:hours?`${hours} ч ${minutes%60} м`:`${minutes} м`;
+}
+const closedHistory={data:null,busy:false,error:'',attemptAt:0,generation:0};
+async function loadClosedHistory(force=false){
+ if(!s.backendConnection.connected||closedHistory.busy)return;
+ if(!force&&Date.now()-closedHistory.attemptAt<300000)return;
+ closedHistory.attemptAt=Date.now();closedHistory.busy=true;closedHistory.error='';
+ const generation=closedHistory.generation,controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),110000);
+ render();
+ try{
+  const reply=await fetch('./api/closed-trades',{cache:'no-store',credentials:'same-origin',signal:controller.signal});
+  const data=await reply.json();
+  if(!reply.ok)throw Error(data.error||'Не удалось загрузить историю');
+  if(data.complete!==true||!Array.isArray(data.trades))throw Error('История загружена не полностью');
+  if(generation===closedHistory.generation)closedHistory.data=data;
+ }catch(error){if(generation===closedHistory.generation)closedHistory.error=error.name==='AbortError'?'Bybit отвечает долго. Повторите загрузку.':error.message}
+ finally{clearTimeout(timeout);if(generation===closedHistory.generation){closedHistory.busy=false;if(s.tab==='futures')render()}}
+}
+function closedTradesBlock(){
+ const data=closedHistory.data;
+ const rows=data?.trades||[];
+ const when=value=>value?new Date(value).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'—';
+ return `<section class="section closedTrades"><div class="hrow"><div><div class="sectitle">История закрытий</div><div class="tiny">Последние 30 дней · ${escape(s.bybitSnapshot?.account?.name||'Bybit')}</div></div><button type="button" class="btn" data-action="loadClosedHistory" ${closedHistory.busy?'disabled':''}>${closedHistory.busy?'Загружаю…':'Обновить'}</button></div>${closedHistory.error?`<p class="errorText">${escape(closedHistory.error)}</p>`:''}${data?`<div class="closedTable"><div class="closedRow closedHead"><span>Монета</span><span>Закрытие</span><span class="right">Вход → выход</span><span class="right">PNL</span></div>${rows.length?rows.map(row=>`<div class="closedRow"><span><strong>${escape(row.symbol)}</strong><small>${escape(row.side||'—')}${row.execType&&row.execType!=='Trade'?' · '+escape(row.execType):''}</small></span><span class="closedDate">${when(row.closedAt)}</span><span class="right closedPrices">${row.entryPrice==null?'—':dollars(row.entryPrice,4)}<small>→ ${row.exitPrice==null?'—':dollars(row.exitPrice,4)}</small></span><span class="right ${row.pnl==null?'neutral':cls(row.pnl)}"><strong>${row.pnl==null?'—':signed(row.pnl)}</strong></span></div>`).join(''):'<p class="tiny">За этот период закрытий нет.</p>'}</div><p class="tiny closedNote">PNL передан Bybit. Комиссии повторно не вычитаются. История закрытий может включать частичные выходы; это не число завершённых стратегий. ${new Date(data.from).toLocaleDateString('ru-RU')} — ${new Date(data.to).toLocaleDateString('ru-RU')}.</p>`:!closedHistory.busy?'<p class="tiny">История появится после подключения счёта.</p>':''}</section>`;
+}
+function positionPnlPercent(p){
+ const linked=p.exchangeId==='bybit'&&p.accountId==='bybit-subaccount';
+ const raw=linked&&s.backendConnection.connected?s.bybitSnapshot?.totals?.equity:null;
+ const balance=raw==null?null:Number(raw);
+ if(p.pnl==null||!Number.isFinite(Number(p.pnl))||!(balance>0))return '';
+ return ` <small class="pnlPercent">(${signed(Number(p.pnl)/balance*100,'percent')})</small>`;
 }
 function futurePositionLine(p){
  const side=String(p.side||'').toLowerCase();
  const sideName=side==='buy'||side==='long'?'Long':side==='sell'||side==='short'?'Short':'—';
  const badge=`<span class="posBadges"><i class="posBadge ${sideName==='Short'?'short':'long'}">${sideName}</i>${p.leverage?`<i class="posBadge lev">${escape(String(p.leverage))}×</i>`:''}</span>`;
- const opened=p.openedAt?new Date(Number(p.openedAt)).toLocaleDateString('ru-RU',{day:'numeric',month:'short'}):null;
- const meta=[p.markPrice!=null?'Марк '+dollars(p.markPrice):null,p.liqPrice!=null&&p.liqPrice>0?'Ликв. '+dollars(p.liqPrice):null,opened?'с '+opened:null].filter(Boolean).join(' · ');
- const share=Math.max(0,Math.min(100,Number(s.futuresPositions.reduce((m,x)=>m+Math.abs(Number(x.size)||0),0))>0?Math.abs(Number(p.size)||0)/s.futuresPositions.reduce((m,x)=>m+Math.abs(Number(x.size)||0),0)*100:0));
- return `<div class="futurePosition"><span><span class="futureCoin"><strong>${escape(p.symbol)}</strong>${badge}</span><span class="tiny">${meta||'—'}</span><span class="posBar"><i style="width:${share.toFixed(1)}%"></i></span></span><span class="right"><strong>${dollars(p.size)}</strong></span><span class="right ${p.pnl==null?'neutral':cls(Number(p.pnl))}"><strong>${p.pnl==null?'—':signed(Number(p.pnl))}</strong></span></div>`;
+ return `<div class="futurePosition"><span><span class="futureCoin"><strong>${escape(p.symbol)}</strong>${badge}</span></span><span class="right positionAge" title="По времени создания позиции в Bybit">${positionAge(p.openedAt)}</span><span class="right positionVolume">${dollars(p.size)}</span><span class="right positionPnl ${p.pnl==null?'neutral':cls(Number(p.pnl))}"><strong>${p.pnl==null?'—':signed(Number(p.pnl))}${positionPnlPercent(p)}</strong></span></div>`;
 }
 function futureAccountRow(ex,ac){
  const id=ex.id+':'+ac.id,pp=futuresSorted().filter(p=>p.exchangeId===ex.id&&p.accountId===ac.id);
  const linked=ex.id==='bybit'&&ac.id==='bybit-subaccount'&&s.backendConnection.connected;
  const current=linked&&pp.every(p=>p.pnl!=null)?pp.reduce((v,p)=>v+Number(p.pnl),0):null;
  const pnl=`<span class="accountMetrics"><span><small>Сейчас</small><b class="${current==null?'neutral':cls(current)}">${current==null?'—':signed(current)}</b></span><span><small>Всё время</small><b class="neutral" title="Для точного расчёта нужна история закрытых позиций">—</b></span></span>`;
- return `<div class="sourceSub"><div class="accountRow"><button type="button" class="sourceSubHeader" data-action="toggleAccount" data-id="${escape(id)}"><span class="accountIdentity"><strong>${escape(ac.name)}</strong><span class="accountTag">Фьючерсы</span></span><span class="sourceSubRight">${pnl}<span class="chev ${s.openedAccounts[id]?'rotated':''}">⌄</span></span></button><button class="accountManage" type="button" data-action="manageAccount" data-id="${escape(id)}" aria-label="Настройки ${escape(ac.name)}">${icon('settings')}</button></div>${s.openedAccounts[id]?(pp.length?pp.map(futurePositionLine).join(''):'<div class="sourceEmpty">Нет открытых позиций или API не подключён.</div>'):''}</div>`;
+ return `<div class="sourceSub"><div class="accountRow"><button type="button" class="sourceSubHeader" data-action="toggleAccount" data-id="${escape(id)}"><span class="accountIdentity"><strong>${escape(ac.name)}</strong><span class="accountTag">Фьючерсы</span></span><span class="sourceSubRight">${pnl}<span class="chev ${s.openedAccounts[id]?'rotated':''}">⌄</span></span></button><button class="accountManage" type="button" data-action="manageAccount" data-id="${escape(id)}" aria-label="Настройки ${escape(ac.name)}">${icon('settings')}</button></div>${s.openedAccounts[id]?(pp.length?futuresTableHead()+pp.map(futurePositionLine).join(''):'<div class="sourceEmpty">Нет открытых позиций или API не подключён.</div>'):''}</div>`;
 }
 function futureExchangeCard(ex){
  const opened=!!s.openedExchanges[ex.id],balance=ex.id==='bybit'&&s.backendConnection.connected&&s.bybitSnapshot?.totals?.equity!=null?dollars(s.bybitSnapshot.totals.equity):'—';
@@ -333,7 +364,7 @@ function futures(){
  const coins=coinStack(open.map(p=>p.symbol));
  return `<div class="futureMetrics">${metrics.map(([name,value,tone])=>`<div class="card tint"><div class="eyebrow">${name}</div><div class="num ${tone}">${value}</div>${name==='Открытых позиций'&&coins?`<div class="metricCoins">${coins}</div>`:''}</div>`).join('')}</div>
  ${futuresChartBlock()}
- <section class="section"><div class="futureToolbar"><div><div class="sectitle">Позиции и аккаунты</div><div class="tiny">Раскрывай биржи и выбирай группировку</div></div><button class="btn" type="button" data-action="goConnections">${icon('settings')} Настройки</button></div><div class="futureFilters"><div class="tradeSwitch" role="tablist" aria-label="Группировка фьючерсов">${[['all','Все позиции'],['exchange','По биржам'],['account','По субаккаунтам']].map(([id,name])=>`<button type="button" data-future-mode="${id}" class="${s.futureMode===id?'active':''}">${name}</button>`).join('')}</div></div>${s.futureMode==='all'?futuresSortBar():''}<div class="sourceList futureResults">${body}</div>${s.futureForm?futuresForm():''}</section>`;
+ <section class="section"><div class="futureToolbar"><div><div class="sectitle">Позиции и аккаунты</div><div class="tiny">Раскрывай биржи и выбирай группировку</div></div><button class="btn" type="button" data-action="goConnections">${icon('settings')} Настройки</button></div><div class="futureFilters"><div class="tradeSwitch" role="tablist" aria-label="Группировка фьючерсов">${[['all','Все позиции'],['exchange','По биржам'],['account','По субаккаунтам']].map(([id,name])=>`<button type="button" data-future-mode="${id}" class="${s.futureMode===id?'active':''}">${name}</button>`).join('')}</div></div>${s.futureMode==='all'?futuresSortBar():''}<div class="sourceList futureResults">${body}</div>${s.futureForm?futuresForm():''}</section>${closedTradesBlock()}`;
 }
 function capitalSettings(){
  const a=sums();
@@ -413,6 +444,7 @@ function removeAccount(id){
  ex.accounts=ex.accounts.filter(a=>a.id!==acid);delete s.openedAccounts[id];s.pendingRemove=null;saveLocal();s.flash='Запись субаккаунта удалена.';render();
 }
 function onDisconnected(){
+ closedHistory.generation++;closedHistory.data=null;closedHistory.busy=false;closedHistory.error='';closedHistory.attemptAt=0;
  const bybit=s.sources.find(x=>x.id==='bybit');
  if(bybit){bybit.connected=false;bybit.accounts=bybit.accounts.filter(x=>x.id!=='bybit-subaccount')}
  s.futuresPositions=s.futuresPositions.filter(x=>x.accountId!=='bybit-subaccount');
@@ -454,6 +486,7 @@ function onSnapshot(data){
  s.bybitSnapshot={totals:data.totals,account:data.account,updatedAt:data.updatedAt,warning:data.balanceNote};
  s.backendConnection={available:true,configured:true,connected:true,error:''};
  recordPortfolioSnapshot();saveLocal(false);render();
+ if(s.tab==='futures')loadClosedHistory();
 }
 window.fxmr4App={onBackendStatus,onSnapshot,onDisconnected};
 
@@ -644,7 +677,7 @@ function saveFutureForm(fd){
 }
 function handleClick(e){
  const tab=e.target.closest('[data-tab]');
- if(tab){s.tab=tab.dataset.tab;s.flash='';s.form=false;s.deleteId=null;render();return}
+ if(tab){s.tab=tab.dataset.tab;s.flash='';s.form=false;s.deleteId=null;render();if(s.tab==='futures')loadClosedHistory();return}
  const pnl=e.target.closest('[data-pnl-mode]');
  if(pnl){s.pnlMode=pnl.dataset.pnlMode;render();return}
  const settings=e.target.closest('[data-settings-pane]');
@@ -659,9 +692,10 @@ function handleClick(e){
  if(mode){s.futureMode=mode.dataset.futureMode;render();return}
  const btn=e.target.closest('[data-action]');if(!btn)return;
  const act=btn.dataset.action,id=btn.dataset.id||'';
+ if(act==='loadClosedHistory'){loadClosedHistory(true);return}
  if(act==='sync'){sync();return}
  if(act==='gotoSpot'){s.tab='positions';render();return}
- if(act==='gotoFutures'||act==='backToFutures'){s.tab='futures';s.futureMode='exchange';render();return}
+ if(act==='gotoFutures'||act==='backToFutures'){s.tab='futures';s.futureMode='exchange';render();loadClosedHistory();return}
  if(act==='goConnections'){s.tab='connections';s.settingsPane='connections';render();return}
  if(act==='gotoCapital'){s.tab='connections';s.settingsPane='capital';render();return}
  if(act==='gotoOverview'){s.tab='overview';render();return}
