@@ -24,14 +24,14 @@
   </svg>
   <main class="page"><div class="shell">
     <aside class="sidebar">
-      <header class="header"><div class="logoArea"><div class="appicon"><svg class="icon"><use href="#wallet"/></svg></div><div><div class="appname">Мой портфель</div><div class="account">fxmr4 · Spot</div></div></div><span class="pill">USD</span></header>
+      <header class="header"><div class="logoArea"><div class="appicon"><svg class="icon"><use href="#wallet"/></svg></div><div><div class="appname">Мой портфель</div><div class="account">fxmr4 · Portfolio</div></div></div><span class="pill">USD</span></header>
       <div class="navLabel">РАЗДЕЛЫ</div>
       <nav class="tabs" data-active="overview" role="tablist" aria-label="Разделы портфеля">
         <button class="tab active" type="button" role="tab" aria-selected="true" data-tab="overview"><svg class="icon"><use href="#activity"/></svg><span>Обзор</span></button>
         <button class="tab" type="button" role="tab" aria-selected="false" data-tab="positions"><svg class="icon"><use href="#wallet"/></svg><span>Spot</span></button>
         <button class="tab" type="button" role="tab" aria-selected="false" data-tab="futures"><svg class="icon"><use href="#trend"/></svg><span>Futures</span></button>
       </nav>
-      <div class="sideFooter"><span class="status-dot"></span>Котировки · раз в 60 секунд<div class="tiny">Операции сохраняются в браузере</div><button class="btn navConfig" type="button" data-action="goConnections">Подключения</button><div class="tiny"></div></div>
+      <div class="sideFooter"><span class="status-dot"></span>Котировки · раз в 60 секунд<div class="tiny">Операции сохраняются в браузере</div><button class="btn navConfig" type="button" data-action="goConnections">Подключения</button></div>
     </aside>
     <section class="workspace">
       <div class="workspaceHead"><div><div class="workspaceEyebrow">FXMR4 / Личный кабинет</div><h1 id="pageTitle">Обзор</h1></div><div class="headActions"><button class="btn" type="button" data-action="goConnections">Подключения</button><span class="pill">USD</span></div></div>
@@ -259,7 +259,7 @@ function bybitQuotes(){
     const quiet=!!opts.quiet;
     if(s.busy)return;
     lastSyncAttempt=Date.now();s.busy=true;s.sync=null;
-    if(!quiet&&!s.form&&!s.showPrices)render();
+    if(!quiet&&!s.form&&!s.futureForm&&!s.showPrices)render();
     let success=false;
     for(const provider of [bybitQuotes,coingeckoQuotes,cryptocompareQuotes]){
       try{
@@ -272,7 +272,7 @@ function bybitQuotes(){
     }
     if(!success){s.sync={error:true};if(!quiet)s.flash='Источники цен недоступны. Используются сохранённые курсы.'}
     s.busy=false;
-    if(!s.form&&!s.showPrices)render();
+    if(!s.form&&!s.futureForm&&!s.showPrices)render();
   }
   function flash(msg){s.flash=msg;render()}
   function formOpen(id=null){s.tab='positions';s.spotHistoryOpen=true;s.form=true;s.editing=id;s.deleteId=null;s.formError='';s.flash='';render();$('tradeForm')?.scrollIntoView({block:'nearest',behavior:'smooth'})}
