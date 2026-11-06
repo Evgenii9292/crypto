@@ -41,4 +41,4 @@ jobs:
       - name: Cloud sync reload regression
         run: node --test tests/*.test.js
       - name: Deployment bash syntax
-        run: bash -n deploy/upgrade-v2.sh
+        run: bash -n deploy/upgrade-v2.sh deploy/upgrade-multi.sh
