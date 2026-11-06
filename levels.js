@@ -1,7 +1,7 @@
 /* FXMR4 Spot buy-level planner v1 · no trade execution, no API credentials */
 (function fxmr4SpotLevels(){
 'use strict';
-const STORE='fxmr4_spot_levels_v1',symbols=['BTC','ETH'],periods={'7d':{interval:'240',limit:45,days:7},'30d':{interval:'D',limit:34,days:30},'90d':{interval:'D',limit:95,days:90}};
+const STORE='fxmr4_spot_levels_v1',symbols=['BTC','ETH'],periods={'7d':{interval:'240',limit:45,days:7},'30d':{interval:'D',limit:34,days:30},'90d':{interval:'D',limit:95,days:90},'1y':{interval:'D',limit:370,days:365},'all':{interval:'W',limit:1000,days:7300}};
 const HOSTS=['https://api.bybit.id','https://api.bybit.com','https://api.bytick.com'];
 const defaults={BTC:[{id:'btc-75000',price:75000,amount:null},{id:'btc-70000',price:70000,amount:null}],ETH:[]};
 let config={levels:structuredLevels(defaults),alertsEnabled:false},period='30d',edit=null,draft=null,mount=null,cache={},fetching={},lastReaching={},lastSource={},message='',lastState=null;
@@ -48,26 +48,9 @@ function notifyCrossings(st){
 function fmtPrice(value){if(value>=10000)return money(value);return money(value,2)}
 function periodTick(time,p){return new Date(time).toLocaleDateString('ru-RU',p==='7d'?{day:'2-digit',month:'short',hour:'2-digit'}:{day:'2-digit',month:'short'});}
 function chart(sym,st){
- const info=priceInfo(sym,st),levels=config.levels[sym],key=sym+'-'+period,series=cache[key]?.data||[],w=720,h=255,left=74,right=18,top=20,bottom=39;
- const relevantPrices=[...series.map(x=>x.price),...(info.price>0?[info.price]:[]),...levels.map(x=>x.price)].filter(x=>Number.isFinite(x)&&x>0);
- if(!relevantPrices.length)return '<div class="sl-empty">Нет данных о ценах и уровнях</div>';
- const lo=Math.min(...relevantPrices),hi=Math.max(...relevantPrices),span=Math.max(hi-lo,hi*.02),min=lo-span*.09,max=hi+span*.09;
- const y=n=>top+(max-n)/(max-min)*(h-top-bottom);
- const start=series[0]?.time||Date.now()-periods[period].days*86400000,end=series[series.length-1]?.time||Date.now();
- const x=t=>left+(t-start)/Math.max(1,end-start)*(w-left-right);
- let guides='';
- for(let j=0;j<=4;j++){
-  const v=max-(max-min)*j/4,yy=y(v);
-  guides+='<line x1="'+left+'" x2="'+(w-right)+'" y1="'+yy.toFixed(2)+'" y2="'+yy.toFixed(2)+'" class="sl-grid"/><text x="'+(left-10)+'" y="'+(yy+3).toFixed(2)+'" text-anchor="end" class="sl-axis">'+escape(v>=10000?'$'+Math.round(v/1000)+'k':'$'+Math.round(v).toLocaleString('en-US'))+'</text>';
- }
- for(const p of [0,.5,1]){
-  const xx=left+(w-left-right)*p,stamp=start+(end-start)*p;
-  guides+='<text x="'+xx.toFixed(2)+'" y="'+(h-10)+'" text-anchor="'+(p===0?'start':p===1?'end':'middle')+'" class="sl-axis">'+escape(periodTick(stamp,period))+'</text>';
- }
- const curve=series.length>=2?'<polyline points="'+series.map(p=>x(p.time).toFixed(2)+','+y(p.price).toFixed(2)).join(' ')+'" class="sl-price-line"/>':'';
- const bands=levels.map((l,i)=>'<line x1="'+left+'" x2="'+(w-right)+'" y1="'+y(l.price).toFixed(1)+'" y2="'+y(l.price).toFixed(1)+'" class="sl-target-line"/><circle cx="'+(w-right-2)+'" cy="'+y(l.price).toFixed(1)+'" r="4" class="sl-target-dot"><title>'+escape('#'+(i+1)+' '+fmtPrice(l.price)+(l.amount?' · '+money(l.amount):''))+'</title></circle>').join('');
- const current=info.price>0?'<line x1="'+left+'" x2="'+(w-right)+'" y1="'+y(info.price).toFixed(1)+'" y2="'+y(info.price).toFixed(1)+'" class="sl-current-line"/>':'';
- return '<div class="sl-canvas"><svg viewBox="0 0 '+w+' '+h+'" preserveAspectRatio="xMidYMid meet" role="img" aria-label="График цены '+sym+' с уровнями покупки"><g>'+guides+'</g>'+curve+bands+current+'</svg></div>'+(series.length<2?'<div class="sl-graph-note">История цены недоступна</div>':'');
+ const info=priceInfo(sym,st),series=cache[sym+'-'+period]?.data||[];
+ // The history component keeps pan/zoom state across quote refreshes.
+ return window.fxmr4HistoryChart.render(sym,period,series,info,config.levels[sym]);
 }
 function levelRow(sym,l,st,index){
  const info=priceInfo(sym,st),status=statusFor(l,info),drop=changePercent(l.price,info.price),pctDisplay=Number.isFinite(drop)?fmtPct(drop):'—';
@@ -80,7 +63,7 @@ function editor(){
 function card(sym,st){
  const info=priceInfo(sym,st),spent=Number(st?.holdings?.[sym]?.invested)||0,reserve=Math.max(0,(Number(st?.capital)||1000)/2-spent),targets=config.levels[sym].slice().sort((a,b)=>b.price-a.price),planned=targets.reduce((sum,x)=>sum+(x.amount||0),0),source=cache[sym+'-'+period];
  const hit=targets.filter(l=>info.reliable&&info.price<=l.price);
- const periodButtons=Object.keys(periods).map(p=>'<button type="button" class="'+(p===period?'selected':'')+'" data-level-action="period" data-period="'+p+'">'+p+'</button>').join('');
+ const periodButtons=Object.keys(periods).map(p=>'<button type="button" class="'+(p===period?'selected':'')+'" data-level-action="period" data-period="'+p+'">'+(p==='all'?'Вся':p==='1y'?'1г':p)+'</button>').join('');
  return '<section class="sl-card"><div class="sl-header"><div class="sl-heading"><span class="sl-coin '+sym.toLowerCase()+'">'+(sym==='BTC'?'₿':'◆')+'</span><div><strong>'+sym+' · уровни докупок</strong><span>Текущая цена <b>'+ (info.price?fmtPrice(info.price):'—')+'</b></span></div></div><button class="sl-button" type="button" data-level-action="add" data-coin="'+sym+'">+ Уровень</button></div><div class="sl-meta"><span>Лимит <b>'+money((Number(st?.capital)||1000)/2)+'</b></span><span>Свободно <b>'+money(reserve)+'</b></span><span>Запланировано <b>'+money(planned)+'</b></span></div>'+chart(sym,st)+'<div class="sl-caption"><span class="sl-legend"><i></i> Цель покупки <em></em> Текущая цена</span></div>'+(hit.length?'<div class="sl-alert">Достигнуты уровни: '+hit.map(l=>fmtPrice(l.price)).join(', ')+'. Проверь стратегию перед покупкой.</div>':'')+'<div class="sl-level-list">'+(targets.length?targets.map(l=>levelRow(sym,l,st,config.levels[sym].findIndex(a=>a.id===l.id))).join(''):'<div class="sl-empty-level">Уровни ещё не указаны. Добавь цену и сумму своей следующей покупки.</div>')+'</div>'+(planned>reserve+.0001?'<div class="sl-warning">Запланированные покупки превышают свободный лимит '+sym+'.</div>':'')+(edit?.coin===sym?editor():'')+'</section>';
 }
 function render(){
@@ -88,7 +71,7 @@ function render(){
  const area=document.getElementById('strategyMount');
  if(!area||!st||st.tab!=='positions'){mount=null;return}
  mount=area;notifyCrossings(st);
- const controls='<div class="sl-top"><div><div class="sl-title">План покупок</div></div><div class="sl-controls"><div class="sl-period">'+Object.keys(periods).map(p=>'<button type="button" class="'+(p===period?'selected':'')+'" data-level-action="period" data-period="'+p+'">'+p+'</button>').join('')+'</div><button class="sl-button" data-level-action="alerts" type="button">'+(config.alertsEnabled?'Уведомления включены':'Уведомлять')+'</button></div></div>';
+ const controls='<div class="sl-top"><div><div class="sl-title">План покупок</div></div><div class="sl-controls"><div class="sl-period">'+Object.keys(periods).map(p=>'<button type="button" class="'+(p===period?'selected':'')+'" data-level-action="period" data-period="'+p+'">'+(p==='all'?'Вся':p==='1y'?'1г':p)+'</button>').join('')+'</div><button class="sl-button" data-level-action="alerts" type="button">'+(config.alertsEnabled?'Уведомления включены':'Уведомлять')+'</button></div></div>';
  const note='';
  area.innerHTML='<div class="sl-shell">'+controls+(message?'<div class="sl-message">'+escape(message)+'</div>':'')+'<div class="sl-grid-cards">'+symbols.map(sym=>card(sym,st)).join('')+'</div>'+note+'</div>';
  refreshHistories();
@@ -115,7 +98,7 @@ async function kline(sym,p){
 }
 async function fallbackHistory(sym,p){
  const days=periods[p].days;
- const url=days===7?'https://min-api.cryptocompare.com/data/v2/histohour?fsym='+sym+'&tsym=USD&limit=168':'https://min-api.cryptocompare.com/data/v2/histoday?fsym='+sym+'&tsym=USD&limit='+days;
+ const url=days===7?'https://min-api.cryptocompare.com/data/v2/histohour?fsym='+sym+'&tsym=USD&limit=168':'https://min-api.cryptocompare.com/data/v2/histoday?fsym='+sym+'&tsym=USD&limit='+Math.min(2000,days+3);
  const raw=await request(url);
  const bars=raw?.Data?.Data;
  if(!Array.isArray(bars)||bars.length<2)throw Error('No fallback candles');
