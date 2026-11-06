@@ -14,6 +14,7 @@ class TestEncryptedVpsStorage(TestCase):
         self.patches = [
             patch.object(state, "DATA_DIR", d),
             patch.object(state, "CREDS_PATH", d / "bybit.cred"),
+            patch.object(state, "EXTRA_ACCOUNTS_PATH", d / "bybit-accounts.cred"),
             patch.object(state, "PROFILE_PATH", d / "user-data.json"),
             patch.object(state, "HISTORY_PATH", d / "pnl-history.json"),
             patch.object(state, "SEAL_KEY_HEX", "de" * 32),
@@ -48,6 +49,37 @@ class TestEncryptedVpsStorage(TestCase):
         state.write_credentials("fake-key-0123456", "fake-secret-0123456", "Sub A")
         state.delete_credentials()
         self.assertIsNone(state.read_credentials())
+
+    def test_multi_subaccounts_are_independent_encrypted_and_persistent(self):
+        state.write_credentials("old-key-01234567", "old-secret-01234567", "Original")
+        one = state.add_extra_account("sub-key-01234567", "sub-secret-01234567", "Sub 1")
+        two = state.add_extra_account("sub-key-abcdef12", "sub-secret-abcdef12", "Sub 2")
+        self.assertNotEqual(one["id"], two["id"])
+        blob = state.EXTRA_ACCOUNTS_PATH.read_bytes()
+        self.assertNotIn(b"sub-key-01234567", blob)
+        self.assertNotIn(b"sub-secret-abcdef12", blob)
+        self.assertEqual(state.EXTRA_ACCOUNTS_PATH.stat().st_mode & 0o777, 0o600)
+        accounts = state.list_extra_accounts()
+        self.assertEqual(len(accounts), 2)
+        self.assertEqual(accounts[0]["key"], "sub-key-01234567")
+        state.rename_extra_account(one["id"], "Renamed")
+        self.assertEqual(state.list_extra_accounts()[0]["label"], "Renamed")
+        state.delete_extra_account(one["id"])
+        self.assertEqual([a["id"] for a in state.list_extra_accounts()], [two["id"]])
+        self.assertEqual(state.read_credentials()["key"], "old-key-01234567")
+
+    def test_multi_rejects_duplicate_key_and_bad_account_id(self):
+        state.write_credentials("old-key-01234567", "old-secret-01234567", "Original")
+        with self.assertRaisesRegex(state.StateError, "уже подключён"):
+            state.add_extra_account("old-key-01234567", "another-secret-12345", "Duplicate")
+        first = state.add_extra_account("sub-key-01234567", "sub-secret-01234567", "Sub 1")
+        with self.assertRaisesRegex(state.StateError, "уже подключён"):
+            state.add_extra_account("sub-key-01234567", "another-secret-12345", "Duplicate")
+        with self.assertRaises(state.StateError):
+            state.delete_extra_account("missing")
+        with self.assertRaises(state.StateError):
+            state.rename_extra_account("missing", "Other")
+        self.assertEqual(state.list_extra_accounts()[0]["id"], first["id"])
 
     def test_portfolio_save_and_reload(self):
         portfolio = {"capital": 1000, "trades": [{"coin": "BTC", "spent": 25, "entry": 76200}]}
