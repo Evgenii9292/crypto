@@ -138,38 +138,64 @@ function positions(){
  ${quoteStrip()}
  <div class="spotHistoryToggle"><button class="historyToggle" type="button" data-action="toggleHistory"><span>${icon('calendar')} История покупок <span class="historyCount">${s.trades.length}</span></span><span class="chev ${s.spotHistoryOpen?'rotated':''}">⌄</span></button>${s.spotHistoryOpen||s.form?history():''}</div>`;
 }
-  function trading(){
-    const future=s.tradingSubtab==='futures';
-    const metrics=future?[['Открытые позиции','—'],['Плавающий PNL','—'],['Маржа','—'],['Реализованный PNL','—']]:[['Активные боты','—'],['Средства в ботах','—'],['PNL ботов','—'],['Закрытые циклы','—']];
-    return `<div class="hrow"><div><div class="sectitle">Торговля</div><div class="tiny">Bybit · фьючерсы и торговые боты</div></div><span class="pill">Не подключено</span></div>
-      <div class="tradeSwitch" role="tablist" aria-label="Тип торговли"><button type="button" data-trade-sub="futures" class="${future?'active':''}">Фьючерсы</button><button type="button" data-trade-sub="bots" class="${!future?'active':''}">Боты</button></div>
-      <div class="tradeMetrics">${metrics.map(([label,value])=>`<div class="card tint"><div class="eyebrow">${label}</div><div class="num">${value}</div></div>`).join('')}</div>
-      <div class="card emptyState"><div class="emptyIcon">${icon(future?'trend':'bot')}</div><div class="sectitle">${future?'Открытые фьючерсные позиции':'Торговые боты'}</div>
-      <p>${future?'После подключения Bybit здесь появятся реальные позиции, LONG/SHORT, плечо, вход, ликвидация и PNL.':'Здесь будут боты, вложения, доходность и текущий статус. Veles подключим отдельным этапом.'}</p>
-      <button class="btn primary" type="button" data-action="goConnections">Как подключить Bybit</button></div>
-      <div class="warning">Пустые значения означают отсутствие подключения, а не нулевой баланс. Это информационный экран: ордера не отправляются.</div>`;
-  }
-  function connections(){
-    return `<div class="hrow"><div><div class="sectitle">Подключения</div><div class="tiny">Источники данных портфеля</div></div><span class="pill">Только чтение</span></div>
-      <div class="card connectorCard"><div class="hrow"><div class="logoArea"><div class="appicon">${icon('shield')}</div><div><div class="coinName">Bybit</div><div class="coinSub">Аккаунт fxmr4 · не подключён</div></div></div><span class="connectBadge">Не подключено</span></div>
-      <p class="connectCopy">Сейчас приложение получает только публичные курсы BTC/ETH. Приватные балансы, покупки и фьючерсы с биржи ещё не загружаются.</p>
-      <div class="safeNote">API Secret нельзя вставлять в публичный сайт, исходный код или GitHub. Для подключения нужен защищённый сервер, который хранит ключ и передаёт браузеру только данные о позициях.</div>
-      <div class="connectSteps"><div><span>01</span>Создать в Bybit отдельный API-ключ только для чтения</div><div><span>02</span>Ограничить доступ IP-адресом своего сервера</div><div><span>03</span>Подключить серверное API и проверить остатки и позиции</div></div>
-      <a class="btn primary externalLink" href="https://www.bybit.com/app/user/api-management" target="_blank" rel="noopener noreferrer">Управление API в Bybit ↗</a></div>
-      <div class="warning">Форма подключения появится после создания защищённой серверной части. Сейчас API-ключи здесь не принимаются.</div>`;
-  }
-  function render(){
-    const view=s.tab==='overview'?overview():s.tab==='positions'?positions():s.tab==='history'?history():s.tab==='trading'?trading():connections();
-    $('content').innerHTML=view;$('content').classList.remove('pane');void $('content').offsetWidth;$('content').classList.add('pane');
-    const titles={overview:'Обзор',positions:'Спот',history:'Покупки',trading:'Торговля',connections:'Bybit'};
-    $('pageTitle').textContent=titles[s.tab];
-    const ribbon=$('pnlRibbon'),a=sums();
-    ribbon.style.display=s.tab==='overview'?'none':'flex';
-    ribbon.innerHTML='<span class="tiny">Спотовый PNL · fxmr4</span><strong class="'+cls(a.profit)+'">'+signed(a.profit)+' ('+signed(a.invested?a.profit/a.invested*100:0,'pct')+')</strong>';
-    document.querySelector('.tabs').dataset.active=s.tab;
-    document.querySelectorAll('[data-tab]').forEach(b=>{const is=b.dataset.tab===s.tab;b.classList.toggle('active',is);b.setAttribute('aria-selected',is?'true':'false')});
-    $('message').innerHTML=s.flash?`<div class="toast">${escape(s.flash)}</div>`:'';
-  }
+function futuresSorted(){
+ return [...s.futuresPositions].filter(p=>p&&p.symbol&&Number.isFinite(Number(p.size))).sort((a,b)=>s.futureSort==='symbol'?String(a.symbol).localeCompare(String(b.symbol)):s.futureSort==='size'?Number(b.size)-Number(a.size):Number(b.pnl||0)-Number(a.pnl||0));
+}
+function futurePositionLine(p){
+ return `<div class="futurePosition"><span><strong>${escape(p.symbol)}</strong><span class="tiny">${escape(p.side||'')} ${p.leverage?escape(p.leverage+'×'):''}</span></span><span class="right"><strong>${dollars(p.size)}</strong><span class="tiny">Размер</span></span><span class="right ${cls(Number(p.pnl||0))}">${signed(Number(p.pnl||0))}<span class="tiny">PNL</span></span></div>`;
+}
+function futureExchangeCard(ex){
+ const opened=!!s.openedExchanges[ex.id],positions=futuresSorted().filter(p=>p.exchangeId===ex.id);
+ const accounts=ex.accounts.map(ac=>{const id=ex.id+':'+ac.id,open=!!s.openedAccounts[id],pp=positions.filter(p=>p.accountId===ac.id);
+  return `<div class="sourceSub"><button type="button" class="sourceSubHeader" data-action="toggleAccount" data-id="${escape(id)}"><span><strong>${escape(ac.name)}</strong><span class="tiny">${pp.length?pp.length+' позиций':'Без данных API'}</span></span><span class="sourceSubRight">${ac.balance==null?'—':dollars(ac.balance)} <span class="chev ${open?'rotated':''}">⌄</span></span></button>${open?(pp.length?pp.map(futurePositionLine).join(''):'<div class="sourceEmpty">Позиции пока не загружены. Нужен API.</div>'):''}</div>`}).join('');
+ return `<section class="sourceCard"><button type="button" class="sourceHeader" data-action="toggleExchange" data-id="${escape(ex.id)}"><span class="sourceLogo">${escape(ex.name.slice(0,1))}</span><span class="sourceName"><strong>${escape(ex.name)}</strong><span class="tiny">${ex.accounts.length} субаккаунтов · ${ex.connected?'Подключено':'Не подключено'}</span></span><span class="sourceHeaderRight">— <span class="chev ${opened?'rotated':''}">⌄</span></span></button>${opened?`<div class="sourceChildren">${accounts||'<div class="sourceEmpty">Субаккаунтов пока нет.</div>'}<div class="sourceAction"><button class="btn" type="button" data-action="addAccount" data-id="${escape(ex.id)}">${icon('plus')} Субаккаунт</button></div></div>`:''}</section>`;
+}
+function futuresByAccount(){
+ const acc=s.sources.flatMap(ex=>ex.accounts.map(ac=>({ex,ac})));
+ if(!acc.length)return '<div class="card emptyState"><div class="sectitle">Субаккаунты ещё не добавлены</div><p>В режиме «По биржам» раскрой биржу и добавь субаккаунт.</p></div>';
+ return acc.map(({ex,ac})=>{const id=ex.id+':'+ac.id,open=!!s.openedAccounts[id],pos=futuresSorted().filter(p=>p.exchangeId===ex.id&&p.accountId===ac.id);
+ return `<section class="sourceCard"><button type="button" class="sourceHeader" data-action="toggleAccount" data-id="${escape(id)}"><span class="sourceLogo">${escape(ex.name.slice(0,1))}</span><span class="sourceName"><strong>${escape(ac.name)}</strong><span class="tiny">${escape(ex.name)} · Futures</span></span><span class="sourceHeaderRight">— <span class="chev ${open?'rotated':''}">⌄</span></span></button>${open?(pos.length?pos.map(futurePositionLine).join(''):'<div class="sourceEmpty">Позиции не загружены.</div>'):''}</section>`}).join('');
+}
+function futuresForm(){
+ if(!s.futureForm)return '';
+ const addExchange=s.futureForm==='exchange';
+ return `<form id="futureForm" class="form"><div class="hrow"><div class="formTitle">${addExchange?'Добавить биржу':'Добавить субаккаунт'}</div><button class="btn ghost" type="button" data-action="closeFutureForm">${icon('x')}</button></div>
+ ${addExchange?'<div class="field"><label for="exchangeName">Биржа</label><select name="name" id="exchangeName"><option>Binance</option><option>OKX</option><option>Bitget</option><option>BingX</option><option>Gate</option><option>MEXC</option><option>Bybit</option></select></div>':`<div class="field"><label for="accountName">Название субаккаунта</label><input id="accountName" name="name" placeholder="Например, Futures 01" maxlength="40" required /></div><input type="hidden" name="exchangeId" value="${escape(s.futureForm)}">`}
+ ${s.futureFormError?`<div class="errorText">${escape(s.futureFormError)}</div>`:''}
+ <button class="btn primary full" type="submit">Сохранить</button><p class="tiny">Добавится только название. Биржевые деньги и позиции пока не загружаются.</p></form>`;
+}
+function futures(){
+ const body=s.futureMode==='exchange'?s.sources.map(futureExchangeCard).join(''):s.futureMode==='account'?futuresByAccount():futuresSorted().length?futuresSorted().map(futurePositionLine).join(''):'<div class="card emptyState"><div class="sectitle">Нет загруженных позиций</div><p>После подключения появятся открытые сделки со всех бирж. Сортировка начнёт работать на полученных позициях.</p></div>';
+ return `<div class="hrow"><div><div class="sectitle">Futures · Все биржи</div><div class="tiny">Баланс и позиции по биржам и субаккаунтам</div></div><button class="btn" data-action="goConnections" type="button">${icon('shield')} Подключения</button></div>
+ <div class="futureMetrics">${[['Общий депозит','—'],['Плавающий PNL','—'],['Реализованный PNL','—'],['Открытые позиции','—']].map(([name,value])=>`<div class="card tint"><div class="eyebrow">${name}</div><div class="num">${value}</div></div>`).join('')}</div>
+ <section class="section pnlChart card"><div class="hrow"><div class="sectitle">PNL · Futures</div><span class="pill">Ожидается API</span></div><div class="chartbox"><div class="emptychart"><strong>Пока нет данных для графика</strong><span>После подключения фьючерсов здесь будет PNL с датами, временной осью и шкалой USD.</span></div></div></section>
+ <section class="section"><div class="futureToolbar"><div><div class="sectitle">Позиции и аккаунты</div><div class="tiny">Раскрывай биржи и выбирай способ группировки</div></div><button class="btn" type="button" data-action="addExchange">${icon('plus')} Биржа</button></div>
+ <div class="futureFilters"><div class="tradeSwitch" role="tablist" aria-label="Группировка фьючерсов">${[['all','Все позиции'],['exchange','По биржам'],['account','По субаккаунтам']].map(([id,name])=>`<button type="button" data-future-mode="${id}" class="${s.futureMode===id?'active':''}">${name}</button>`).join('')}</div><label class="sortLabel">Сортировка <select id="futureSort"><option value="pnl" ${s.futureSort==='pnl'?'selected':''}>PNL</option><option value="size" ${s.futureSort==='size'?'selected':''}>Размер</option><option value="symbol" ${s.futureSort==='symbol'?'selected':''}>Монета</option></select></label></div>
+ <div class="sourceList futureResults">${body}</div>${futuresForm()}
+ <p class="tiny noteBelow">«—» означает отсутствие подключения, а не нулевой баланс. Биржи и имена аккаунтов сохраняются локально. Управление сделками пока недоступно.</p></section>`;
+}
+function connections(){
+ return `<div class="hrow"><div><div class="sectitle">Подключения бирж</div><div class="tiny">Приватные данные требуют защищённого сервера</div></div><button class="btn" type="button" data-action="backToFutures">← Futures</button></div>
+ <div class="card connectorCard"><div class="hrow"><div class="logoArea"><div class="appicon">${icon('shield')}</div><div><div class="coinName">Bybit</div><div class="coinSub">fxmr4 · приватный API не подключён</div></div></div><span class="connectBadge">Не подключено</span></div>
+ <p class="connectCopy">Публичные котировки и данные счёта — разные вещи. Балансы, ордера и Futures можно получать после серверного подключения.</p>${markStatus()}
+ <div class="safeNote">Не вводи API Secret на публичном сайте. Для подключения потребуется закрытый сервер с HTTPS, ключ только для чтения и ограничение IP. Без права торговли и вывода.</div>
+ <div class="connectSteps"><div><span>01</span>Создать отдельный ключ Bybit Read-Only</div><div><span>02</span>Разрешить доступ только с IP твоего VPS</div><div><span>03</span>Проверить полученные балансы и позиции</div></div>
+ <div class="flexend"><a class="btn externalLink" href="https://www.bybit.com/app/user/api-management" target="_blank" rel="noopener noreferrer">Bybit Global ↗</a><a class="btn externalLink" href="https://www.bybit.id/app/user/api-management" target="_blank" rel="noopener noreferrer">Bybit Indonesia ↗</a></div></div>
+ <div class="warning">Если API-настройки не открываются по ссылке, зайди в Bybit на сайте и выбери «Профиль → API». В мобильном приложении создание ключей не поддерживается.</div>`;
+}
+function render(){
+ const views={overview,positions,futures,connections};
+ $('content').innerHTML=(views[s.tab]||overview)();
+ $('content').classList.remove('pane');void $('content').offsetWidth;$('content').classList.add('pane');
+ const titles={overview:'Обзор',positions:'Spot',futures:'Futures',connections:'Подключения'};
+ $('pageTitle').textContent=titles[s.tab];
+ const ribbon=$('pnlRibbon'),a=sums();
+ ribbon.style.display=s.tab==='overview'?'none':'flex';
+ ribbon.innerHTML='<span class="tiny">PNL Spot · fxmr4</span><strong class="'+cls(a.profit)+'">'+signed(a.profit)+' ('+signed(a.invested?a.profit/a.invested*100:0,'pct')+')</strong>';
+ document.querySelector('.tabs').dataset.active=s.tab;
+ document.querySelectorAll('[data-tab]').forEach(b=>{const active=b.dataset.tab===s.tab;b.classList.toggle('active',active);b.setAttribute('aria-selected',active?'true':'false')});
+ $('message').innerHTML=s.flash?`<div class="toast">${escape(s.flash)}</div>`:'';
+}
 
   const storageKey='fxmr4_portfolio_public_preview_v1';
   function loadLocal(){
