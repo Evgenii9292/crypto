@@ -151,7 +151,8 @@ function pnlChartBlock(opts){
 }
 function spotPnlChart(){
  const p=portfolioSummary();
- return pnlChartBlock({key:'overview',title:'Портфель',subtitle:'',modes:true,current:p.pnl,summary:p});
+ const shown=s.pnlMode==='spot'?p.spot.profit:s.pnlMode==='futures'?p.futuresPnl:p.pnl;
+ return pnlChartBlock({key:'overview',title:'Портфель',subtitle:'',modes:true,current:shown,summary:p});
 }
 function spotChartBlock(){
  const p=portfolioSummary(),a=p.spot;
