@@ -81,20 +81,30 @@ function portfolioSummary(){
   futuresPnl,pnl:!snap?a.profit:futuresPnl===null?null:a.profit+futuresPnl};
 }
 function chartHTML(){
-  const data=s.points.filter(p=>Number.isFinite(Number(p.pnl))&&Number.isFinite(Number(p.time))).slice(-1200);
-  if(data.length<2)return '<div class="emptychart"><strong>История PNL формируется</strong><span>График появится после двух обновлений в разное время. Данные не моделируем.</span></div>';
-  const start=data[0].time,end=data[data.length-1].time,W=660,H=224,L=65,R=16,T=14,B=39;
-  const vals=data.map(x=>Number(x.pnl)),min=Math.min(0,...vals),max=Math.max(0,...vals),spread=Math.max(max-min,.25),low=min-.18*spread,high=max+.18*spread;
-  const x=t=>L+(t-start)/Math.max(1,end-start)*(W-L-R),y=v=>T+(high-v)/(high-low)*(H-T-B);
-  let guide='';
-  for(let k=0;k<=4;k++){let value=high-(high-low)*k/4,cy=y(value);guide+='<line x1="'+L+'" x2="'+(W-R)+'" y1="'+cy.toFixed(1)+'" y2="'+cy.toFixed(1)+'" class="chartGrid"/><text x="'+(L-9)+'" y="'+(cy+4).toFixed(1)+'" text-anchor="end" class="chartAxis">'+axisMoney(value)+'</text>'}
-  const f=t=>s.period==='24h'?new Date(t).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}):new Date(t).toLocaleDateString('ru-RU',{month:'short',day:'numeric'});
-  for(const fraction of [0,.5,1]){const tick=L+fraction*(W-L-R);guide+='<text x="'+tick+'" y="'+(H-10)+'" text-anchor="'+(fraction===0?'start':fraction===1?'end':'middle')+'" class="chartAxis">'+escape(f(start+(end-start)*fraction))+'</text>'}
-  const pts=data.map(p=>x(p.time).toFixed(1)+','+y(p.pnl).toFixed(1)).join(' '),last=data[data.length-1],color=last.pnl<0?'var(--red)':'var(--green)';
-  return '<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="xMidYMid meet" role="img" aria-label="График PNL с датами и значениями"><g>'+guide+'</g><line x1="'+L+'" x2="'+(W-R)+'" y1="'+y(0).toFixed(1)+'" y2="'+y(0).toFixed(1)+'" class="chartZero"/><polyline points="'+pts+'" fill="none" stroke="'+color+'" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="'+x(last.time).toFixed(1)+'" cy="'+y(last.pnl).toFixed(1)+'" r="4" fill="'+color+'"><title>'+escape(axisMoney(last.pnl)+' · '+new Date(last.time).toLocaleString('ru-RU'))+'</title></circle></svg>';
+ const windows={'24h':86400000,'7d':604800000,'30d':2592000000,'90d':7776000000};
+ const from=Date.now()-(windows[s.period]||604800000),kind=s.pnlMode;
+ let raw;
+ if(kind==='spot')raw=s.snapshots.map(p=>({time:p.time,pnl:p.pnl}));
+ else{
+  raw=s.portfolioSnapshots.map(p=>({time:p.time,pnl:kind==='futures'?p.futures:p.total}));
+  if(kind==='all'&&!raw.length&&!s.backendConnection.connected)raw=s.snapshots.map(p=>({time:p.time,pnl:p.pnl}));
+ }
+ const data=raw.filter(p=>Number.isFinite(Number(p.pnl))&&Number.isFinite(Number(p.time))&&p.time>=from).slice(-1200);
+ if(data.length<2)return '<div class="emptychart"><strong>История PNL формируется</strong><span>После нескольких обновлений появится график с реальными датами. Историю не придумываем.</span></div>';
+ const start=data[0].time,end=data[data.length-1].time,W=660,H=224,L=65,R=16,T=14,B=39;
+ const vals=data.map(x=>Number(x.pnl)),min=Math.min(0,...vals),max=Math.max(0,...vals),spread=Math.max(max-min,.25),low=min-.18*spread,high=max+.18*spread;
+ const x=t=>L+(t-start)/Math.max(1,end-start)*(W-L-R),y=v=>T+(high-v)/(high-low)*(H-T-B);
+ let guide='';
+ for(let k=0;k<=4;k++){let value=high-(high-low)*k/4,cy=y(value);guide+='<line x1="'+L+'" x2="'+(W-R)+'" y1="'+cy.toFixed(1)+'" y2="'+cy.toFixed(1)+'" class="chartGrid"/><text x="'+(L-9)+'" y="'+(cy+4).toFixed(1)+'" text-anchor="end" class="chartAxis">'+axisMoney(value)+'</text>'}
+ const f=t=>s.period==='24h'?new Date(t).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}):new Date(t).toLocaleDateString('ru-RU',{month:'short',day:'numeric'});
+ for(const fraction of [0,.5,1]){const tick=L+fraction*(W-L-R);guide+='<text x="'+tick+'" y="'+(H-10)+'" text-anchor="'+(fraction===0?'start':fraction===1?'end':'middle')+'" class="chartAxis">'+escape(f(start+(end-start)*fraction))+'</text>'}
+ const pts=data.map(p=>x(p.time).toFixed(1)+','+y(p.pnl).toFixed(1)).join(' '),last=data[data.length-1],color=last.pnl<0?'var(--red)':'var(--green)';
+ return '<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="xMidYMid meet" role="img" aria-label="График PNL с датами и значениями"><g>'+guide+'</g><line x1="'+L+'" x2="'+(W-R)+'" y1="'+y(0).toFixed(1)+'" y2="'+y(0).toFixed(1)+'" class="chartZero"/><polyline points="'+pts+'" fill="none" stroke="'+color+'" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="'+x(last.time).toFixed(1)+'" cy="'+y(last.pnl).toFixed(1)+'" r="4" fill="'+color+'"><title>'+escape(axisMoney(last.pnl)+' · '+new Date(last.time).toLocaleString('ru-RU'))+'</title></circle></svg>';
 }
 function spotPnlChart(){
-  const a=sums();return `<section class="section pnlChart card"><div class="hrow"><div><div class="sectitle">PNL · Spot</div><div class="tiny">История изменения результата</div></div><div class="periods">${['24h','7d','30d','90d'].map(p=>`<button type="button" data-period="${p}" class="period ${s.period===p?'active':''}">${p}</button>`).join('')}</div></div><div class="chartbox">${chartHTML()}</div><div class="chartlegend"><span>USD · даты и время снизу</span><strong class="${cls(a.profit)}">${signed(a.profit)}</strong></div></section>`;
+ const p=portfolioSummary(),current=s.pnlMode==='spot'?p.spot.profit:s.pnlMode==='futures'?p.futuresPnl:p.pnl;
+ const modes=[['all','Все'],['spot','Спот'],['futures','Фьючерсы']];
+ return `<section class="section pnlChart card"><div class="hrow pnlChartHead"><div><div class="sectitle">PNL · Портфель</div><div class="tiny">Динамика результатов по позициям</div></div><div class="periods">${['24h','7d','30d','90d'].map(q=>`<button type="button" data-period="${q}" class="period ${s.period===q?'active':''}">${q}</button>`).join('')}</div></div><div class="pnlMode">${modes.map(([key,name])=>`<button class="${s.pnlMode===key?'active':''}" data-pnl-mode="${key}" type="button">${name}</button>`).join('')}</div><div class="chartbox">${chartHTML()}</div><div class="chartlegend"><span>USD · история с момента начала отслеживания${!p.hasFutures&&s.pnlMode==='all'?' · сейчас только Спот':''}</span><strong class="${current==null?'neutral':cls(current)}">${current==null?'—':signed(current)}</strong></div></section>`;
 }
 function spotDistribution(){
   const a=sums();
