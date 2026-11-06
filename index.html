@@ -92,9 +92,6 @@ function pnlSeries(){
  let live;
  if(kind==='spot')live=s.snapshots.map(p=>({t:Number(p.time),v:Number(p.pnl)}));
  else live=s.portfolioSnapshots.map(p=>({t:Number(p.time),v:Number(p[field])}));
- // The spot series also has a durable copy; without it a month view would be
- // limited to the ~25 hours the browser keeps.
- if(kind==='spot')live=live.concat((s.pnlHistory||[]).map(p=>({t:Number(p.t),v:Number(p.spot)})));
  live=live.filter(p=>Number.isFinite(p.t)&&Number.isFinite(p.v)).sort((a,b)=>a.t-b.t);
  const oldestLive=live.length?live[0].t:Infinity;
  const older=(s.pnlHistory||[]).map(p=>({t:Number(p.t),v:Number(p[field])}))
