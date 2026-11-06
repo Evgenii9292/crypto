@@ -42,7 +42,8 @@ class TestReadOnlySubaccount(TestCase):
                 return {"list": [{"symbol": "BTCUSDT", "side": "Buy", "size": "0.01",
                                    "positionValue": "780", "avgPrice": "76000",
                                    "markPrice": "78000", "leverage": "5",
-                                   "unrealisedPnl": "20.25"}], "nextPageCursor": ""}
+                                   "unrealisedPnl": "20.25", "positionIM": "18.75",
+                                   "cumRealisedPnl": "5.55"}], "nextPageCursor": ""}
             return {"list": [], "nextPageCursor": ""}
         with patch.object(server, "request_bybit", side_effect=bybit):
             result = server.snapshot()
@@ -51,6 +52,8 @@ class TestReadOnlySubaccount(TestCase):
         self.assertEqual(result["totals"]["positionCount"], 1)
         self.assertEqual(result["account"]["name"], "Sub Test")
         self.assertEqual(result["positions"][0]["symbol"], "BTCUSDT")
+        self.assertEqual(result["positions"][0]["initialMargin"], 18.75)
+        self.assertEqual(result["positions"][0]["cumulativeRealisedPnl"], 5.55)
         dumped = json.dumps(result)
         self.assertNotIn("fake-test-api-key", dumped)
         self.assertNotIn("fake-test-api-secret", dumped)
