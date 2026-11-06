@@ -16,7 +16,7 @@
     }
     const stateText=status.connected?'Синхронизировано':status.configured?'Ключ задан · проверь синхронизацию':'Ключ ещё не задан';
     let controls=status.configured?
-      '<button type="button" class="btn primary" data-bybit-action="refresh">Обновить позиции</button>':
+      '<button type="button" class="btn primary" data-bybit-action="refresh">Обновить позиции</button><button type="button" class="btn" data-bybit-action="disconnect">Отключить API</button>':
       '<button type="button" class="btn primary" data-bybit-action="start">Подключить субаккаунт</button>';
     const form=status.formOpen&&!status.configured?
       '<form id="bybitConnectForm" class="bybitConnectForm" autocomplete="off"><div class="field"><label for="subLabel">Название субаккаунта</label><input id="subLabel" name="label" maxlength="40" value="Subaccount 1" required /></div><div class="field"><label for="subKey">API Key</label><input id="subKey" name="key" type="password" autocomplete="off" required /></div><div class="field"><label for="subSecret">API Secret</label><input id="subSecret" name="secret" type="password" autocomplete="off" required /></div><div class="safeNote">Ключи проверяются на сервере и сохраняются только в оперативной памяти до перезапуска. API с правами торговли не принимается.</div><div class="flexend"><button class="btn" type="button" data-bybit-action="cancel">Отмена</button><button class="btn primary" type="submit">Проверить и подключить</button></div></form>':'';
@@ -101,12 +101,35 @@
     }
   }
 
+
+  async function disconnect(){
+    if(!status.available||status.busy||!canSend)return;
+    status.busy=true;status.error="";renderPanel();
+    try{
+      const data=await getJson("./api/disconnect",{
+        method:"POST",
+        headers:{"Content-Type":"application/json","X-FXMR4-Action":"1"},
+        body:"{}"
+      });
+      if(data.disconnected!==true)throw Error("Bybit не подтвердил отключение");
+      status.configured=false;
+      status.connected=false;
+      status.formOpen=false;
+      status.account="Subaccount";
+      status.updatedAt=null;
+      window.fxmr4App?.onDisconnected?.();
+    }catch(e){
+      status.error=e.message||"Не удалось отключить API";
+    }finally{status.busy=false;renderPanel()}
+  }
+
   document.addEventListener("click",e=>{
     const b=e.target.closest?.("[data-bybit-action]");
     if(!b)return;
     if(b.dataset.bybitAction==="check")check();
     else if(b.dataset.bybitAction==="refresh")refresh();
     else if(b.dataset.bybitAction==="start"){status.formOpen=true;status.error="";renderPanel();}
+    else if(b.dataset.bybitAction==="disconnect"){if(window.confirm("Отключить API Bybit? Позиции перестанут обновляться. Ключ на бирже останется действительным."))disconnect();}
     else if(b.dataset.bybitAction==="cancel"){status.formOpen=false;renderPanel();}
   });
 
@@ -124,7 +147,7 @@
     connect(credentials);
   });
 
-  window.fxmr4Bybit={renderPanel,check,refresh,isEditing:()=>status.formOpen,status:()=>({...status})};
+  window.fxmr4Bybit={renderPanel,check,refresh,disconnect,isEditing:()=>status.formOpen,status:()=>({...status})};
   check();
   setInterval(()=>{if(!document.hidden&&status.configured&&status.available)refresh()},60000);
   document.addEventListener("visibilitychange",()=>{if(!document.hidden&&status.configured&&status.available)refresh()});
