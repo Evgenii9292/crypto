@@ -179,7 +179,7 @@ def list_extra_accounts():
         return _extra_accounts_locked()
 
 
-def add_extra_account(key, secret, label):
+def add_extra_account(key, secret, label, uid=None):
     if not isinstance(key, str) or not isinstance(secret, str) or not (
         10 <= len(key) <= 256 and 10 <= len(secret) <= 256
     ):
@@ -192,9 +192,11 @@ def add_extra_account(key, secret, label):
         if len(accounts) >= 20:
             raise StateError("Не более 20 субаккаунтов Bybit")
         legacy = read_credentials()
-        if (legacy and legacy["key"] == key) or any(item["key"] == key for item in accounts):
+        if (legacy and legacy["key"] == key) or any(item["key"] == key or (uid and item.get("uid") == str(uid)) for item in accounts):
             raise StateError("Этот API-ключ уже подключён")
         account = {"id": "sub-" + secrets.token_hex(12), "label": label, "key": key, "secret": secret}
+        if uid is not None and str(uid).strip():
+            account["uid"] = str(uid).strip()[:40]
         _write_extra_locked(accounts + [account])
         return {"id": account["id"], "label": label}
 
