@@ -1,177 +1,177 @@
-/* FXMR4: subaccount connector UI. Never store API credentials in this file or localStorage. */
+/* FXMR4: independent read-only API connections. Credentials never touch localStorage. */
 (() => {
-  "use strict";
-  const status={available:false,configured:false,account:"Subaccount",connected:false,error:"",updatedAt:null,busy:false,formOpen:false};
-  const enc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-  const canSend=location.protocol==="https:"||["localhost","127.0.0.1"].includes(location.hostname);
-  const panel=()=>document.getElementById("bybitConnectionPanel");
-
-  function renderPanel(){
-    const p=panel();
-    if(!p)return;
-    if(!status.available){
-      p.innerHTML='<div class="connectorState"><strong>Серверное подключение не настроено</strong><p>Сейчас открыт публичный просмотр GitHub. Ввод API-ключей отключён. После запуска FXMR4 на HTTPS-сервере форма станет доступна здесь.</p><button class="btn" type="button" data-bybit-action="check">Проверить сервер</button></div>';
-      return;
-    }
-    // The header already says whether we are connected, so this line only
-    // reports freshness. Repeating the state here is what made the screen noisy.
-    const fresh=status.connected&&status.updatedAt
-      ?'Данные обновлены '+new Date(status.updatedAt).toLocaleString('ru-RU')
-      :status.connected?'Данные ещё не загружены':'';
-    let controls=status.configured?
-      '<button type="button" class="btn primary" data-bybit-action="refresh">Обновить позиции</button><button type="button" class="btn" data-bybit-action="disconnect">Отключить API</button>':
-      '<button type="button" class="btn primary" data-bybit-action="start">Подключить API</button>';
-    const form=status.formOpen&&!status.configured?
-      '<form id="bybitConnectForm" class="bybitConnectForm" autocomplete="off"><div class="field"><label for="subLabel">Название субаккаунта</label><input id="subLabel" name="label" maxlength="40" value="Subaccount 1" required /></div><div class="field"><label for="subKey">API Key</label><input id="subKey" name="key" type="password" autocomplete="off" required /></div><div class="field"><label for="subSecret">API Secret</label><input id="subSecret" name="secret" type="password" autocomplete="off" required /></div><div class="tiny">Ключ с правами торговли не принимается — только чтение.</div><div class="flexend"><button class="btn" type="button" data-bybit-action="cancel">Отмена</button><button class="btn primary" type="submit">Проверить и подключить</button></div></form>':'';
-    p.innerHTML='<div class="connectorState">'+(fresh?'<div class="tiny connectorFreshness">'+enc(fresh)+'</div>':'')+(status.error?'<div class="bybitError">'+enc(status.error)+'</div>':'')+'<div class="bybitConnectActions">'+(status.busy?'Проверяю Bybit…':controls)+'</div>'+form+'</div>';
+ "use strict";
+ const status={available:false,configured:false,connected:false,error:"",busy:false,formOpen:false,updatedAt:null,accounts:[],results:{},editing:null};
+ const enc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+ const canSend=location.protocol==="https:"||["localhost","127.0.0.1"].includes(location.hostname);
+ const panel=()=>document.getElementById("bybitConnectionPanel");
+ const authHeaders={"Content-Type":"application/json","X-FXMR4-Action":"1"};
+ const money=n=>Number(n).toLocaleString("en-US",{style:"currency",currency:"USD"});
+ const brand=a=>a.exchange||"Bybit";
+ function renderPanel(){
+  const el=panel();if(!el)return;
+  if(!status.available){
+   el.innerHTML='<div class="connectorState"><p class="tiny">'+enc(status.error||"Открой защищённый FXMR4 на VPS для подключения API.")+'</p><button type="button" class="btn" data-bybit-action="check">Проверить соединение</button></div>';
+   return;
   }
-
-  async function getJson(url,options={}){
-    const ctl=new AbortController();
-    const timeout=setTimeout(()=>ctl.abort(),16000);
+  const list=status.accounts.map(a=>{
+   const live=status.results[a.id],healthy=!!live&&!live.error;
+   const metrics=healthy&&live.data?.totals?live.data.totals:null;
+   const detail=live?.error?'<span class="bybitError">'+enc(live.error)+'</span>':
+     metrics?'<span class="tiny">Баланс '+(metrics.equity==null?'—':money(metrics.equity))+'</span>':
+     '<span class="tiny">Ожидается обновление</span>';
+   const actions=status.editing===a.id?
+      '<form class="bybitRenameForm" data-account-id="'+enc(a.id)+'"><input name="label" required maxlength="40" value="'+enc(a.label)+'" aria-label="Название субаккаунта"><button type="submit" class="btn primary">Сохранить</button><button type="button" class="btn" data-bybit-action="cancel-rename">Отмена</button></form>':
+      '<div class="bybitAccountActions"><button type="button" class="btn" data-bybit-action="rename" data-id="'+enc(a.id)+'" aria-label="Переименовать '+enc(a.label)+'">Название</button><button type="button" class="btn" data-bybit-action="remove" data-id="'+enc(a.id)+'" aria-label="Отключить '+enc(a.label)+'">Отключить</button></div>';
+   return '<div class="bybitAccountRow"><div class="bybitAccountMain"><span class="status-dot '+(live?.error?'isError':healthy?'':'isDisconnected')+'"></span><span class="bybitAccountMeta"><strong>'+enc(a.label)+'</strong><small>'+enc(brand(a))+' · API только чтение</small>'+detail+'</span></div>'+actions+'</div>';
+  }).join('');
+  const form=status.formOpen?'<form id="bybitConnectForm" class="bybitConnectForm" autocomplete="off">'+
+   '<div class="field"><label>Биржа<select name="exchange" disabled><option>Bybit</option></select></label></div>'+
+   '<div class="field"><label>Название субаккаунта<input name="label" maxlength="40" placeholder="Например, 13 ORD (2SL)" required></label></div>'+
+   '<div class="field"><label>API Key<input name="key" type="password" autocomplete="off" required></label></div>'+
+   '<div class="field"><label>API Secret<input name="secret" type="password" autocomplete="off" required></label></div>'+
+   '<div class="tiny">Только Read-Only. Ключ проверяется сервером и хранится на VPS зашифрованным.</div>'+
+   '<div class="flexend"><button class="btn" type="button" data-bybit-action="cancel">Отмена</button><button class="btn primary" type="submit">Проверить и подключить</button></div></form>':'';
+  el.innerHTML='<div class="connectorState">'+
+   (status.error?'<p class="bybitError" role="alert">'+enc(status.error)+'</p>':'')+
+   '<div class="bybitAccountsList">'+(list||'<div class="sourceEmpty">Подключённых субаккаунтов пока нет.</div>')+'</div>'+
+   '<div class="bybitConnectActions"><button type="button" class="btn primary" data-bybit-action="start">+ Добавить субаккаунт</button>'+
+   (status.accounts.length?'<button type="button" class="btn" data-bybit-action="refresh" '+(status.busy?'disabled':'')+'>Обновить позиции</button>':'')+'</div>'+
+   form+'</div>';
+ }
+ async function getJson(url,opts={}){
+  const ctl=new AbortController(),clock=setTimeout(()=>ctl.abort(),22000);
+  try{
+   const r=await fetch(url,{method:opts.method||"GET",cache:"no-store",credentials:"same-origin",
+    headers:opts.method==="POST"?authHeaders:{Accept:"application/json"},
+    body:opts.body?JSON.stringify(opts.body):undefined,signal:ctl.signal});
+   const data=await r.json();
+   if(!r.ok)throw Error(String(data.error||"HTTP "+r.status).slice(0,250));
+   return data;
+  }finally{clearTimeout(clock)}
+ }
+ function inform(){
+  const good=status.accounts.filter(a=>status.results[a.id]?.data&&!status.results[a.id]?.error);
+  const failures=status.accounts.filter(a=>status.results[a.id]?.error);
+  status.configured=status.accounts.length>0;
+  status.connected=status.configured&&good.length===status.accounts.length;
+  status.error=failures.length?failures.map(a=>a.label+' · '+status.results[a.id].error).join('; '):"";
+  window.fxmr4App?.onBackendStatus?.({available:status.available,configured:status.configured,connected:status.connected,error:status.error});
+ }
+ async function check(){
+  if(!canSend){status.error="HTTPS обязателен";status.available=false;renderPanel();return}
+  try{
+   const info=await getJson("./api/status");
+   if(info.backend!==true)throw Error("Сервер FXMR4 не найден");
+   const reply=await getJson("./api/accounts");
+   status.available=true;
+   status.accounts=Array.isArray(reply.accounts)?reply.accounts:[];
+   for(const id of Object.keys(status.results))if(!status.accounts.some(a=>a.id===id))delete status.results[id];
+   window.fxmr4App?.onAccounts?.(status.accounts);
+   inform();renderPanel();
+   if(status.accounts.length)await refresh(false);
+  }catch(e){
+   status.available=false;
+   status.error=e.message||"Сервер недоступен";
+   window.fxmr4App?.onBackendStatus?.({available:false,configured:false,connected:false,error:status.error});
+   renderPanel();
+  }
+ }
+ async function refresh(updateList=true){
+  if(!status.available||status.busy)return;
+  if(updateList){
+   try{
+    const data=await getJson("./api/accounts");
+    status.accounts=Array.isArray(data.accounts)?data.accounts:[];
+    for(const id of Object.keys(status.results))if(!status.accounts.some(a=>a.id===id))delete status.results[id];
+    window.fxmr4App?.onAccounts?.(status.accounts);
+   }catch(e){status.error=e.message||"Не удалось получить список субаккаунтов";renderPanel();return}
+  }
+  status.busy=true;renderPanel();
+  try{
+   // Each account gets its OWN authenticated API request and its OWN snapshot.
+   // The existing legacy key remains untouched when new accounts are added.
+   for(const a of status.accounts){
     try{
-      const r=await fetch(url,{method:options.method||"GET",cache:"no-store",credentials:"same-origin",headers:options.headers||{},body:options.body,signal:ctl.signal});
-      const data=await r.json();
-      if(!r.ok)throw Error(String(data.error||"HTTP "+r.status).slice(0,250));
-      return data;
-    }finally{clearTimeout(timeout)}
+     const reply=await getJson("./api/account-snapshot?id="+encodeURIComponent(a.id));
+     if(!reply.data||reply.connected!==true)throw Error("Bybit не вернул позиции");
+     status.results[a.id]={data:reply.data};
+     window.fxmr4App?.onSnapshot?.(reply.data);
+    }catch(e){status.results[a.id]={error:e.message||"Нет связи с Bybit"}}
+   }
+   status.updatedAt=Date.now();
+   inform();
+  }finally{status.busy=false;renderPanel()}
+ }
+ async function connect(fields){
+  if(!status.available||status.busy||!canSend)return;
+  status.busy=true;status.error="";renderPanel();
+  try{
+   await getJson("./api/account-connect",{method:"POST",body:fields});
+   status.formOpen=false;status.busy=false;
+   await check();
+  }catch(e){status.error=e.message||"Не удалось подключить API"}
+  finally{status.busy=false;renderPanel()}
+ }
+ async function rename(label,accountId="bybit-subaccount"){
+  if(!status.available||status.busy)return false;
+  status.busy=true;renderPanel();
+  try{
+   const legacy=accountId==="bybit-subaccount";
+   const data=await getJson(legacy?"./api/rename":"./api/account-rename",
+    {method:"POST",body:legacy?{label}:{id:accountId,label}});
+   if(!data.renamed)throw Error("Сервер не подтвердил изменение имени");
+   const a=status.accounts.find(x=>x.id===accountId);if(a)a.label=label;
+   status.editing=null;
+   window.fxmr4App?.onAccounts?.(status.accounts);
+   return true;
+  }catch(e){status.error=e.message;return false}
+  finally{status.busy=false;renderPanel()}
+ }
+ async function disconnect(accountId="bybit-subaccount"){
+  if(!status.available||status.busy)return false;
+  status.busy=true;status.error="";renderPanel();
+  try{
+   const legacy=accountId==="bybit-subaccount";
+   const reply=await getJson(legacy?"./api/disconnect":"./api/account-delete",
+    {method:"POST",body:legacy?{}:{id:accountId}});
+   if(!reply.disconnected)throw Error("Сервер не подтвердил отключение");
+   status.accounts=status.accounts.filter(a=>a.id!==accountId);
+   delete status.results[accountId];
+   window.fxmr4App?.onAccounts?.(status.accounts);
+   inform();return true;
+  }catch(e){status.error=e.message||"Не удалось отключить";return false}
+  finally{status.busy=false;renderPanel()}
+ }
+ document.addEventListener("click",e=>{
+  const b=e.target.closest?.("[data-bybit-action]");if(!b)return;
+  const act=b.dataset.bybitAction,id=b.dataset.id;
+  if(act==="check")check();
+  if(act==="refresh")refresh();
+  if(act==="start"){status.formOpen=true;status.error="";renderPanel();panel()?.querySelector?.('[name="label"]')?.focus?.()}
+  if(act==="cancel"){status.formOpen=false;renderPanel()}
+  if(act==="rename"){status.editing=id;renderPanel()}
+  if(act==="cancel-rename"){status.editing=null;renderPanel()}
+  if(act==="remove"&&window.confirm("Отключить субаккаунт? Его ключ удалится с VPS, на Bybit ключ останется действовать."))disconnect(id);
+ });
+ document.addEventListener("submit",e=>{
+  if(e.target?.id==="bybitConnectForm"){
+   e.preventDefault();
+   const fd=new FormData(e.target);
+   const fields={label:String(fd.get("label")||"").trim(),
+     key:String(fd.get("key")||"").trim(),secret:String(fd.get("secret")||"").trim()};
+   e.target.reset();
+   if(fields.key.length<10||fields.secret.length<10||!fields.label){status.error="Заполни название и API-ключ";renderPanel();return}
+   connect(fields);
   }
-
-  async function check(){
-    if(!canSend){status.available=false;status.error="HTTPS обязателен";renderPanel();return}
-    try{
-      const data=await getJson("./api/status");
-      if(data.backend!==true)throw Error("Это не приватный сервер FXMR4");
-      status.available=true;
-      status.configured=!!data.configured;
-      status.account=data.account||"Subaccount";
-      status.error="";
-      window.fxmr4App?.onBackendStatus?.({available:true,configured:status.configured,connected:status.connected});
-      renderPanel();
-      if(status.configured)await refresh();
-    }catch(e){
-      status.available=false;
-      status.configured=false;
-      status.connected=false;
-      status.error="Backend недоступен";
-      window.fxmr4App?.onBackendStatus?.({available:false,configured:false,connected:false});
-      renderPanel();
-    }
+  if(e.target?.classList?.contains("bybitRenameForm")){
+   e.preventDefault();
+   const fd=new FormData(e.target);
+   rename(String(fd.get("label")||"").trim(),e.target.dataset.accountId);
   }
-
-  async function refresh(){
-    if(!status.available||!status.configured||status.busy)return;
-    status.busy=true;renderPanel();
-    try{
-      const reply=await getJson("./api/snapshot");
-      if(reply.connected!==true||!reply.data)throw Error("Bybit не вернул позиции");
-      status.connected=true;
-      status.error="";
-      status.account=reply.data?.account?.name||"Subaccount";
-      status.updatedAt=reply.data?.updatedAt||Date.now();
-      window.fxmr4App?.onSnapshot?.(reply.data);
-    }catch(e){
-      status.connected=false;
-      status.error=e.message||"Не удалось получить данные Bybit";
-      window.fxmr4App?.onBackendStatus?.({available:true,configured:true,connected:false,error:status.error});
-    }finally{
-      status.busy=false;
-      renderPanel();
-    }
-  }
-
-  async function connect(fields){
-    if(!status.available||!canSend)return;
-    status.busy=true;status.error="";renderPanel();
-    try{
-      const reply=await getJson("./api/connect",{
-        method:"POST",
-        headers:{"Content-Type":"application/json","X-FXMR4-Action":"1"},
-        body:JSON.stringify(fields)
-      });
-      if(reply.connected!==true)throw Error("API не подтвердил ключ");
-      status.configured=true;
-      status.formOpen=false;
-      status.account=reply.account||fields.label;
-      window.fxmr4App?.onBackendStatus?.({available:true,configured:true,connected:false});
-      status.busy=false;
-      await refresh();
-    }catch(e){
-      status.error=e.message||"Ошибка подключения Bybit";
-    }finally{
-      status.busy=false;
-      renderPanel();
-    }
-  }
-
-
-  async function rename(label){
-    if(!status.available||status.busy||!canSend)return false;
-    const name=String(label||"").trim().slice(0,40);
-    if(!name){status.error="Укажи название субаккаунта";renderPanel();return false}
-    status.busy=true;status.error="";renderPanel();
-    try{
-      const reply=await getJson("./api/rename",{
-        method:"POST",
-        headers:{"Content-Type":"application/json","X-FXMR4-Action":"1"},
-        body:JSON.stringify({label:name})
-      });
-      if(reply.renamed!==true)throw Error("Сервер не подтвердил переименование");
-      status.account=reply.account||name;
-      return true;
-    }catch(e){
-      status.error=e.message||"Не удалось переименовать субаккаунт";
-      return false;
-    }finally{status.busy=false;renderPanel()}
-  }
-
-  async function disconnect(){
-    if(!status.available||status.busy||!canSend)return;
-    status.busy=true;status.error="";renderPanel();
-    try{
-      const data=await getJson("./api/disconnect",{
-        method:"POST",
-        headers:{"Content-Type":"application/json","X-FXMR4-Action":"1"},
-        body:"{}"
-      });
-      if(data.disconnected!==true)throw Error("Bybit не подтвердил отключение");
-      status.configured=false;
-      status.connected=false;
-      status.formOpen=false;
-      status.account="Subaccount";
-      status.updatedAt=null;
-      window.fxmr4App?.onDisconnected?.();
-    }catch(e){
-      status.error=e.message||"Не удалось отключить API";
-    }finally{status.busy=false;renderPanel()}
-  }
-
-  document.addEventListener("click",e=>{
-    const b=e.target.closest?.("[data-bybit-action]");
-    if(!b)return;
-    if(b.dataset.bybitAction==="check")check();
-    else if(b.dataset.bybitAction==="refresh")refresh();
-    else if(b.dataset.bybitAction==="start"){status.formOpen=true;status.error="";renderPanel();}
-    else if(b.dataset.bybitAction==="disconnect"){if(window.confirm("Отключить API Bybit? Позиции перестанут обновляться. Ключ на бирже останется действительным."))disconnect();}
-    else if(b.dataset.bybitAction==="cancel"){status.formOpen=false;renderPanel();}
-  });
-
-  document.addEventListener("submit",e=>{
-    if(e.target?.id!=="bybitConnectForm")return;
-    e.preventDefault();
-    const form=new FormData(e.target);
-    const credentials={
-      label:String(form.get("label")||"Subaccount 1").trim(),
-      key:String(form.get("key")||"").trim(),
-      secret:String(form.get("secret")||"").trim()
-    };
-    e.target.reset(); // Never keep credentials in form or browser storage.
-    if(credentials.key.length<10||credentials.secret.length<10){status.error="Проверь API Key и Secret";renderPanel();return}
-    connect(credentials);
-  });
-
-  window.fxmr4Bybit={renderPanel,check,refresh,disconnect,rename,isEditing:()=>status.formOpen,status:()=>({...status})};
-  check();
-  setInterval(()=>{if(!document.hidden&&status.configured&&status.available)refresh()},60000);
-  document.addEventListener("visibilitychange",()=>{if(!document.hidden&&status.configured&&status.available)refresh()});
+ });
+ window.fxmr4Bybit={renderPanel,check,refresh,disconnect,rename,isEditing:()=>status.formOpen,status:()=>({...status})};
+ check();
+ setInterval(()=>{if(!document.hidden&&status.available&&status.accounts.length)refresh()},60000);
+ document.addEventListener("visibilitychange",()=>{if(!document.hidden&&status.available)check()});
 })();
