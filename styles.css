@@ -76,3 +76,14 @@
   .storageNote{text-align:left}
 }
 @media(min-width:961px) and (max-width:1190px){.positionGrid{grid-template-columns:1fr}.overview-layout{grid-template-columns:1fr}}
+
+/* FXMR4 v1.2: same tokens, simpler three-section navigation */
+@media(max-width:960px){
+.tabs{grid-template-columns:repeat(3,minmax(0,1fr))}
+.tabs::before{width:calc((100% - 14px)/3)}
+.tabs[data-active="futures"]::before{transform:translateX(calc(200% + 6px))}
+}
+.navConfig{margin-top:14px;width:100%}
+.headActions{display:flex;align-items:center;gap:10px}
+.headActions .btn{height:35px}
+@media(max-width:960px){.headActions{display:none}}
