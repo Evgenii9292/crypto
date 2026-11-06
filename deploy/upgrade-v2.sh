@@ -28,6 +28,7 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y python3-cryptography >/dev/null
 python3 -c "from cryptography.hazmat.primitives.ciphers.aead import AESGCM; print('AES-GCM: OK')"
+python3 -m unittest discover -s "$REPO/backend" -p 'test_*.py' -q
 
 echo "[3/6] Сохраняем старый пароль, добавляем ключ шифрования"
 chmod 600 "$ENVFILE"
@@ -76,7 +77,7 @@ for i in {1..10}; do
 done
 
 echo "[6/6] Проверяем сертификат"
-code="$(curl -sS -I --max-time 20 -o /dev/null -w '%{http_code}' "https://$DOMAIN" 2>/dev/null || true)"
+code="$(curl -sS --max-time 20 -o /dev/null -w '%{http_code}' "https://$DOMAIN" 2>/dev/null || true)"
 if [[ "$code" == "401" ]]; then
   echo "HTTPS работает: HTTP 401 (авторизация включена)"
 else
