@@ -11,9 +11,11 @@ from __future__ import annotations
 
 import base64
 import json
+import math
 import os
 import secrets
 import threading
+import time
 from pathlib import Path
 
 DATA_DIR = Path(os.environ.get("FXMR4_STATE_DIR", "/var/lib/fxmr4"))
@@ -21,6 +23,15 @@ SEAL_KEY_HEX = os.environ.get("FXMR4_SEAL_KEY", "")
 LOCK = threading.RLock()
 CREDS_PATH = DATA_DIR / "bybit.cred"
 PROFILE_PATH = DATA_DIR / "user-data.json"
+HISTORY_PATH = DATA_DIR / "pnl-history.json"
+
+# PNL history is tiny per point but must outlive one browser: month and half-year
+# charts need data the browser no longer holds. Points are compacted into tiers
+# so the file stays small while the resolution still fits the chosen window.
+HISTORY_MAX_POINTS = 4000
+_FIVE_MINUTES = 300_000
+_HOUR = 3_600_000
+_DAY = 86_400_000
 
 
 class StateError(Exception):
@@ -161,6 +172,135 @@ def write_profile(revision, portfolio, levels):
             raise StateError("CONFLICT: состояние изменено в другом браузере")
         _write_private(PROFILE_PATH, raw)
     return {"revision": obj["revision"], "saved": True}
+
+
+def _history_bucket_ms(age_ms):
+    """Bucket width for a point of this age.
+
+    Fine while the detail is still visible in the day chart, hourly out to two
+    months, daily beyond that. Coarser buckets only ever replace finer ones of
+    the same age, so no window loses resolution it already had.
+    """
+    if age_ms <= 2 * _DAY:
+        return _FIVE_MINUTES
+    if age_ms <= 60 * _DAY:
+        return _HOUR
+    return _DAY
+
+
+def compact_history(points, now_ms=None):
+    """Merge points into time buckets, newest value winning inside each bucket.
+
+    A long-lived file must not grow without bound, and it must never silently
+    drop the newest reading: an older point inside the same bucket can only fill
+    a field the newer one does not carry.
+    """
+    now = int(now_ms if now_ms is not None else time.time() * 1000)
+    merged = {}
+    for item in points or []:
+        if not isinstance(item, dict):
+            continue
+        try:
+            t = int(item.get("t"))
+        except (TypeError, ValueError):
+            continue
+        values = {}
+        for key in ("spot", "futures", "total"):
+            raw = item.get(key)
+            if raw is None:
+                continue
+            try:
+                value = float(raw)
+            except (TypeError, ValueError):
+                continue
+            if value != value or value in (float("inf"), float("-inf")):
+                continue
+            values[key] = value
+        if not values:
+            continue
+        bucket = _history_bucket_ms(max(0, now - t))
+        key = (t // bucket) * bucket
+        current = merged.setdefault(key, {"t": key})
+        if t >= current.get("_newest", -1):
+            current["_newest"] = t
+            current.update(values)
+        else:
+            for name, value in values.items():
+                current.setdefault(name, value)
+    out = []
+    for point in sorted(merged.values(), key=lambda row: row["t"]):
+        point.pop("_newest", None)
+        out.append(point)
+    if len(out) > HISTORY_MAX_POINTS:
+        out = out[-HISTORY_MAX_POINTS:]
+    return out
+
+
+def read_history():
+    with LOCK:
+        if not HISTORY_PATH.is_file():
+            return {"points": []}
+        try:
+            obj = json.loads(HISTORY_PATH.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, ValueError) as exc:
+            raise StateError("Ошибка чтения истории PNL") from exc
+        points = obj.get("points") if isinstance(obj, dict) else None
+        if not isinstance(points, list):
+            raise StateError("Некорректная история PNL")
+        return {"points": points}
+
+
+def _clean_history_point(item):
+    """Validate one client reading and drop nothing silently.
+
+    A reading that carries no number is not a zero reading: turning it into zero
+    would invent PNL out of a failed sync. Malformed input rejects the whole
+    batch, and the check runs before anything is written, so a bad request can
+    never damage the stored series.
+    """
+    if not isinstance(item, dict):
+        raise StateError("Неверный формат точки истории PNL")
+    try:
+        moment = int(item.get("t"))
+    except (TypeError, ValueError):
+        raise StateError("В точке истории PNL нет времени")
+    point = {"t": moment}
+    for key in ("spot", "futures", "total"):
+        raw = item.get(key)
+        if raw is None:
+            continue
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            raise StateError("Некорректное значение в истории PNL")
+        if not math.isfinite(value):
+            raise StateError("Некорректное значение в истории PNL")
+        point[key] = value
+    if len(point) == 1:
+        raise StateError("В точке истории PNL нет значений")
+    return point
+
+
+def merge_history(points):
+    """Append client readings to the durable series.
+
+    The client never replaces the file: it only contributes points, so history
+    collected by one browser (or an earlier one) is not wiped by the next.
+    """
+    if not isinstance(points, list):
+        raise StateError("Неверный формат истории PNL")
+    if len(points) > 5000:
+        raise StateError("Слишком много точек истории PNL")
+    clean = [_clean_history_point(item) for item in points]
+    with LOCK:
+        existing = read_history()["points"]
+        if not clean:
+            return {"points": len(existing)}
+        merged = compact_history(existing + clean)
+        raw = json.dumps({"points": merged}, ensure_ascii=False, allow_nan=False,
+                         separators=(",", ":")).encode("utf-8")
+        _write_private(HISTORY_PATH, raw)
+    return {"points": len(merged)}
 
 
 def is_ready():

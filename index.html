@@ -59,7 +59,7 @@
   const nowLocal=()=>{const d=new Date();return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-')};
   const fmtDate=d=>{if(!d)return 'Нет даты';const a=d.slice(0,10).split('-');return a.length===3?`${a[2]}.${a[1]}.${a[0]}`:d};
   const fmtTime=d=>{if(!d)return '';const x=new Date(d);return isNaN(x)?'':x.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})};
-  const s={tab:'overview',trades:[{id:1,coin:'BTC',spent:25,entry:76200,buy_date:'2026-11-06',confirmed:false},{id:2,coin:'ETH',spent:25,entry:2247,buy_date:'2026-11-06',confirmed:false}],quotes:{BTC:{price:initial.BTC,source:'Предварительно'},ETH:{price:initial.ETH,source:'Предварительно'}},capital:C,period:'7d',points:[],snapshots:[],sync:null,form:false,editing:null,deleteId:null,busy:false,flash:'',formError:'',showPrices:false,tradingSubtab:'futures',futureMode:'exchange',futureSort:'pnl',pnlMode:'all',settingsPane:'connections',portfolioSnapshots:[],pendingRemove:null,renameId:null,renameValue:'',renameError:'',futureForm:null,futureFormError:'',sources:[{id:'bybit',name:'Bybit',connected:false,accounts:[]}],futuresPositions:[],openedExchanges:{},openedAccounts:{},spotHistoryOpen:false,spotAccountsOpen:false,spotOpen:{},bybitSnapshot:null,backendConnection:{available:false,configured:false,connected:false,error:''}};
+  const s={tab:'overview',trades:[{id:1,coin:'BTC',spent:25,entry:76200,buy_date:'2026-11-06',confirmed:false},{id:2,coin:'ETH',spent:25,entry:2247,buy_date:'2026-11-06',confirmed:false}],quotes:{BTC:{price:initial.BTC,source:'Предварительно'},ETH:{price:initial.ETH,source:'Предварительно'}},capital:C,period:'7d',points:[],snapshots:[],sync:null,form:false,editing:null,deleteId:null,busy:false,flash:'',formError:'',showPrices:false,tradingSubtab:'futures',futureMode:'exchange',futureSort:'pnl',pnlMode:'all',settingsPane:'connections',portfolioSnapshots:[],pnlHistory:[],pendingRemove:null,renameId:null,renameValue:'',renameError:'',futureForm:null,futureFormError:'',sources:[{id:'bybit',name:'Bybit',connected:false,accounts:[]}],futuresPositions:[],openedExchanges:{},openedAccounts:{},spotHistoryOpen:false,spotAccountsOpen:false,spotOpen:{},bybitSnapshot:null,backendConnection:{available:false,configured:false,connected:false,error:''}};
   function coin(m){const trades=s.trades.filter(t=>t.coin===m);const invested=trades.reduce((t,x)=>t+Number(x.spent),0);const quantity=trades.reduce((t,x)=>t+Number(x.spent)/Number(x.entry),0);const current=Number(s.quotes[m]?.price||initial[m]);const value=quantity*current;return {invested,quantity,current,value,profit:value-invested,remaining:C/2-invested,avg:quantity?invested/quantity:0,provisional:trades.some(t=>!t.confirmed)}}
   function sums(){const btc=coin('BTC'),eth=coin('ETH'),invested=btc.invested+eth.invested,cash=C-invested,holdings=btc.value+eth.value,profit=holdings-invested;return {btc,eth,invested,cash,holdings,profit,total:cash+holdings}}
 
@@ -81,31 +81,61 @@ function portfolioSummary(){
  return {spot:a,hasFutures:!!snap,margin,invested:!snap?a.invested:margin===null?null:a.invested+margin,
   futuresPnl,pnl:!snap?a.profit:futuresPnl===null?null:a.profit+futuresPnl};
 }
+const PERIODS={'24h':86400000,'7d':604800000,'30d':2592000000,'90d':7776000000,'6m':15552000000};
+const PERIOD_NAMES={'24h':'24 часа','7d':'7 дней','30d':'30 дней','90d':'90 дней','6m':'6 месяцев'};
+function pnlField(kind){return kind==='spot'?'spot':kind==='futures'?'futures':'total'}
+function pnlSeries(){
+ // Live readings are the finest detail we hold and always win. Durable server
+ // history fills everything older, so month and half-year windows have real
+ // points instead of an empty box. Never invent values for gaps.
+ const kind=s.pnlMode,field=pnlField(kind);
+ let live;
+ if(kind==='spot')live=s.snapshots.map(p=>({t:Number(p.time),v:Number(p.pnl)}));
+ else live=s.portfolioSnapshots.map(p=>({t:Number(p.time),v:Number(p[field])}));
+ // The spot series also has a durable copy; without it a month view would be
+ // limited to the ~25 hours the browser keeps.
+ if(kind==='spot')live=live.concat((s.pnlHistory||[]).map(p=>({t:Number(p.t),v:Number(p.spot)})));
+ live=live.filter(p=>Number.isFinite(p.t)&&Number.isFinite(p.v)).sort((a,b)=>a.t-b.t);
+ const oldestLive=live.length?live[0].t:Infinity;
+ const older=(s.pnlHistory||[]).map(p=>({t:Number(p.t),v:Number(p[field])}))
+   .filter(p=>Number.isFinite(p.t)&&Number.isFinite(p.v)&&p.t<oldestLive).sort((a,b)=>a.t-b.t);
+ if(kind==='all'&&!live.length&&!older.length&&!s.backendConnection.connected&&s.snapshots.length)
+   return {kind,field,points:s.snapshots.map(p=>({t:Number(p.time),v:Number(p.pnl)})).filter(p=>Number.isFinite(p.t)&&Number.isFinite(p.v))};
+ const seen=new Set();
+ const points=older.concat(live).filter(p=>{if(seen.has(p.t))return false;seen.add(p.t);return true});
+ return {kind,field,points};
+}
+function pnlWindow(){
+ const from=Date.now()-(PERIODS[s.period]||PERIODS['7d']);
+ const all=pnlSeries().points,points=all.filter(p=>p.t>=from).slice(-1500);
+ return {all,points,from,first:points.length?points[0].t:null,last:points.length?points[points.length-1].t:null};
+}
 function chartHTML(){
- const windows={'24h':86400000,'7d':604800000,'30d':2592000000,'90d':7776000000};
- const from=Date.now()-(windows[s.period]||604800000),kind=s.pnlMode;
- let raw;
- if(kind==='spot')raw=s.snapshots.map(p=>({time:p.time,pnl:p.pnl}));
- else{
-  raw=s.portfolioSnapshots.map(p=>({time:p.time,pnl:kind==='futures'?p.futures:p.total}));
-  if(kind==='all'&&!raw.length&&!s.backendConnection.connected)raw=s.snapshots.map(p=>({time:p.time,pnl:p.pnl}));
- }
- const data=raw.filter(p=>Number.isFinite(Number(p.pnl))&&Number.isFinite(Number(p.time))&&p.time>=from).slice(-1200);
+ const win=pnlWindow(),data=win.points;
  if(data.length<2)return '<div class="emptychart"><strong>История PNL формируется</strong><span>После нескольких обновлений появится график с реальными датами. Историю не придумываем.</span></div>';
- const start=data[0].time,end=data[data.length-1].time,W=660,H=224,L=65,R=16,T=14,B=39;
- const vals=data.map(x=>Number(x.pnl)),min=Math.min(0,...vals),max=Math.max(0,...vals),spread=Math.max(max-min,.25),low=min-.18*spread,high=max+.18*spread;
+ const start=data[0].t,end=data[data.length-1].t,W=660,H=224,L=65,R=16,T=14,B=39;
+ const vals=data.map(x=>x.v),min=Math.min(0,...vals),max=Math.max(0,...vals),spread=Math.max(max-min,.25),low=min-.18*spread,high=max+.18*spread;
  const x=t=>L+(t-start)/Math.max(1,end-start)*(W-L-R),y=v=>T+(high-v)/(high-low)*(H-T-B);
  let guide='';
  for(let k=0;k<=4;k++){let value=high-(high-low)*k/4,cy=y(value);guide+='<line x1="'+L+'" x2="'+(W-R)+'" y1="'+cy.toFixed(1)+'" y2="'+cy.toFixed(1)+'" class="chartGrid"/><text x="'+(L-9)+'" y="'+(cy+4).toFixed(1)+'" text-anchor="end" class="chartAxis">'+axisMoney(value)+'</text>'}
  const f=t=>s.period==='24h'?new Date(t).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}):new Date(t).toLocaleDateString('ru-RU',{month:'short',day:'numeric'});
  for(const fraction of [0,.5,1]){const tick=L+fraction*(W-L-R);guide+='<text x="'+tick+'" y="'+(H-10)+'" text-anchor="'+(fraction===0?'start':fraction===1?'end':'middle')+'" class="chartAxis">'+escape(f(start+(end-start)*fraction))+'</text>'}
- const pts=data.map(p=>x(p.time).toFixed(1)+','+y(p.pnl).toFixed(1)).join(' '),last=data[data.length-1],color=last.pnl<0?'var(--red)':'var(--green)';
- return '<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="xMidYMid meet" role="img" aria-label="График PNL с датами и значениями"><g>'+guide+'</g><line x1="'+L+'" x2="'+(W-R)+'" y1="'+y(0).toFixed(1)+'" y2="'+y(0).toFixed(1)+'" class="chartZero"/><polyline points="'+pts+'" fill="none" stroke="'+color+'" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="'+x(last.time).toFixed(1)+'" cy="'+y(last.pnl).toFixed(1)+'" r="4" fill="'+color+'"><title>'+escape(axisMoney(last.pnl)+' · '+new Date(last.time).toLocaleString('ru-RU'))+'</title></circle></svg>';
+ const pts=data.map(p=>x(p.t).toFixed(1)+','+y(p.v).toFixed(1)).join(' '),last=data[data.length-1],color=last.v<0?'var(--red)':'var(--green)';
+ return '<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="xMidYMid meet" role="img" aria-label="График PNL с датами и значениями"><g>'+guide+'</g><line x1="'+L+'" x2="'+(W-R)+'" y1="'+y(0).toFixed(1)+'" y2="'+y(0).toFixed(1)+'" class="chartZero"/><polyline points="'+pts+'" fill="none" stroke="'+color+'" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="'+x(last.t).toFixed(1)+'" cy="'+y(last.v).toFixed(1)+'" r="4" fill="'+color+'"><title>'+escape(axisMoney(last.v)+' · '+new Date(last.t).toLocaleString('ru-RU'))+'</title></circle></svg>';
+}
+function chartCaption(p){
+ const win=pnlWindow();
+ const scope=s.pnlMode==='spot'?'Спот':s.pnlMode==='futures'?'Фьючерсы':'Портфель';
+ if(!win.points.length)return 'USD · '+scope+' · нет данных за '+PERIOD_NAMES[s.period];
+ const days=Math.max(1,Math.round((win.last-win.first)/86400000));
+ const span=days>=2?days+' дн.':Math.max(1,Math.round((win.last-win.first)/3600000))+' ч';
+ const partial=win.first>win.from+86400000?' · история короче периода':'';
+ return 'USD · '+scope+' · '+span+partial+(s.pnlMode==='all'&&!p.hasFutures?' · сейчас только Спот':'');
 }
 function spotPnlChart(){
  const p=portfolioSummary(),current=s.pnlMode==='spot'?p.spot.profit:s.pnlMode==='futures'?p.futuresPnl:p.pnl;
  const modes=[['all','Все'],['spot','Спот'],['futures','Фьючерсы']];
- return `<section class="section pnlChart card"><div class="hrow pnlChartHead"><div><div class="sectitle">PNL · Портфель</div><div class="tiny">Динамика результатов по позициям</div></div><div class="periods">${['24h','7d','30d','90d'].map(q=>`<button type="button" data-period="${q}" class="period ${s.period===q?'active':''}">${q}</button>`).join('')}</div></div><div class="pnlMode">${modes.map(([key,name])=>`<button class="${s.pnlMode===key?'active':''}" data-pnl-mode="${key}" type="button">${name}</button>`).join('')}</div><div class="chartbox">${chartHTML()}</div><div class="chartlegend"><span>USD · история с момента начала отслеживания${!p.hasFutures&&s.pnlMode==='all'?' · сейчас только Спот':''}</span><strong class="${current==null?'neutral':cls(current)}">${current==null?'—':signed(current)}</strong></div></section>`;
+ return `<section class="section pnlChart card"><div class="hrow pnlChartHead"><div><div class="sectitle">PNL · Портфель</div><div class="tiny">Динамика результатов по позициям</div></div><div class="periods">${[['24h','24ч'],['7d','7д'],['30d','30д'],['90d','90д'],['6m','6 мес']].map(([q,name])=>`<button type="button" data-period="${q}" class="period ${s.period===q?'active':''}">${name}</button>`).join('')}</div></div><div class="pnlMode">${modes.map(([key,name])=>`<button class="${s.pnlMode===key?'active':''}" data-pnl-mode="${key}" type="button">${name}</button>`).join('')}</div><div class="chartbox">${chartHTML()}</div><div class="chartlegend"><span>${chartCaption(p)}</span><strong class="${current==null?'neutral':cls(current)}">${current==null?'—':signed(current)}</strong></div></section>`;
 }
 function spotDistribution(){
   const a=sums();
@@ -299,7 +329,9 @@ function onDisconnected(){
  s.bybitSnapshot=null;s.backendConnection={available:true,configured:false,connected:false,error:''};s.pendingRemove=null;saveLocal();render();
 }
 function onBackendStatus(status){
+ const wasAvailable=!!s.backendConnection.available;
  s.backendConnection={...s.backendConnection,...status};
+ if(status.available&&!wasAvailable)loadPnlHistory();
  const ex=s.sources.find(x=>x.id==='bybit');
  if(ex)ex.connected=!!status.connected;
  // Keep the last known values on network error, but mark them stale in the UI.
@@ -371,8 +403,7 @@ window.fxmr4App={onBackendStatus,onSnapshot,onDisconnected};
     }
   }
   function chart(){
-    const windows={'24h':86400000,'7d':604800000,'30d':2592000000,'90d':7776000000};
-    const from=Date.now()-(windows[s.period]||604800000);
+    const from=Date.now()-(PERIODS[s.period]||PERIODS['7d']);
     s.points=s.snapshots.filter(p=>p.time>=from);
     if(s.tab==='overview'&&!s.showPrices&&!s.form)render();
   }
@@ -382,13 +413,41 @@ window.fxmr4App={onBackendStatus,onSnapshot,onDisconnected};
     if(last&&p.time-last.time<1500&&Math.abs(last.pnl-p.pnl)<0.000001)return;
     s.snapshots.push(p);s.snapshots=s.snapshots.slice(-1500);recordPortfolioSnapshot();saveLocal(false);chart();
   }
+  async function loadPnlHistory(){
+    try{
+      const r=await fetch('./api/pnl-history',{cache:'no-store',credentials:'same-origin',headers:{'Accept':'application/json'}});
+      if(!r.ok)return;
+      const data=await r.json();
+      if(Array.isArray(data.points)){s.pnlHistory=data.points;if(s.tab==='overview')render()}
+    }catch(e){/* offline: the local series still renders */}
+  }
+  let historyPushAt=0;
+  async function pushPnlHistory(force=false){
+    if(!s.backendConnection.available)return;
+    const now=Date.now();
+    if(!force&&now-historyPushAt<300000)return;
+    historyPushAt=now;
+    // Send only what the server cannot already have: the recent live readings.
+    const points=s.portfolioSnapshots.slice(-400).map(p=>({t:p.time,spot:p.spot,futures:p.futures,total:p.total}))
+      .filter(p=>Number.isFinite(p.t)&&(Number.isFinite(p.total)||Number.isFinite(p.spot)));
+    if(!points.length)return;
+    try{
+      await fetch('./api/pnl-history',{method:'POST',cache:'no-store',credentials:'same-origin',
+        headers:{'Content-Type':'application/json','X-FXMR4-Action':'1'},
+        body:JSON.stringify({points})});
+    }catch(e){/* the next push retries; nothing is lost locally */}
+  }
   function recordPortfolioSnapshot(){
     const summary=portfolioSummary();
-    if(!summary.hasFutures||summary.futuresPnl===null||summary.pnl===null)return;
-    const p={time:Date.now(),spot:summary.spot.profit,futures:summary.futuresPnl,total:summary.pnl};
+    // Spot PNL exists even with no futures account, so it is recorded on its
+    // own. Futures and total stay absent, never zero, while they are unknown.
+    const p={time:Date.now(),spot:summary.spot.profit};
+    if(summary.hasFutures&&summary.futuresPnl!==null)p.futures=summary.futuresPnl;
+    if(summary.pnl!==null)p.total=summary.pnl;
     const last=s.portfolioSnapshots[s.portfolioSnapshots.length-1];
-    if(last&&p.time-last.time<1500&&Math.abs(last.total-p.total)<.000001)return;
+    if(last&&p.time-last.time<1500&&Math.abs((last.total??last.spot)-(p.total??p.spot))<0.000001)return;
     s.portfolioSnapshots.push(p);s.portfolioSnapshots=s.portfolioSnapshots.slice(-1500);
+    pushPnlHistory();
   }
   async function json(url){
     const ctl=new AbortController(),tm=setTimeout(()=>ctl.abort(),6500);
@@ -538,7 +597,7 @@ function handleChange(e){
   document.addEventListener('change',handleChange);
   window.fxmr4GetState=()=>({tab:s.tab,quotes:s.quotes,holdings:{BTC:coin('BTC'),ETH:coin('ETH')},capital:C});
   // Standalone web preview. Every edit is saved only in this browser, never to a public repository.
-  loadLocal();render();chart();sync({quiet:true});
+  loadLocal();render();chart();sync({quiet:true});loadPnlHistory();
   setInterval(()=>{if(!document.hidden&&!s.busy)sync({quiet:true})},60000);
   document.addEventListener('visibilitychange',()=>{if(!document.hidden&&Date.now()-lastSyncAttempt>60000)sync({quiet:true})});
 })();

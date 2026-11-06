@@ -45,6 +45,14 @@ MIME = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=ut
         ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml"}
 
 
+_POST_LIMITS = {"/api/user-data": 470_000, "/api/pnl-history": 120_000}
+
+
+def _post_limit(path):
+    """Per-route body cap. Unknown routes keep the small default."""
+    return _POST_LIMITS.get(path, 5_000)
+
+
 class BybitFailure(Exception):
     pass
 
@@ -251,6 +259,12 @@ class Handler(BaseHTTPRequestHandler):
             except saved_state.StateError as exc:
                 self._json({"error": str(exc)}, 500)
             return
+        if path == "/api/pnl-history":
+            try:
+                self._json(saved_state.read_history())
+            except saved_state.StateError as exc:
+                self._json({"error": str(exc)}, 500)
+            return
         if path == "/api/snapshot":
             try:
                 self._json({"connected": True, "data": snapshot()})
@@ -274,7 +288,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         path = urlsplit(self.path).path
         if path not in ("/api/connect", "/api/disconnect", "/api/user-data",
-                       "/api/rename"):
+                       "/api/rename", "/api/pnl-history"):
             self._json({"error": "Not found"}, 404)
             return
         if not self._same_origin_action():
@@ -291,7 +305,7 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError:
             self._json({"error": "Invalid content length"}, 400)
             return
-        limit = 470_000 if path == "/api/user-data" else 5_000
+        limit = _post_limit(path)
         if not 1 <= body_length < limit:
             self._json({"error": "Invalid content length"}, 413)
             return
@@ -310,6 +324,16 @@ class Handler(BaseHTTPRequestHandler):
             except saved_state.StateError as exc:
                 msg = str(exc)
                 self._json({"error": msg}, 409 if msg.startswith("CONFLICT") else 422)
+            return
+
+        if path == "/api/pnl-history":
+            # Append-only: the client contributes readings, the server owns the
+            # merged series, so one browser never erases another's history.
+            try:
+                result = saved_state.merge_history(data.get("points"))
+                self._json(result)
+            except saved_state.StateError as exc:
+                self._json({"error": str(exc)}, 422)
             return
 
         if path == "/api/rename":

@@ -1,5 +1,6 @@
 """Offline encrypted storage tests. No live keys, network or user data."""
 import tempfile
+import time
 from pathlib import Path
 from unittest import TestCase, main
 from unittest.mock import patch
@@ -14,6 +15,7 @@ class TestEncryptedVpsStorage(TestCase):
             patch.object(state, "DATA_DIR", d),
             patch.object(state, "CREDS_PATH", d / "bybit.cred"),
             patch.object(state, "PROFILE_PATH", d / "user-data.json"),
+            patch.object(state, "HISTORY_PATH", d / "pnl-history.json"),
             patch.object(state, "SEAL_KEY_HEX", "de" * 32),
         ]
         for p in self.patches:
@@ -96,6 +98,56 @@ class TestEncryptedVpsStorage(TestCase):
         with self.assertRaises(state.StateError):
             state.rename_credentials("x" * 41)
         self.assertEqual(state.read_credentials()["label"], "Old name")
+
+
+    def test_history_merges_and_survives_a_restart(self):
+        # Recent readings keep five-minute resolution, so three distinct
+        # minutes stay three points across a process restart.
+        base = (int(time.time() * 1000) - 3_600_000) // 300_000 * 300_000
+        state.merge_history([{"t": base, "total": 1.5},
+                             {"t": base + 300_000, "total": 2.5}])
+        state.merge_history([{"t": base + 600_000, "total": 3.5}])
+        points = state.read_history()["points"]
+        self.assertEqual([p["total"] for p in points], [1.5, 2.5, 3.5])
+        self.assertEqual(points, sorted(points, key=lambda p: p["t"]))
+
+    def test_history_keeps_older_points_of_the_same_bucket(self):
+        """A newer reading must not erase fields the older one carries alone."""
+        base = 1_700_000_000_000
+        now = base + 2000
+        merged = state.compact_history([{"t": base, "spot": 10, "total": 20}],
+                                       now_ms=now)
+        merged = state.compact_history(merged + [{"t": base + 1000, "futures": 5}],
+                                       now_ms=now)
+        self.assertEqual(len(merged), 1)
+        self.assertEqual(merged[0]["spot"], 10)
+        self.assertEqual(merged[0]["total"], 20)
+        self.assertEqual(merged[0]["futures"], 5)
+
+    def test_history_compaction_uses_coarser_buckets_for_old_points(self):
+        day = 86_400_000
+        now = 1_700_000_000_000
+        points = [{"t": now - 200 * day, "total": 1},
+                  {"t": now - 200 * day + 60_000, "total": 2}]
+        merged = state.compact_history(points, now_ms=now)
+        self.assertEqual(len(merged), 1, "points a minute apart in an old bucket merge")
+
+    def test_history_rejects_bad_payloads(self):
+        with self.assertRaises(state.StateError):
+            state.merge_history("not a list")
+        with self.assertRaises(state.StateError):
+            state.merge_history([{"t": "x"}])
+        self.assertEqual(state.read_history()["points"], [])
+
+    def test_history_keeps_only_finite_numbers(self):
+        merged = state.compact_history([{"t": 1, "total": float("nan")},
+                                        {"t": 2, "total": 1.25}])
+        self.assertEqual(len(merged), 1)
+        self.assertEqual(merged[0]["total"], 1.25)
+
+    def test_history_file_is_private(self):
+        state.merge_history([{"t": 1, "total": 1.0}])
+        self.assertEqual(state.HISTORY_PATH.stat().st_mode & 0o777, 0o600)
 
 
 if __name__ == "__main__":
