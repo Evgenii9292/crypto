@@ -217,6 +217,12 @@ load();
 document.addEventListener('click',eventClick);
 document.addEventListener('input',eventInput);
 document.addEventListener('submit',eventSubmit);
-window.fxmr4Levels={render};
+function reloadLevels(){
+ // Never discard an unfinished buy-level edit because of a remote update.
+ if(edit)return;
+ load();
+ render();
+}
+window.fxmr4Levels={render,reloadLevels};
 render();
 })();
