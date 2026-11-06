@@ -1,0 +1,24 @@
+[Unit]
+Description=FXMR4 private Bybit read-only dashboard
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=fxmr4
+Group=fxmr4
+WorkingDirectory=/opt/fxmr4
+EnvironmentFile=/etc/fxmr4/fxmr4.env
+ExecStart=/usr/bin/python3 /opt/fxmr4/backend/server.py
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target
