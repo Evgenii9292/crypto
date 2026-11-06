@@ -28,7 +28,7 @@
   </svg>
   <main class="page"><div class="shell">
     <aside class="sidebar">
-      <header class="header"><div class="logoArea"><div class="appicon"><svg class="icon"><use href="#wallet"/></svg></div><div class="accountTotalBlock"><div class="accountTotalLabel">Общий баланс</div><strong class="accountTotalValue" id="sidebarTotal">—</strong></div></div><button class="mobileSettings" type="button" data-action="goConnections" aria-label="Настройки"><svg class="icon"><use href="#settings"></use></svg></button></header>
+      <header class="header"><div class="logoArea"><div class="appicon"><svg class="icon"><use href="#wallet"/></svg></div><div class="accountTotalBlock"><div class="accountTotalLabel">Личный портфель</div><strong class="accountTotalValue" id="sidebarTotal">FXMR4</strong></div></div><button class="mobileSettings" type="button" data-action="goConnections" aria-label="Настройки"><svg class="icon"><use href="#settings"></use></svg></button></header>
       <div class="navLabel">РАЗДЕЛЫ</div>
       <nav class="tabs" data-active="overview" role="tablist" aria-label="Разделы портфеля">
         <button class="tab active" type="button" role="tab" aria-selected="true" data-tab="overview"><svg class="icon"><use href="#activity"/></svg><span>Обзор</span></button>
@@ -182,14 +182,22 @@ function overviewSource(ex){
 }
 function overview(){
  const p=portfolioSummary(),a=p.spot,has=p.hasFutures;
- const amount=p.invested==null?'—':dollars(p.invested);
+ // Money actually on the accounts: the coins we hold plus the futures equity.
+ // The planned budget and its untouched reserve are not money we own, so they
+ // are deliberately left out of this figure.
+ const equity=has&&s.bybitSnapshot?.totals?.equity!=null?Number(s.bybitSnapshot.totals.equity):null;
+ const total=equity==null?a.holdings:a.holdings+equity;
  const pnl=p.pnl==null?'—':signed(p.pnl);
- const futureValue=has&&s.bybitSnapshot?.totals?.equity!=null?dollars(s.bybitSnapshot.totals.equity):'—';
+ const futureValue=equity==null?'—':dollars(equity);
+ const open=s.futuresPositions.filter(x=>x.exchangeId==='bybit'&&Number.isFinite(Number(x.size)));
+ const openCount=open.length;
+ const openValue=open.reduce((sum,x)=>sum+Math.abs(Number(x.size)||0),0);
+ const coins=coinStack(open.map(x=>x.symbol));
  return `<div class="overview-layout"><div class="overview-primary">
-   <div class="card tint overviewHero"><div class="eyebrow">${has?'Вложено в позиции':'Вложено в спот'}</div><div class="total">${amount}</div><div class="performance"><span class="metric ${p.pnl==null?'neutral':cls(p.pnl)}">${pnl}</span><span class="tiny">Общий текущий PNL</span></div><div class="hr"></div><div class="heroBreakdown"><span>Спот <strong>${dollars(a.invested)}</strong></span><span>Фьючерсы · маржа <strong>${p.margin==null?'—':dollars(p.margin)}</strong></span></div></div>
+   <div class="card tint overviewHero"><div class="eyebrow">Всего на счетах</div><div class="total">${dollars(total)}</div><div class="performance"><span class="metric ${p.pnl==null?'neutral':cls(p.pnl)}">${pnl}</span><span class="tiny">Общий текущий PNL</span></div><div class="hr"></div><div class="heroBreakdown"><span>Спот <strong>${dollars(a.holdings)}</strong></span><span>Фьючерсы <strong>${futureValue}</strong></span></div><div class="heroMeta">${openCount?`<span class="heroMetaItem">${coins}<span class="tiny">${openCount} ${openCount===1?'позиция':'позиции'} · ${dollars(openValue)}</span></span>`:'<span class="heroMetaItem tiny">Открытых позиций нет</span>'}<span class="heroMetaItem tiny">Резерв ${dollars(a.cash)} · не в PNL</span></div></div>
    ${spotPnlChart()}</div><div class="overview-aside">
-   <button class="assetSummary" type="button" data-action="gotoSpot"><span><span class="assetTitle">Спот</span><span class="assetSub">BTC, ETH и резерв</span></span><span class="assetNumbers"><strong>${dollars(a.total)}</strong><span class="${cls(a.profit)}">${signed(a.profit)}</span></span></button>
-   <button class="assetSummary" type="button" data-action="gotoFutures"><span><span class="assetTitle">Фьючерсы</span><span class="assetSub">${has?'Все средства субаккаунта':'Биржи и субаккаунты'}</span></span><span class="assetNumbers"><strong>${futureValue}</strong><span class="${p.futuresPnl==null?'neutral':cls(p.futuresPnl)}">${p.futuresPnl==null?'Нет подключения':signed(p.futuresPnl)}</span></span></button>
+   <button class="assetSummary" type="button" data-action="gotoSpot"><span><span class="assetTitle">Спот</span><span class="assetSub">Куплено монет на ${dollars(a.invested)}</span></span><span class="assetNumbers"><strong>${dollars(a.holdings)}</strong><span class="${cls(a.profit)}">${signed(a.profit)}</span></span></button>
+   <button class="assetSummary" type="button" data-action="gotoFutures"><span><span class="assetTitle">Фьючерсы</span><span class="assetSub">${has?'Баланс субаккаунта':'Биржи и субаккаунты'}</span></span><span class="assetNumbers"><strong>${futureValue}</strong><span class="${p.futuresPnl==null?'neutral':cls(p.futuresPnl)}">${p.futuresPnl==null?'Нет подключения':signed(p.futuresPnl)}</span></span></button>
    </div></div>
    <section class="section sourcesBlock"><div class="hrow"><div><div class="sectitle">Биржи и субаккаунты</div><div class="tiny">Текущие позиции по счетам</div></div><button class="btn" data-action="gotoFutures">Все фьючерсы</button></div><div class="sourceList">${s.sources.map(overviewSource).join('')}</div></section>`;
 }
@@ -342,9 +350,7 @@ function render(){
  $('content').classList.remove('pane');void $('content').offsetWidth;$('content').classList.add('pane');
  const titles={overview:'Обзор',positions:'Спот',futures:'Фьючерсы',connections:'Настройки'};
  $('pageTitle').textContent=titles[s.tab];
- const a=sums(),equity=s.backendConnection.connected?s.bybitSnapshot?.totals?.equity:null;
- const distinctEquity=equity!=null&&Number.isFinite(Number(equity))?Number(equity):null;
- $('sidebarTotal').textContent=dollars(a.total+(distinctEquity??0));
+ $('sidebarTotal').textContent='FXMR4';
  $('connectionStatusText').textContent=s.backendConnection.connected?'Bybit подключён':'Биржи не подключены';
  $('connectionDot').classList.toggle('isDisconnected',!s.backendConnection.connected);
  document.querySelector('.tabs').dataset.active=s.tab;
