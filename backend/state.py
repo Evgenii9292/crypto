@@ -80,13 +80,24 @@ def _write_private(path: Path, data: bytes):
             pass
 
 
-def write_credentials(key: str, secret: str, label: str):
+ACCOUNT_ICONS = frozenset(("wallet", "trend", "shield", "bot", "activity"))
+
+
+def validate_account_icon(icon):
+    if not isinstance(icon, str) or icon not in ACCOUNT_ICONS:
+        raise StateError("Некорректная иконка аккаунта")
+    return icon
+
+
+def write_credentials(key: str, secret: str, label: str, icon=None):
     if not (10 <= len(key) <= 256 and 10 <= len(secret) <= 256):
         raise StateError("Некорректные учётные данные")
     if not isinstance(label, str) or len(label) > 40:
         raise StateError("Некорректное имя субаккаунта")
-    payload = json.dumps({"key": key, "secret": secret, "label": label},
-                         ensure_ascii=False).encode("utf-8")
+    profile = {"key": key, "secret": secret, "label": label}
+    if icon is not None:
+        profile["icon"] = validate_account_icon(icon)
+    payload = json.dumps(profile, ensure_ascii=False).encode("utf-8")
     nonce = os.urandom(12)
     encrypted = b"FXMR4v1:" + nonce + _cipher().encrypt(nonce, payload, b"fxmr4-bybit-v1")
     with LOCK:
@@ -115,7 +126,7 @@ def read_credentials():
             raise StateError("Не удалось расшифровать API-ключ. Проверь ключ шифрования VPS.") from exc
 
 
-def rename_credentials(label: str):
+def rename_credentials(label: str, icon=None):
     """Re-encrypt the stored key under a new display label.
 
     The label is only a name shown in the UI; the key and secret are unchanged.
@@ -131,7 +142,8 @@ def rename_credentials(label: str):
         current = read_credentials()
         if current is None:
             raise StateError("API-ключ ещё не подключён")
-        write_credentials(current["key"], current["secret"], label)
+        write_credentials(current["key"], current["secret"], label,
+                          icon=icon if icon is not None else current.get("icon"))
     return {"label": label}
 
 
@@ -179,7 +191,7 @@ def list_extra_accounts():
         return _extra_accounts_locked()
 
 
-def add_extra_account(key, secret, label, uid=None):
+def add_extra_account(key, secret, label, uid=None, icon="wallet"):
     if not isinstance(key, str) or not isinstance(secret, str) or not (
         10 <= len(key) <= 256 and 10 <= len(secret) <= 256
     ):
@@ -187,6 +199,7 @@ def add_extra_account(key, secret, label, uid=None):
     if not isinstance(label, str) or not (1 <= len(label.strip()) <= 40):
         raise StateError("Укажи имя субаккаунта")
     label = label.strip()
+    icon = validate_account_icon(icon)
     with LOCK:
         accounts = _extra_accounts_locked()
         if len(accounts) >= 20:
@@ -194,14 +207,14 @@ def add_extra_account(key, secret, label, uid=None):
         legacy = read_credentials()
         if (legacy and legacy["key"] == key) or any(item["key"] == key or (uid and item.get("uid") == str(uid)) for item in accounts):
             raise StateError("Этот API-ключ уже подключён")
-        account = {"id": "sub-" + secrets.token_hex(12), "label": label, "key": key, "secret": secret}
+        account = {"id": "sub-" + secrets.token_hex(12), "label": label, "key": key, "secret": secret, "icon": icon}
         if uid is not None and str(uid).strip():
             account["uid"] = str(uid).strip()[:40]
         _write_extra_locked(accounts + [account])
-        return {"id": account["id"], "label": label}
+        return {"id": account["id"], "label": label, "icon": icon}
 
 
-def rename_extra_account(account_id, label):
+def rename_extra_account(account_id, label, icon=None):
     if not isinstance(label, str) or not (1 <= len(label.strip()) <= 40):
         raise StateError("Некорректное имя субаккаунта")
     with LOCK:
@@ -210,8 +223,10 @@ def rename_extra_account(account_id, label):
         if target is None:
             raise StateError("Субаккаунт не найден")
         target["label"] = label.strip()
+        if icon is not None:
+            target["icon"] = validate_account_icon(icon)
         _write_extra_locked(accounts)
-        return {"id": target["id"], "label": target["label"]}
+        return {"id": target["id"], "label": target["label"], "icon": target.get("icon", "wallet")}
 
 
 def delete_extra_account(account_id):
