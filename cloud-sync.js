@@ -78,7 +78,7 @@
       if(JSON.stringify(data)===JSON.stringify(lastWritten)){info("Сохранено на VPS");return}
       const outcome=await api("./api/user-data",{revision:rev,...data});
       rev=outcome.revision;
-      lastWritten=structuredClone(data);
+      lastWritten=JSON.parse(JSON.stringify(data));
       info("Сохранено на VPS");
     }catch(err){
       if(err.status===409){
