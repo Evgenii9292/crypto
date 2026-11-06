@@ -15,8 +15,9 @@
 /* FXMR4 DESIGN SYSTEM v1.1 – stable colors, font scale, radius, shadows and spacing. */
 .tabs{grid-template-columns:repeat(5,minmax(0,1fr))}
 .tabs::before{width:calc((100% - 20px)/5)}
-.tabs[data-active="trading"]::before{transform:translateX(calc(300% + 9px))}
-.tabs[data-active="connections"]::before{transform:translateX(calc(400% + 12px))}
+/* Settings is not one of the three tabs, so the indicator has nowhere to go.
+   Leaving the old 400% rule here pushed it outside the nav and widened the page. */
+.tabs[data-active="connections"]::before{opacity:0}
 .tab .icon{width:15px;height:15px;display:none;flex:none}
 .sidebar,.workspace{min-width:0}
 .navLabel,.sideFooter,.workspaceHead{display:none}
@@ -417,3 +418,15 @@
 .heroMeta .coinChip:first-child{margin-left:0}
 .overviewHero .total{font-size:38px}
 @media(max-width:600px){.overviewHero .total{font-size:34px}}
+
+/* --- Settings: one statement of the connection state, not five --- */
+.connectorHead{align-items:center}
+.connectorHead .coinSub{font-size:11px}
+.connectBadge.on{background:color-mix(in srgb,var(--green) 12%,var(--surface));color:var(--green);display:inline-flex;align-items:center;gap:6px}
+.connectBadge.warn{background:color-mix(in srgb,#e2a33c 14%,var(--surface));color:#a8761f;display:inline-flex;align-items:center;gap:6px}
+.connectBadge .status-dot{width:6px;height:6px;margin:0;background:currentColor}
+.connectorState{padding:14px 0 0;margin:0;background:none;border:0;border-radius:0}
+.connectorFreshness{color:var(--muted)}
+.connectorState .bybitConnectActions{margin-top:12px}
+.connectorCard .safeNote{margin-top:14px;font-size:11px;line-height:1.55;color:var(--muted);background:var(--surface2)}
+@media(prefers-color-scheme:dark){.connectBadge.warn{color:#e8b866}}
