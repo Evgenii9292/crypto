@@ -102,6 +102,26 @@
   }
 
 
+  async function rename(label){
+    if(!status.available||status.busy||!canSend)return false;
+    const name=String(label||"").trim().slice(0,40);
+    if(!name){status.error="Укажи название субаккаунта";renderPanel();return false}
+    status.busy=true;status.error="";renderPanel();
+    try{
+      const reply=await getJson("./api/rename",{
+        method:"POST",
+        headers:{"Content-Type":"application/json","X-FXMR4-Action":"1"},
+        body:JSON.stringify({label:name})
+      });
+      if(reply.renamed!==true)throw Error("Сервер не подтвердил переименование");
+      status.account=reply.account||name;
+      return true;
+    }catch(e){
+      status.error=e.message||"Не удалось переименовать субаккаунт";
+      return false;
+    }finally{status.busy=false;renderPanel()}
+  }
+
   async function disconnect(){
     if(!status.available||status.busy||!canSend)return;
     status.busy=true;status.error="";renderPanel();
@@ -147,7 +167,7 @@
     connect(credentials);
   });
 
-  window.fxmr4Bybit={renderPanel,check,refresh,disconnect,isEditing:()=>status.formOpen,status:()=>({...status})};
+  window.fxmr4Bybit={renderPanel,check,refresh,disconnect,rename,isEditing:()=>status.formOpen,status:()=>({...status})};
   check();
   setInterval(()=>{if(!document.hidden&&status.configured&&status.available)refresh()},60000);
   document.addEventListener("visibilitychange",()=>{if(!document.hidden&&status.configured&&status.available)refresh()});

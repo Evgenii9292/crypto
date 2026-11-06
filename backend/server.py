@@ -273,7 +273,8 @@ class Handler(BaseHTTPRequestHandler):
         if not self._require_login():
             return
         path = urlsplit(self.path).path
-        if path not in ("/api/connect", "/api/disconnect", "/api/user-data"):
+        if path not in ("/api/connect", "/api/disconnect", "/api/user-data",
+                       "/api/rename"):
             self._json({"error": "Not found"}, 404)
             return
         if not self._same_origin_action():
@@ -309,6 +310,29 @@ class Handler(BaseHTTPRequestHandler):
             except saved_state.StateError as exc:
                 msg = str(exc)
                 self._json({"error": msg}, 409 if msg.startswith("CONFLICT") else 422)
+            return
+
+        if path == "/api/rename":
+            # Renaming only changes the display label. The key and secret are
+            # re-encrypted unchanged, so this never touches Bybit permissions.
+            try:
+                label = str(data.get("label", "")).strip()
+            except (ValueError, TypeError, UnicodeError):
+                self._json({"error": "Invalid JSON"}, 400)
+                return
+            if not (1 <= len(label) <= 40):
+                self._json({"error": "Имя субаккаунта должно быть от 1 до 40 символов"}, 422)
+                return
+            try:
+                with LOCK:
+                    result = saved_state.rename_credentials(label)
+                    if EPHEMERAL["key"]:
+                        EPHEMERAL["label"] = result["label"]
+                    if CACHE["data"] is not None:
+                        CACHE["data"]["account"]["name"] = result["label"]
+                self._json({"renamed": True, "account": result["label"]})
+            except saved_state.StateError as exc:
+                self._json({"error": str(exc)}, 409)
             return
 
         if path == "/api/disconnect":

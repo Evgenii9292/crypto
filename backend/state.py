@@ -103,6 +103,26 @@ def read_credentials():
             raise StateError("Не удалось расшифровать API-ключ. Проверь ключ шифрования VPS.") from exc
 
 
+def rename_credentials(label: str):
+    """Re-encrypt the stored key under a new display label.
+
+    The label is only a name shown in the UI; the key and secret are unchanged.
+    Re-encrypting (rather than editing the blob) keeps the file format and the
+    authenticated-encryption guarantee intact.
+    """
+    if not isinstance(label, str):
+        raise StateError("Некорректное имя субаккаунта")
+    label = label.strip()
+    if not (1 <= len(label) <= 40):
+        raise StateError("Имя субаккаунта должно быть от 1 до 40 символов")
+    with LOCK:
+        current = read_credentials()
+        if current is None:
+            raise StateError("API-ключ ещё не подключён")
+        write_credentials(current["key"], current["secret"], label)
+    return {"label": label}
+
+
 def delete_credentials():
     with LOCK:
         CREDS_PATH.unlink(missing_ok=True)

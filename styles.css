@@ -264,6 +264,16 @@
 .settingsAccountInfo{display:flex;flex:1;flex-direction:column;gap:3px;min-width:0}
 .settingsAccountInfo strong{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .settingsAccountInfo small{font-size:11px;color:var(--muted)}
+.settingsAccountActions{display:flex;align-items:center;gap:2px;flex:none}
+.iconBtn{width:30px;height:30px;display:grid;place-items:center;border:0;background:transparent;color:var(--muted);border-radius:8px;flex:none;cursor:pointer;transition:background .15s,color .15s}
+.iconBtn .icon{width:15px;height:15px}
+.iconBtn:hover{background:var(--surface2);color:var(--text)}
+.iconBtn.danger:hover{background:var(--surface2);color:var(--red)}
+.iconBtn.confirmed{background:var(--surface2);color:var(--red)}
+.settingsRenameForm{display:flex;flex:1;flex-direction:column;gap:4px;min-width:0}
+.settingsRenameInput{width:100%;min-width:0;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);padding:7px 9px;font-size:12px;outline:0}
+.settingsRenameInput:focus{border-color:#a1a8b5}
+.settingsRenameError{font-size:11px;color:var(--red)}
 .settingsAccountFooter{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
 .settingsExternal{margin-top:14px}
 .futurePnlLink{display:flex;align-items:center;justify-content:space-between;gap:15px;border:1px solid var(--border);background:var(--surface);border-radius:var(--radius);padding:15px}

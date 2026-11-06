@@ -69,5 +69,34 @@ class TestEncryptedVpsStorage(TestCase):
             state.write_profile(0, {"password": "should-not-save"}, {})
 
 
+    def test_rename_changes_label_and_keeps_the_same_secret(self):
+        state.write_credentials("fake-key-0123456", "fake-secret-0123456", "Old name")
+        before = state.CREDS_PATH.read_bytes()
+        result = state.rename_credentials("New name")
+        self.assertEqual(result["label"], "New name")
+        saved = state.read_credentials()
+        self.assertEqual(saved["label"], "New name")
+        self.assertEqual(saved["key"], "fake-key-0123456")
+        self.assertEqual(saved["secret"], "fake-secret-0123456")
+        # A rename re-encrypts: the stored blob must change and stay unreadable.
+        after = state.CREDS_PATH.read_bytes()
+        self.assertNotEqual(before, after)
+        self.assertNotIn(b"fake-key-0123456", after)
+        self.assertNotIn(b"fake-secret-0123456", after)
+        self.assertEqual(state.CREDS_PATH.stat().st_mode & 0o777, 0o600)
+
+    def test_rename_requires_a_connected_key(self):
+        with self.assertRaisesRegex(state.StateError, "не подключён"):
+            state.rename_credentials("New name")
+
+    def test_rename_rejects_empty_or_too_long_labels(self):
+        state.write_credentials("fake-key-0123456", "fake-secret-0123456", "Old name")
+        with self.assertRaises(state.StateError):
+            state.rename_credentials("   ")
+        with self.assertRaises(state.StateError):
+            state.rename_credentials("x" * 41)
+        self.assertEqual(state.read_credentials()["label"], "Old name")
+
+
 if __name__ == "__main__":
     main()

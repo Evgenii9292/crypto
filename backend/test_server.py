@@ -92,5 +92,16 @@ class TestReadOnlySubaccount(TestCase):
         self.assertEqual(server.credentials(), ("temporary-api-key", "temporary-secret", "Sub 2"))
 
 
+    def test_rename_endpoint_requires_same_origin_header(self):
+        """A rename is a write: it must carry the same-origin action header."""
+        handler = object.__new__(server.Handler)
+        handler.headers = {"X-FXMR4-Action": "", "Origin": "https://evil.example",
+                           "Host": "fxmr4.example"}
+        self.assertFalse(handler._same_origin_action())
+        handler.headers = {"X-FXMR4-Action": "1", "Origin": "https://fxmr4.example",
+                           "Host": "fxmr4.example"}
+        self.assertTrue(handler._same_origin_action())
+
+
 if __name__ == "__main__":
     main()
