@@ -36,7 +36,7 @@
     try{portfolio=JSON.parse(localStorage.getItem(PORTFOLIO)||"null")}catch(e){}
     try{levels=JSON.parse(localStorage.getItem(LEVELS)||"null")}catch(e){}
     return {portfolio:portfolio&&typeof portfolio==="object"?portfolio:{},
-      levels:levels&&typeof levels==="object"?levels:{}};
+      levels:levels&&typeof levels==="object"?levels:{levels:{BTC:[{id:"btc-75000",price:75000,amount:null},{id:"btc-70000",price:70000,amount:null}],ETH:[]},alertsEnabled:false}};
   }
 
   function info(text,isError=false){
