@@ -62,7 +62,7 @@
   function sums(){const btc=coin('BTC'),eth=coin('ETH'),invested=btc.invested+eth.invested,cash=C-invested,holdings=btc.value+eth.value,profit=holdings-invested;return {btc,eth,invested,cash,holdings,profit,total:cash+holdings}}
 
   function markStatus(){
-    const q=s.quotes.BTC||{}, source=q.source||'Предварительно', fresh=source==='Bybit Spot'||source==='CoinGecko'||source==='CryptoCompare';
+    const q=s.quotes.BTC||{}, source=q.source||'Предварительно', fresh=source.startsWith('Bybit Spot')||source==='CoinGecko'||source==='CryptoCompare';
     const label=s.sync?.error?'Сеть недоступна · сохранённые цены':fresh?source+' · '+fmtTime(q.updated_at):source==='Вручную'?'Цены введены вручную':'Цены предварительные · уточни или обнови';
     return '<div class="status '+(s.sync?.error?'error':fresh?'ok':'stale')+'"><span class="dot"></span>'+escape(label)+'</div>';
   }
@@ -208,10 +208,11 @@ function render(){
         if(q&&Number(q.price)>0&&Number.isFinite(Number(q.price)))s.quotes[coin]={price:Number(q.price),source:String(q.source||'Сохранено'),updated_at:q.updated_at||null};
       }
       if(Array.isArray(saved.snapshots))s.snapshots=saved.snapshots.filter(p=>Number.isFinite(p.time)&&Number.isFinite(p.pnl)).slice(-1500);
+      if(Array.isArray(saved.sources)){const sources=saved.sources.filter(x=>x&&typeof x.id==='string'&&typeof x.name==='string').slice(0,25).map(x=>({id:x.id.slice(0,60),name:x.name.slice(0,60),connected:false,accounts:Array.isArray(x.accounts)?x.accounts.filter(y=>y&&typeof y.id==='string'&&typeof y.name==='string').slice(0,60).map(y=>({id:y.id.slice(0,60),name:y.name.slice(0,40),balance:null})):[]}));if(!sources.some(x=>x.id==='bybit'))sources.unshift({id:'bybit',name:'Bybit',connected:false,accounts:[]});s.sources=sources;}
     }catch(e){console.warn('Локальное сохранение:',e)}
   }
   function saveLocal(){
-    try{localStorage.setItem(storageKey,JSON.stringify({trades:s.trades,quotes:s.quotes,snapshots:s.snapshots}))}catch(e){s.flash='Не удалось сохранить в браузере. Проверь режим приватности.';console.warn(e)}
+    try{localStorage.setItem(storageKey,JSON.stringify({trades:s.trades,quotes:s.quotes,snapshots:s.snapshots,sources:s.sources}))}catch(e){s.flash='Не удалось сохранить в браузере. Проверь режим приватности.';console.warn(e)}
   }
   function chart(){
     const windows={'24h':86400000,'7d':604800000,'30d':2592000000,'90d':7776000000};
@@ -229,15 +230,18 @@ function render(){
     const ctl=new AbortController(),tm=setTimeout(()=>ctl.abort(),6500);
     try{const r=await fetch(url,{cache:'no-store',signal:ctl.signal,headers:{'Accept':'application/json'}});if(!r.ok)throw Error('HTTP '+r.status);return await r.json()}finally{clearTimeout(tm)}
   }
-  async function bybitQuotes(){
-    const px=await Promise.all(['BTC','ETH'].map(async m=>{
-      const x=await json('https://api.bybit.com/v5/market/tickers?category=spot&symbol='+m+'USDT');
-      const val=Number(x?.result?.list?.[0]?.lastPrice);
-      if(x?.retCode!==0||!Number.isFinite(val)||val<=0)throw Error('Bybit returned invalid quote');
-      return val;
-    }));
-    return {BTC:px[0],ETH:px[1],source:'Bybit Spot'};
-  }
+function bybitQuotes(){
+ const hosts=[['https://api.bybit.id','Bybit Spot (ID)'],['https://api.bybit.com','Bybit Spot'],['https://api.bytick.com','Bybit Spot (Alt)']];
+ return Promise.any(hosts.map(async ([base,name])=>{
+   const values=await Promise.all(['BTC','ETH'].map(async symbol=>{
+     const x=await json(base+'/v5/market/tickers?category=spot&symbol='+symbol+'USDT');
+     const value=Number(x?.result?.list?.[0]?.lastPrice);
+     if(x?.retCode!==0||!(value>0))throw Error(name+': invalid quote');
+     return value;
+   }));
+   return {BTC:values[0],ETH:values[1],source:name};
+ }));
+}
   async function coingeckoQuotes(){
     const r=await json('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin%2Cethereum&vs_currencies=usd');
     const a=Number(r?.bitcoin?.usd),b=Number(r?.ethereum?.usd);
@@ -271,16 +275,16 @@ function render(){
     if(!s.form&&!s.showPrices)render();
   }
   function flash(msg){s.flash=msg;render()}
-  function formOpen(id=null){s.tab='history';s.form=true;s.editing=id;s.deleteId=null;s.formError='';s.flash='';render();$('tradeForm')?.scrollIntoView({block:'nearest',behavior:'smooth'})}
+  function formOpen(id=null){s.tab='positions';s.spotHistoryOpen=true;s.form=true;s.editing=id;s.deleteId=null;s.formError='';s.flash='';render();$('tradeForm')?.scrollIntoView({block:'nearest',behavior:'smooth'})}
   function saveTrade(fd){
-    const coin=fd.get('coin'),spent=Number(fd.get('spent')),entry=Number(fd.get('entry')),buy_date=fd.get('buy_date');
-    if(!['BTC','ETH'].includes(coin)||!Number.isFinite(spent)||!Number.isFinite(entry)||spent<=0||entry<=0){s.formError='Проверь сумму и цену покупки.';render();return}
+    const coin=fd.get('coin'),spent=Number(fd.get('spent')),entry=Number(fd.get('entry')),buy_date=fd.get('buy_date'),account=String(fd.get('account')||'fxmr4').trim().slice(0,40);
+    if(!account||!['BTC','ETH'].includes(coin)||!Number.isFinite(spent)||!Number.isFinite(entry)||spent<=0||entry<=0){s.formError='Проверь сумму и цену покупки.';render();return}
     if(!/^\d{4}-\d{2}-\d{2}$/.test(buy_date)||buy_date>nowLocal()){s.formError='Проверь дату покупки.';render();return}
     const base=s.trades.filter(t=>t.id!==s.editing);
     if(base.filter(t=>t.coin===coin).reduce((a,t)=>a+Number(t.spent),0)+spent>500.0000001){s.formError='Лимит для '+coin+' составляет $500.';render();return}
     if(base.reduce((a,t)=>a+Number(t.spent),0)+spent>C+0.0000001){s.formError='Превышен общий бюджет $1 000.';render();return}
     const id=s.editing===null?Math.max(0,...s.trades.map(t=>Number(t.id)))+1:s.editing;
-    const rec={id,coin,spent,entry,buy_date,confirmed:true};
+    const rec={id,coin,spent,entry,buy_date,account,confirmed:true};
     s.trades=s.editing===null?[...s.trades,rec]:s.trades.map(t=>t.id===id?rec:t);
     s.snapshots=[];s.points=[];s.form=false;s.editing=null;s.formError='';s.flash='Покупка сохранена. История PNL начнётся заново после изменения позиции.';recordSnapshot();saveLocal();render();
   }
@@ -294,9 +298,63 @@ function render(){
     s.quotes={BTC:{price:a,source:'Вручную',updated_at:when},ETH:{price:b,source:'Вручную',updated_at:when}};
     s.showPrices=false;s.sync=null;s.flash='Цены сохранены и PNL пересчитан.';recordSnapshot();saveLocal();render();
   }
-  document.addEventListener('click',async e=>{const tab=e.target.closest('[data-tab]');if(tab){s.tab=tab.dataset.tab;s.flash='';s.form=false;s.deleteId=null;render();return}const sub=e.target.closest('[data-trade-sub]');if(sub){s.tradingSubtab=sub.dataset.tradeSub;render();return}const per=e.target.closest('[data-period]');if(per){s.period=per.dataset.period;render();await chart();return}const btn=e.target.closest('[data-action]');if(!btn||s.busy)return;const act=btn.dataset.action,id=Number(btn.dataset.id);if(act==='sync')return sync();if(act==='goConnections'){s.tab='connections';s.flash='';render();return}if(act==='prices'){s.showPrices=!s.showPrices;render();return}if(act==='new')return formOpen();if(act==='edit')return formOpen(id);if(act==='delete'){s.deleteId=id;render();return}if(act==='cancelDelete'){s.deleteId=null;render();return}if(act==='confirmDelete')return removeTrade(id);if(act==='closeForm'){s.form=false;s.formError='';render()}});
-  document.addEventListener('submit',e=>{if(e.target.id==='tradeForm'){e.preventDefault();saveTrade(new FormData(e.target))}if(e.target.id==='priceForm'){e.preventDefault();saveManualPrices(new FormData(e.target))}});
-  document.addEventListener('change',e=>{if(e.target.id==='coin'&&s.editing===null){const input=$('entry');if(input)input.value=Number(s.quotes[e.target.value]?.price||initial[e.target.value])}});
+function saveFutureForm(fd){
+ const name=String(fd.get('name')||'').trim().slice(0,40);
+ if(!name){s.futureFormError='Укажи название.';render();return}
+ if(s.futureForm==='exchange'){
+   if(s.sources.some(ex=>ex.name.toLowerCase()===name.toLowerCase())){s.futureFormError='Такая биржа уже добавлена.';render();return}
+   const id=name.toLowerCase().replace(/[^a-z0-9]+/g,'-')+'-'+Date.now().toString(36);
+   s.sources.push({id,name,connected:false,accounts:[]});
+   s.openedExchanges[id]=true;
+ }else{
+   const exchange=s.sources.find(ex=>ex.id===s.futureForm);
+   if(!exchange){s.futureFormError='Биржа не найдена.';render();return}
+   if(exchange.accounts.some(ac=>ac.name.toLowerCase()===name.toLowerCase())){s.futureFormError='Такой субаккаунт уже есть.';render();return}
+   exchange.accounts.push({id:'sub-'+Date.now().toString(36),name,balance:null});
+   s.openedExchanges[exchange.id]=true;
+ }
+ s.futureForm=null;s.futureFormError='';s.flash='Название сохранено. Для позиций потребуется API.';saveLocal();render();
+}
+function handleClick(e){
+ const tab=e.target.closest('[data-tab]');
+ if(tab){s.tab=tab.dataset.tab;s.flash='';s.form=false;s.deleteId=null;render();return}
+ const per=e.target.closest('[data-period]');
+ if(per){s.period=per.dataset.period;chart();render();return}
+ const mode=e.target.closest('[data-future-mode]');
+ if(mode){s.futureMode=mode.dataset.futureMode;render();return}
+ const btn=e.target.closest('[data-action]');if(!btn)return;
+ const act=btn.dataset.action,id=btn.dataset.id||'';
+ if(act==='sync'){sync();return}
+ if(act==='gotoSpot'){s.tab='positions';render();return}
+ if(act==='gotoFutures'||act==='backToFutures'){s.tab='futures';s.futureMode='exchange';render();return}
+ if(act==='goConnections'){s.tab='connections';render();return}
+ if(act==='prices'){s.showPrices=!s.showPrices;render();return}
+ if(act==='toggleExchange'){s.openedExchanges[id]=!s.openedExchanges[id];render();return}
+ if(act==='toggleAccount'){s.openedAccounts[id]=!s.openedAccounts[id];render();return}
+ if(act==='toggleSpotCoin'){s.spotOpen[id]=!s.spotOpen[id];render();return}
+ if(act==='toggleHistory'){s.spotHistoryOpen=!s.spotHistoryOpen;s.form=false;render();return}
+ if(act==='addExchange'){s.tab='futures';s.futureMode='exchange';s.futureForm='exchange';s.futureFormError='';render();return}
+ if(act==='addAccount'){s.futureForm=id;s.futureFormError='';render();return}
+ if(act==='closeFutureForm'){s.futureForm=null;s.futureFormError='';render();return}
+ if(act==='new'){formOpen();return}
+ if(act==='edit'){formOpen(Number(id));return}
+ if(act==='delete'){s.deleteId=Number(id);render();return}
+ if(act==='cancelDelete'){s.deleteId=null;render();return}
+ if(act==='confirmDelete'){removeTrade(Number(id));return}
+ if(act==='closeForm'){s.form=false;s.formError='';render();return}
+}
+function handleSubmit(e){
+ if(e.target.id==='tradeForm'){e.preventDefault();saveTrade(new FormData(e.target))}
+ if(e.target.id==='priceForm'){e.preventDefault();saveManualPrices(new FormData(e.target))}
+ if(e.target.id==='futureForm'){e.preventDefault();saveFutureForm(new FormData(e.target))}
+}
+function handleChange(e){
+ if(e.target.id==='coin'&&s.editing===null){const input=$('entry');if(input)input.value=Number(s.quotes[e.target.value]?.price||initial[e.target.value])}
+ if(e.target.id==='futureSort'){s.futureSort=e.target.value;render()}
+}
+  document.addEventListener('click',handleClick);
+  document.addEventListener('submit',handleSubmit);
+  document.addEventListener('change',handleChange);
   // Standalone web preview. Every edit is saved only in this browser, never to a public repository.
   loadLocal();render();chart();sync({quiet:true});
   setInterval(()=>{if(!document.hidden&&!s.busy)sync({quiet:true})},60000);
