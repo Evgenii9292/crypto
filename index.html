@@ -58,7 +58,7 @@
   const nowLocal=()=>{const d=new Date();return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-')};
   const fmtDate=d=>{if(!d)return 'Нет даты';const a=d.slice(0,10).split('-');return a.length===3?`${a[2]}.${a[1]}.${a[0]}`:d};
   const fmtTime=d=>{if(!d)return '';const x=new Date(d);return isNaN(x)?'':x.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})};
-  const s={tab:'overview',trades:[{id:1,coin:'BTC',spent:25,entry:76200,buy_date:'2026-11-06',confirmed:false},{id:2,coin:'ETH',spent:25,entry:2247,buy_date:'2026-11-06',confirmed:false}],quotes:{BTC:{price:initial.BTC,source:'Предварительно'},ETH:{price:initial.ETH,source:'Предварительно'}},capital:C,period:'7d',points:[],snapshots:[],sync:null,form:false,editing:null,deleteId:null,busy:false,flash:'',formError:'',showPrices:false,tradingSubtab:'futures',futureMode:'exchange',futureSort:'pnl',futureForm:null,futureFormError:'',sources:[{id:'bybit',name:'Bybit',connected:false,accounts:[]}],futuresPositions:[],openedExchanges:{},openedAccounts:{},spotHistoryOpen:false,spotOpen:{}};
+  const s={tab:'overview',trades:[{id:1,coin:'BTC',spent:25,entry:76200,buy_date:'2026-11-06',confirmed:false},{id:2,coin:'ETH',spent:25,entry:2247,buy_date:'2026-11-06',confirmed:false}],quotes:{BTC:{price:initial.BTC,source:'Предварительно'},ETH:{price:initial.ETH,source:'Предварительно'}},capital:C,period:'7d',points:[],snapshots:[],sync:null,form:false,editing:null,deleteId:null,busy:false,flash:'',formError:'',showPrices:false,tradingSubtab:'futures',futureMode:'exchange',futureSort:'pnl',futureForm:null,futureFormError:'',sources:[{id:'bybit',name:'Bybit',connected:false,accounts:[]}],futuresPositions:[],openedExchanges:{},openedAccounts:{},spotHistoryOpen:false,spotOpen:{},bybitSnapshot:null,backendConnection:{available:false,configured:false,connected:false,error:''}};
   function coin(m){const trades=s.trades.filter(t=>t.coin===m);const invested=trades.reduce((t,x)=>t+Number(x.spent),0);const quantity=trades.reduce((t,x)=>t+Number(x.spent)/Number(x.entry),0);const current=Number(s.quotes[m]?.price||initial[m]);const value=quantity*current;return {invested,quantity,current,value,profit:value-invested,remaining:500-invested,avg:quantity?invested/quantity:0,provisional:trades.some(t=>!t.confirmed)}}
   function sums(){const btc=coin('BTC'),eth=coin('ETH'),invested=btc.invested+eth.invested,cash=C-invested,holdings=btc.value+eth.value,profit=holdings-invested;return {btc,eth,invested,cash,holdings,profit,total:cash+holdings}}
 
@@ -100,10 +100,10 @@ function overviewSource(ex){
 function overview(){
   const a=sums();
   return `<div class="overview-layout"><div class="overview-primary">
-    <div class="card tint overviewHero"><div class="eyebrow">Известный капитал</div><div class="total">${dollars(a.total)}</div><div class="performance"><span class="metric ${cls(a.profit)}">${signed(a.profit)} (${signed(a.invested?a.profit/a.invested*100:0,'pct')})</span><span class="tiny">PNL Spot</span></div><div class="hr"></div><div class="tiny">Учитывается пока только Spot. Общий баланс Futures появится после подключения бирж.</div></div>
+    <div class="card tint overviewHero"><div class="eyebrow">Известный капитал</div><div class="total">${dollars(a.total)}</div><div class="performance"><span class="metric ${cls(a.profit)}">${signed(a.profit)} (${signed(a.invested?a.profit/a.invested*100:0,'pct')})</span><span class="tiny">PNL Spot</span></div><div class="hr"></div><div class="tiny">Это выделенный ручной Spot-портфель. UTA equity подключённого субаккаунта показывается отдельно и может включать Spot, поэтому не суммируется повторно.</div></div>
     ${spotPnlChart()}</div><div class="overview-aside">
     <button class="assetSummary" type="button" data-action="gotoSpot"><span><span class="assetTitle">Spot</span><span class="assetSub">fxmr4 · BTC и ETH</span></span><span class="assetNumbers"><strong>${dollars(a.total)}</strong><span class="${cls(a.profit)}">${signed(a.profit)}</span></span></button>
-    <button class="assetSummary" type="button" data-action="gotoFutures"><span><span class="assetTitle">Futures</span><span class="assetSub">Биржи и субаккаунты</span></span><span class="assetNumbers"><strong>—</strong><span class="tiny">Не подключено</span></span></button>
+    <button class="assetSummary" type="button" data-action="gotoFutures"><span><span class="assetTitle">Futures</span><span class="assetSub">${s.backendConnection.connected?"Bybit · UTA equity":"Биржи и субаккаунты"}</span></span><span class="assetNumbers"><strong>${s.backendConnection.connected&&s.bybitSnapshot?.totals?.equity!=null?dollars(s.bybitSnapshot.totals.equity):"—"}</strong><span class="tiny">${s.backendConnection.connected?"Общий UTA, включая возможный Spot":"Не подключено"}</span></span></button>
     <section class="section compactSection"><div class="hrow"><span class="sectitle">Распределение Spot</span><span class="tiny">Из ${dollars(a.total,0)}</span></div>${spotDistribution()}</section>
     </div></div>
     <section class="section sourcesBlock"><div class="hrow"><div><div class="sectitle">Биржи и субаккаунты</div><div class="tiny">Нажми на биржу, затем на аккаунт</div></div><button class="btn" data-action="gotoFutures">Все фьючерсы</button></div><div class="sourceList">${s.sources.map(overviewSource).join('')}</div></section>`;
@@ -169,7 +169,14 @@ function futuresForm(){
 function futures(){
  const body=s.futureMode==='exchange'?s.sources.map(futureExchangeCard).join(''):s.futureMode==='account'?futuresByAccount():futuresSorted().length?futuresSorted().map(futurePositionLine).join(''):'<div class="card emptyState"><div class="sectitle">Нет загруженных позиций</div><p>После подключения появятся открытые сделки со всех бирж. Сортировка начнёт работать на полученных позициях.</p></div>';
  return `<div class="hrow"><div><div class="sectitle">Futures · Все биржи</div><div class="tiny">Баланс и позиции по биржам и субаккаунтам</div></div><button class="btn" data-action="goConnections" type="button">${icon('shield')} Подключения</button></div>
- <div class="futureMetrics">${[['Общий депозит','—'],['Плавающий PNL','—'],['Реализованный PNL','—'],['Открытые позиции','—']].map(([name,value])=>`<div class="card tint"><div class="eyebrow">${name}</div><div class="num">${value}</div></div>`).join('')}</div>
+ <div class="futureMetrics">${(()=>{
+ const snap=s.bybitSnapshot?.totals;
+ const ready=!!s.backendConnection.connected && !!snap;
+ return [['Equity UTA',ready&&snap.equity!=null?dollars(snap.equity):'—'],
+ ['Плавающий PNL',ready&&snap.perpUPL!=null?signed(snap.perpUPL):'—'],
+ ['Доступно',ready&&snap.availableBalance!=null?dollars(snap.availableBalance):'—'],
+ ['Открытые позиции',ready?String(s.futuresPositions.length):'—']].map(([name,value])=>`<div class="card tint"><div class="eyebrow">${name}</div><div class="num">${value}</div></div>`).join('');
+ })()}</div>
  <section class="section pnlChart card"><div class="hrow"><div class="sectitle">PNL · Futures</div><span class="pill">Ожидается API</span></div><div class="chartbox"><div class="emptychart"><strong>Пока нет данных для графика</strong><span>После подключения фьючерсов здесь будет PNL с датами, временной осью и шкалой USD.</span></div></div></section>
  <section class="section"><div class="futureToolbar"><div><div class="sectitle">Позиции и аккаунты</div><div class="tiny">Раскрывай биржи и выбирай способ группировки</div></div><button class="btn" type="button" data-action="addExchange">${icon('plus')} Биржа</button></div>
  <div class="futureFilters"><div class="tradeSwitch" role="tablist" aria-label="Группировка фьючерсов">${[['all','Все позиции'],['exchange','По биржам'],['account','По субаккаунтам']].map(([id,name])=>`<button type="button" data-future-mode="${id}" class="${s.futureMode===id?'active':''}">${name}</button>`).join('')}</div><label class="sortLabel">Сортировка <select id="futureSort"><option value="pnl" ${s.futureSort==='pnl'?'selected':''}>PNL</option><option value="size" ${s.futureSort==='size'?'selected':''}>Размер</option><option value="symbol" ${s.futureSort==='symbol'?'selected':''}>Монета</option></select></label></div>
@@ -178,12 +185,12 @@ function futures(){
 }
 function connections(){
  return `<div class="hrow"><div><div class="sectitle">Подключения бирж</div><div class="tiny">Приватные данные требуют защищённого сервера</div></div><button class="btn" type="button" data-action="backToFutures">← Futures</button></div>
- <div class="card connectorCard"><div class="hrow"><div class="logoArea"><div class="appicon">${icon('shield')}</div><div><div class="coinName">Bybit</div><div class="coinSub">fxmr4 · приватный API не подключён</div></div></div><span class="connectBadge">Не подключено</span></div>
- <p class="connectCopy">Публичные котировки и данные счёта — разные вещи. Балансы, ордера и Futures можно получать после серверного подключения.</p>${markStatus()}
+ <div class="card connectorCard"><div class="hrow"><div class="logoArea"><div class="appicon">${icon('shield')}</div><div><div class="coinName">Bybit</div><div class="coinSub">${s.backendConnection.connected?"Субаккаунт подключён · только чтение":"Субаккаунт · приватный API ещё не подключён"}</div></div></div><span class="connectBadge">${s.backendConnection.connected?"Подключено":"Не подключено"}</span></div>
+ <p class="connectCopy">Балансы и открытые позиции доступны после подключения защищённого сервера и ключа субаккаунта Read-Only.</p><div id="bybitConnectionPanel"></div>${markStatus()}
  <div class="safeNote">Не вводи API Secret на публичном сайте. Для подключения потребуется закрытый сервер с HTTPS, ключ только для чтения и ограничение IP. Без права торговли и вывода.</div>
  <div class="connectSteps"><div><span>01</span>Создать отдельный ключ Bybit Read-Only</div><div><span>02</span>Разрешить доступ только с IP твоего VPS</div><div><span>03</span>Проверить полученные балансы и позиции</div></div>
  <div class="flexend"><a class="btn externalLink" href="https://www.bybit.com/app/user/api-management" target="_blank" rel="noopener noreferrer">Bybit Global ↗</a><a class="btn externalLink" href="https://www.bybit.id/app/user/api-management" target="_blank" rel="noopener noreferrer">Bybit Indonesia ↗</a></div></div>
- <div class="warning">Если API-настройки не открываются по ссылке, зайди в Bybit на сайте и выбери «Профиль → API». В мобильном приложении создание ключей не поддерживается.</div>`;
+ <div class="warning">Созданный ключ субаккаунта вводи только на своём HTTPS-сервере через защищённую форму выше. На публичной версии GitHub ввод ключей заблокирован.</div>`;
 }
 function render(){
  const views={overview,positions,futures,connections};
@@ -198,7 +205,45 @@ function render(){
  document.querySelectorAll('[data-tab]').forEach(b=>{const active=b.dataset.tab===s.tab;b.classList.toggle('active',active);b.setAttribute('aria-selected',active?'true':'false')});
  $('message').innerHTML=s.flash?`<div class="toast">${escape(s.flash)}</div>`:'';
  if(window.fxmr4Levels?.render)window.fxmr4Levels.render();
+ if(window.fxmr4Bybit?.renderPanel)window.fxmr4Bybit.renderPanel();
 }
+
+
+function onBackendStatus(status){
+ s.backendConnection={...s.backendConnection,...status};
+ const ex=s.sources.find(x=>x.id==='bybit');
+ if(ex)ex.connected=!!status.connected;
+ // Keep the last known values on network error, but mark them stale in the UI.
+ render();
+}
+function onSnapshot(data){
+ if(!data||!data.account||!data.totals||!Array.isArray(data.positions))return;
+ const name=String(data.account.name||'Subaccount').slice(0,40);
+ const bybit=s.sources.find(ex=>ex.id==='bybit')||{id:'bybit',name:'Bybit',connected:false,accounts:[]};
+ if(!s.sources.some(ex=>ex.id==='bybit'))s.sources.unshift(bybit);
+ bybit.connected=true;
+ const accountId='bybit-subaccount';
+ const acc=bybit.accounts.find(a=>a.id===accountId);
+ const equity=Number(data.totals.equity);
+ const account={id:accountId,name,balance:Number.isFinite(equity)?equity:null};
+ if(acc)Object.assign(acc,account);else bybit.accounts.push(account);
+ s.futuresPositions=s.futuresPositions.filter(p=>p.exchangeId!=='bybit').concat(
+  data.positions.filter(p=>p&&typeof p.symbol==='string'&&Number.isFinite(Number(p.size))).map(p=>({
+   exchangeId:'bybit',accountId,
+   symbol:String(p.symbol).slice(0,30),side:String(p.side||'').slice(0,12),
+   quantity:Number(p.quantity)||0,size:Number(p.size)||0,
+   entryPrice:Number.isFinite(Number(p.entryPrice))?Number(p.entryPrice):null,
+   markPrice:Number.isFinite(Number(p.markPrice))?Number(p.markPrice):null,
+   liqPrice:Number.isFinite(Number(p.liqPrice))?Number(p.liqPrice):null,
+   leverage:Number(p.leverage)||null,
+   pnl:Number(p.pnl)||0
+  }))
+ );
+ s.bybitSnapshot={totals:data.totals,account:data.account,updatedAt:data.updatedAt,warning:data.balanceNote};
+ s.backendConnection={available:true,configured:true,connected:true,error:''};
+ render();
+}
+window.fxmr4App={onBackendStatus,onSnapshot};
 
   const storageKey='fxmr4_portfolio_public_preview_v1';
   function loadLocal(){
@@ -366,5 +411,6 @@ function handleChange(e){
 })();
 </script>
 <script src="./levels.js"></script>
+<script src="./bybit-account.js"></script>
 </body>
 </html>
