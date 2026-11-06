@@ -45,11 +45,10 @@
     if(el){el.textContent=text;el.dataset.error=isError?"true":"false"}
   }
 
-  // Fields the server owns and the user actually edits. The PNL series and the
-  // UI preferences are excluded on purpose: the page appends a snapshot on every
-  // load, so comparing them made the local copy differ from the server forever
-  // and the page reloaded in a loop.
-  const OWNED=["capital","trades","quotes","sources"];
+  // Compare only user-edited portfolio fields. Live quotes, recorded PNL
+  // series, and view preferences change without user input and must never
+  // trigger a remote-state rebuild.
+  const OWNED=["capital","trades","sources"];
   function owned(portfolio){
     const out={};
     for(const key of OWNED)out[key]=portfolio?portfolio[key]:undefined;
@@ -72,41 +71,32 @@
     const {portfolio,levels}=remote;
     if(!portfolio||!levels)throw Error("Неполные данные VPS");
     const old=values();
-    const changed=!sameContent(old.portfolio,portfolio)||
-      JSON.stringify(old.levels)!==JSON.stringify(levels);
+    const portfolioChanged=!sameContent(old.portfolio,portfolio);
+    const levelsChanged=JSON.stringify(old.levels)!==JSON.stringify(levels);
+    // Keep quotes and PNL recordings gathered on this device. They are
+    // observations, not edits to the user's saved allocation.
     const merged={...portfolio,
+      quotes:old.portfolio.quotes||portfolio.quotes,
+      chartPeriod:old.portfolio.chartPeriod||portfolio.chartPeriod,
+      chartMetric:old.portfolio.chartMetric||portfolio.chartMetric,
       snapshots:keepLonger(old.portfolio,portfolio,"snapshots"),
       portfolioSnapshots:keepLonger(old.portfolio,portfolio,"portfolioSnapshots")};
     remoteApplying=true;
     try{
       localStorage.setItem(PORTFOLIO,JSON.stringify(merged));
       localStorage.setItem(LEVELS,JSON.stringify(levels));
+      // Apply remote changes in memory. No full-page reload, no animation
+      // restart, no flicker, no loss of the current tab or expanded cards.
+      if(portfolioChanged)window.fxmr4App?.applyCloudState?.();
+      if(levelsChanged)window.fxmr4Levels?.reloadLevels?.();
     }finally{remoteApplying=false}
-    return changed;
-  }
-
-  // A reload is only a way to re-initialise the app from localStorage. Guard it
-  // by revision and by time so a mismatch can never turn into a reload storm.
-  const RELOAD_KEY="fxmr4_last_reload";
-  function reloadOnce(revision){
-    let last=null;
-    try{last=JSON.parse(sessionStorage.getItem(RELOAD_KEY)||"null")}catch(e){}
-    const now=Date.now();
-    if(last&&last.revision===revision&&now-last.at<60000)return false;
-    if(last&&now-last.at<3000)return false;
-    try{sessionStorage.setItem(RELOAD_KEY,JSON.stringify({revision,at:now}))}catch(e){}
-    return true;
+    return portfolioChanged||levelsChanged;
   }
 
   function reloadOnRemote(remote){
     rev=remote.revision;
-    const changed=applyRemote(remote);
+    applyRemote(remote);
     info("Сохранено на VPS");
-    if(changed&&reloadOnce(remote.revision)){
-      // The app initializes its state from localStorage at page load.
-      // Reload only after a fully verified remote payload was saved locally.
-      location.reload();
-    }
   }
 
   async function write(){
