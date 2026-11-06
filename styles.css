@@ -220,3 +220,75 @@
 .bybitConnectForm input{font-size:13px}
 .bybitConnectForm .flexend{margin-top:13px}
 @media(max-width:600px){.connectorState{padding:13px}.bybitConnectForm .flexend{flex-wrap:wrap;gap:7px}}
+
+/* FXMR4 · portfolio overview, account management and cleaner controls */
+.heroBreakdown{display:flex;justify-content:space-between;flex-wrap:wrap;gap:9px 18px;color:var(--sub);font-size:11px}
+.heroBreakdown span{display:flex;align-items:center;gap:7px}
+.heroBreakdown strong{color:var(--text);font-size:12px;font-weight:680;font-variant-numeric:tabular-nums}
+.pnlMode{display:inline-flex;gap:2px;border:1px solid var(--border);background:var(--surface2);padding:3px;border-radius:10px;margin-top:12px}
+.pnlMode button,.settingsTabs button{font:inherit;font-size:11px;font-weight:630;color:var(--sub);border:0;background:transparent;border-radius:8px;padding:7px 12px;cursor:pointer}
+.pnlMode button.active,.settingsTabs button.active{color:var(--text);background:var(--surface);box-shadow:0 1px 4px #00000010}
+.pnlChartHead{flex-wrap:wrap;align-items:flex-start}
+.spotAllocation{margin-top:20px;border:1px solid var(--border);padding:16px;border-radius:var(--radius)}
+.spotAllocation .bar{margin-top:18px}
+.spotAllocation .legend{margin-bottom:2px}
+.accountRow{display:flex;align-items:center;gap:2px;min-width:0}
+.accountRow>.sourceSubHeader{flex:1;min-width:0;width:auto}
+.accountIdentity{display:flex;flex-direction:column;gap:4px;min-width:0;overflow:hidden}
+.accountIdentity strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.accountTag{align-self:flex-start;border:1px solid var(--border);background:var(--surface2);border-radius:6px;color:var(--sub);padding:2px 6px;font-size:10px;line-height:1.15;font-weight:570;white-space:nowrap}
+.accountMetrics{display:flex;align-items:center;justify-content:flex-end;gap:16px;margin-right:4px}
+.accountMetrics>span{display:flex;flex-direction:column;gap:2px;align-items:flex-end;white-space:nowrap}
+.accountMetrics small{font-size:10px;color:var(--muted);font-weight:510;line-height:1.25}
+.accountMetrics b{font-size:12px;font-weight:690;font-variant-numeric:tabular-nums}
+.accountManage{width:28px;height:28px;border:0;background:transparent;color:var(--muted);display:grid;place-items:center;border-radius:8px;flex:none;margin-right:2px;cursor:pointer}
+.accountManage .icon{height:15px;width:15px}
+.accountManage:hover{background:var(--surface2);color:var(--text)}
+.chev{display:inline-grid;place-items:center;position:relative;flex:none;width:25px;height:25px;background:var(--surface2);border-radius:8px;line-height:0;font-size:0!important;transform:none!important;color:var(--muted)}
+.chev::before{content:"";display:block;width:6px;height:6px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:translateY(-2px) rotate(45deg);transition:transform .18s ease}
+.chev.rotated::before{transform:translateY(2px) rotate(225deg)}
+.sourceHeaderRight,.sourceSubRight{min-width:0}
+.settingsTabs{display:inline-flex;border:1px solid var(--border);background:var(--surface2);border-radius:11px;padding:4px;gap:3px;margin:20px 0 3px}
+.settingsTabs button{font-size:12px;padding:8px 17px}
+.settingsCard{border:1px solid var(--border);border-radius:var(--radius);padding:18px;background:var(--surface)}
+.capitalSummary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:19px 0;padding-bottom:17px;border-bottom:1px solid var(--border)}
+.capitalSummary>div{display:flex;flex-direction:column;gap:4px}
+.capitalSummary small{color:var(--muted);font-size:11px}
+.capitalSummary strong{font-size:19px;font-weight:680;letter-spacing:-.4px;font-variant-numeric:tabular-nums}
+.capitalForm{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap}
+.capitalForm .field{flex:1;min-width:190px;max-width:310px;margin:0}
+.capitalForm .btn{height:39px}
+.settingsHint{margin:15px 0 0;line-height:1.6}
+.settingsAccounts{border-top:1px solid var(--border);margin-top:15px}
+.settingsAccount{display:flex;align-items:center;gap:8px;padding:12px 0;border-bottom:1px solid var(--border)}
+.settingsAccountInfo{display:flex;flex:1;flex-direction:column;gap:3px;min-width:0}
+.settingsAccountInfo strong{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.settingsAccountInfo small{font-size:11px;color:var(--muted)}
+.settingsAccountFooter{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.settingsExternal{margin-top:14px}
+.futurePnlLink{display:flex;align-items:center;justify-content:space-between;gap:15px;border:1px solid var(--border);background:var(--surface);border-radius:var(--radius);padding:15px}
+.futurePnlLink>div{display:flex;flex-direction:column;gap:3px}
+.futurePnlLink strong{font-size:13px}
+.futurePnlLink .tiny{font-size:11px}
+.mobileSettings{display:none}
+@media(max-width:960px){
+ .mobileSettings{display:grid;place-items:center;width:34px;height:34px;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--sub);margin-left:auto}
+ .mobileSettings .icon{height:17px;width:17px}
+ .accountMetrics{gap:9px}
+}
+@media(max-width:600px){
+ .sourceChildren{padding:6px 10px 10px}
+ .sourceSubHeader{padding:11px 3px;gap:4px}
+ .accountMetrics{gap:6px}
+ .accountMetrics small{font-size:9px}
+ .accountMetrics b{font-size:10px}
+ .accountManage{width:26px;height:26px}
+ .accountIdentity strong{font-size:11px}
+ .sourceHeaderRight{font-size:11px;gap:6px}
+ .futurePnlLink{flex-wrap:wrap}
+ .spotAllocation{padding:13px}
+ .capitalSummary strong{font-size:16px}
+ .settingsCard{padding:14px}
+ .pnlChartHead .periods{gap:1px}
+}
+@media(prefers-reduced-motion:reduce){.chev::before{transition:none}}
