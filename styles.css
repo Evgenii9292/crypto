@@ -431,3 +431,66 @@
 .settingsExchanges{margin-top:16px;padding-top:14px;border-top:1px solid var(--border)}
 .settingsExchangesTitle{margin-bottom:8px;font-weight:620;color:var(--sub)}
 .settingsExchanges .sourceList{margin-top:0}
+
+/* Portfolio overview: no repeated headings, values, or technical captions */
+.overviewHero{display:flex;flex-direction:column;justify-content:center;min-height:152px;padding:23px!important}
+.overviewHero .total{line-height:1.15}
+.overviewPnlLine{display:flex;align-items:center;flex-wrap:wrap;gap:10px 16px;margin-top:9px}
+.overviewPnlLine .metric{font-weight:680;font-size:14px}
+.overviewMonth{display:inline-flex;align-items:center;gap:5px;color:var(--muted);font-size:11px;white-space:nowrap}
+.overviewMonth strong{font-size:12px;font-weight:650;font-variant-numeric:tabular-nums}
+.overview-aside .assetSummary{min-height:104px}
+.overview-aside .assetSummary>.assetTitle{font-size:15px;font-weight:690}
+.connectionStatus .status-dot.isError{background:var(--red)}
+.connectionStatus:has(.isError) #connectionStatusText{color:var(--red)}
+/* Keep sync errors discoverable, but don't advertise routine saves on every page. */
+.cloudSyncStatus{display:none}
+.cloudSyncStatus[data-error="true"]{display:block;color:var(--red);font-size:10px;line-height:1.5;margin-bottom:7px}
+
+/* The three main sections become an iOS/Android-style dock on tablets and phones. */
+@media(max-width:960px){
+ .page{padding-bottom:0}
+ .shell{padding-bottom:calc(116px + env(safe-area-inset-bottom,0px))}
+ .sidebar{min-width:0}
+ .tabs{
+   position:fixed;z-index:200;
+   bottom:calc(10px + env(safe-area-inset-bottom,0px));
+   left:50%;
+   transform:translateX(-50%);
+   width:min(calc(100vw - 26px),560px);
+   display:grid;grid-template-columns:repeat(3,minmax(0,1fr));
+   gap:4px;
+   padding:6px;
+   margin:0;
+   border:1px solid var(--border);
+   border-radius:19px;
+   background:var(--surface);
+   box-shadow:0 7px 36px rgba(0,0,0,.17);
+   -webkit-backdrop-filter:blur(16px);
+   backdrop-filter:blur(16px);
+ }
+ .tabs::before{display:none}
+ .tabs .tab{
+   min-width:0;min-height:57px;
+   display:flex;flex-direction:column;align-items:center;justify-content:center;
+   gap:4px;
+   padding:6px 5px;
+   border-radius:13px;
+   background:transparent;
+   font-size:11px;font-weight:580;line-height:1.2;
+   box-shadow:none;
+ }
+ .tabs .tab .icon{display:block;width:19px;height:19px;stroke-width:1.8}
+ .tabs .tab.active{background:var(--surface2);color:var(--text);font-weight:680}
+ .tabs .tab:not(.active):active{background:var(--surface2)}
+ .tabs .tab:focus-visible{outline-offset:-2px}
+}
+@media(max-width:600px){
+ .shell{padding-bottom:calc(118px + env(safe-area-inset-bottom,0px))}
+ .tabs{width:calc(100vw - 22px);bottom:calc(8px + env(safe-area-inset-bottom,0px))}
+ .overviewHero{min-height:124px;padding:18px!important}
+ .overview-aside .assetSummary{min-height:82px}
+}
+@media(prefers-reduced-motion:reduce){
+ .tabs .tab{transition:none}
+}
