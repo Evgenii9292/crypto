@@ -59,7 +59,7 @@
   const nowLocal=()=>{const d=new Date();return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-')};
   const fmtDate=d=>{if(!d)return 'Нет даты';const a=d.slice(0,10).split('-');return a.length===3?`${a[2]}.${a[1]}.${a[0]}`:d};
   const fmtTime=d=>{if(!d)return '';const x=new Date(d);return isNaN(x)?'':x.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})};
-  const s={tab:'overview',trades:[{id:1,coin:'BTC',spent:25,entry:76200,buy_date:'2026-11-06',confirmed:false},{id:2,coin:'ETH',spent:25,entry:2247,buy_date:'2026-11-06',confirmed:false}],quotes:{BTC:{price:initial.BTC,source:'Предварительно'},ETH:{price:initial.ETH,source:'Предварительно'}},capital:C,period:'7d',chartPeriod:{overview:'7d',spot:'7d',futures:'7d'},chartMetric:{spot:'pnl',futures:'pnl'},points:[],snapshots:[],sync:null,form:false,editing:null,deleteId:null,busy:false,flash:'',formError:'',showPrices:false,tradingSubtab:'futures',futureMode:'all',futureSort:'pnl',futureSortDir:-1,pnlMode:'all',settingsPane:'connections',portfolioSnapshots:[],pnlHistory:[],pendingRemove:null,renameId:null,renameValue:'',renameError:'',futureForm:null,futureFormError:'',sources:[{id:'bybit',name:'Bybit',connected:false,accounts:[]}],futuresPositions:[],openedExchanges:{},openedAccounts:{},spotHistoryOpen:false,spotAccountsOpen:false,spotOpen:{},bybitSnapshot:null,backendConnection:{available:false,configured:false,connected:false,error:''}};
+  const s={tab:'overview',trades:[{id:1,coin:'BTC',spent:25,entry:76200,buy_date:'2026-11-06',confirmed:false},{id:2,coin:'ETH',spent:25,entry:2247,buy_date:'2026-11-06',confirmed:false}],quotes:{BTC:{price:initial.BTC,source:'Предварительно'},ETH:{price:initial.ETH,source:'Предварительно'}},capital:C,period:'7d',chartPeriod:{overview:'7d',spot:'7d',futures:'7d'},chartMetric:{spot:'pnl',futures:'pnl'},points:[],snapshots:[],sync:null,form:false,editing:null,deleteId:null,busy:false,flash:'',formError:'',showPrices:false,tradingSubtab:'futures',futureMode:'all',futureSort:'pnl',futureSortDir:-1,pnlMode:'all',settingsPane:'connections',portfolioSnapshots:[],pnlHistory:[],pendingRemove:null,renameId:null,renameValue:'',renameError:'',futureForm:null,futureFormError:'',sources:[{id:'bybit',name:'Bybit',connected:false,accounts:[]}],futuresPositions:[],openedExchanges:{},openedAccounts:{},spotHistoryOpen:false,spotAccountsOpen:false,spotOpen:{},bybitSnapshot:null,bybitAccountsSnapshots:{},bybitExpectedIds:[],backendConnection:{available:false,configured:false,connected:false,error:''}};
   function coin(m){const trades=s.trades.filter(t=>t.coin===m);const invested=trades.reduce((t,x)=>t+Number(x.spent),0);const quantity=trades.reduce((t,x)=>t+Number(x.spent)/Number(x.entry),0);const current=Number(s.quotes[m]?.price||initial[m]);const value=quantity*current;return {invested,quantity,current,value,profit:value-invested,remaining:C/2-invested,avg:quantity?invested/quantity:0,provisional:trades.some(t=>!t.confirmed)}}
   function sums(){const btc=coin('BTC'),eth=coin('ETH'),invested=btc.invested+eth.invested,cash=C-invested,holdings=btc.value+eth.value,profit=holdings-invested;return {btc,eth,invested,cash,holdings,profit,total:cash+holdings}}
 
@@ -492,18 +492,55 @@ function onBackendStatus(status){
  // Keep the last known values on network error, but mark them stale in the UI.
  render();
 }
+function onAccounts(accounts){
+ const ids=accounts.filter(a=>a&&a.id).map(a=>a.id);
+ s.bybitExpectedIds=ids;
+ const bybit=s.sources.find(e=>e.id==='bybit')||{id:'bybit',name:'Bybit',connected:false,accounts:[]};
+ if(!s.sources.some(e=>e.id==='bybit'))s.sources.unshift(bybit);
+ // Only remove stale API-linked entries; never erase user's manual records.
+ bybit.accounts=bybit.accounts.filter(ac=>!ac.apiLinked||ids.includes(ac.id));
+ for(const a of accounts){
+  if(!a||!a.id)continue;
+  const current=bybit.accounts.find(ac=>ac.id===a.id);
+  if(current){current.name=String(a.label||current.name).slice(0,40);current.apiLinked=true}
+  else bybit.accounts.push({id:a.id,name:String(a.label||'Субаккаунт').slice(0,40),balance:null,apiLinked:true});
+ }
+ const removed=Object.keys(s.bybitAccountsSnapshots||{}).filter(id=>!ids.includes(id));
+ for(const id of removed){
+  delete s.bybitAccountsSnapshots[id];
+  s.futuresPositions=s.futuresPositions.filter(p=>p.accountId!==id);
+ }
+ rebuildBybitTotals();
+ render();
+}
+function rebuildBybitTotals(){
+ const snapshots=Object.values(s.bybitAccountsSnapshots||{});
+ const expected=s.bybitExpectedIds||[];
+ if(!snapshots.length||expected.some(id=>!s.bybitAccountsSnapshots[id])){
+  s.bybitSnapshot=null;
+  return;
+ }
+ const keys=['equity','walletBalance','availableBalance','perpUPL','accountInitialMargin'];
+ const totals={positionCount:snapshots.reduce((v,ss)=>v+Number(ss.totals?.positionCount||0),0)};
+ for(const key of keys){
+  const values=snapshots.map(ss=>ss.totals?.[key]);
+  totals[key]=values.every(v=>v!==null&&v!==undefined&&Number.isFinite(Number(v)))?
+    values.reduce((v,n)=>v+Number(n),0):null;
+ }
+ s.bybitSnapshot={totals,account:{id:'all',name:'Все субаккаунты'},updatedAt:Math.min(...snapshots.map(ss=>Number(ss.updatedAt)||Date.now()))};
+}
 function onSnapshot(data){
  if(!data||!data.account||!data.totals||!Array.isArray(data.positions))return;
- const name=String(data.account.name||'Subaccount').slice(0,40);
+ const accountId=String(data.account.id||'bybit-subaccount');
+ const name=String(data.account.name||'Субаккаунт').slice(0,40);
  const bybit=s.sources.find(ex=>ex.id==='bybit')||{id:'bybit',name:'Bybit',connected:false,accounts:[]};
  if(!s.sources.some(ex=>ex.id==='bybit'))s.sources.unshift(bybit);
  bybit.connected=true;
- const accountId='bybit-subaccount';
  const acc=bybit.accounts.find(a=>a.id===accountId);
  const equity=data.totals.equity==null?null:Number(data.totals.equity);
- const account={id:accountId,name,balance:equity!=null&&Number.isFinite(equity)?equity:null};
+ const account={id:accountId,name,balance:equity!=null&&Number.isFinite(equity)?equity:null,apiLinked:true};
  if(acc)Object.assign(acc,account);else bybit.accounts.push(account);
- s.futuresPositions=s.futuresPositions.filter(p=>p.exchangeId!=='bybit').concat(
+ s.futuresPositions=s.futuresPositions.filter(p=>p.accountId!==accountId).concat(
   data.positions.filter(p=>p&&typeof p.symbol==='string'&&Number.isFinite(Number(p.size))).map(p=>({
    exchangeId:'bybit',accountId,
    symbol:String(p.symbol).slice(0,30),side:String(p.side||'').slice(0,12),
@@ -511,13 +548,15 @@ function onSnapshot(data){
    entryPrice:p.entryPrice!=null&&Number.isFinite(Number(p.entryPrice))?Number(p.entryPrice):null,
    markPrice:p.markPrice!=null&&Number.isFinite(Number(p.markPrice))?Number(p.markPrice):null,
    liqPrice:p.liqPrice!=null&&Number.isFinite(Number(p.liqPrice))?Number(p.liqPrice):null,
-   leverage:Number(p.leverage)||null,
-   pnl:p.pnl==null?null:Number(p.pnl),initialMargin:p.initialMargin==null?null:Number(p.initialMargin),cumulativeRealisedPnl:p.cumulativeRealisedPnl==null?null:Number(p.cumulativeRealisedPnl),
+   leverage:Number(p.leverage)||null,pnl:p.pnl==null?null:Number(p.pnl),
+   initialMargin:p.initialMargin==null?null:Number(p.initialMargin),
+   cumulativeRealisedPnl:p.cumulativeRealisedPnl==null?null:Number(p.cumulativeRealisedPnl),
    openedAt:p.openedAt==null?null:Number(p.openedAt)
   }))
  );
- s.bybitSnapshot={totals:data.totals,account:data.account,updatedAt:data.updatedAt,warning:data.balanceNote};
- s.backendConnection={available:true,configured:true,connected:true,error:''};
+ s.bybitAccountsSnapshots[accountId]=data;
+ rebuildBybitTotals();
+ s.backendConnection={available:true,configured:true,connected:!!s.bybitSnapshot,error:''};
  recordPortfolioSnapshot();saveLocal(false);render();
 }
 function applyCloudState(){
@@ -534,7 +573,7 @@ function applyCloudState(){
  }
  render();
 }
-window.fxmr4App={onBackendStatus,onSnapshot,onDisconnected,applyCloudState};
+window.fxmr4App={onBackendStatus,onSnapshot,onAccounts,onDisconnected,applyCloudState};
 
   const storageKey='fxmr4_portfolio_public_preview_v1';
   function loadLocal(){
