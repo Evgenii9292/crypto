@@ -45,17 +45,56 @@
     if(el){el.textContent=text;el.dataset.error=isError?"true":"false"}
   }
 
+  // Fields the server owns and the user actually edits. The PNL series and the
+  // UI preferences are excluded on purpose: the page appends a snapshot on every
+  // load, so comparing them made the local copy differ from the server forever
+  // and the page reloaded in a loop.
+  const OWNED=["capital","trades","quotes","sources"];
+  function owned(portfolio){
+    const out={};
+    for(const key of OWNED)out[key]=portfolio?portfolio[key]:undefined;
+    return JSON.stringify(out);
+  }
+  function sameContent(a,b){
+    return owned(a)===owned(b);
+  }
+
+  // The server owns the edited fields, but the PNL series is written by this
+  // browser on every load. Replacing it with an older server copy would throw
+  // away points the server has not received yet, so the longer series wins.
+  function keepLonger(local,remote,key){
+    const a=Array.isArray(local?.[key])?local[key]:[];
+    const b=Array.isArray(remote?.[key])?remote[key]:[];
+    return b.length>=a.length?b:a;
+  }
+
   function applyRemote(remote){
     const {portfolio,levels}=remote;
     if(!portfolio||!levels)throw Error("Неполные данные VPS");
     const old=values();
-    if(JSON.stringify(old.portfolio)===JSON.stringify(portfolio)&&
-       JSON.stringify(old.levels)===JSON.stringify(levels))return false;
+    const changed=!sameContent(old.portfolio,portfolio)||
+      JSON.stringify(old.levels)!==JSON.stringify(levels);
+    const merged={...portfolio,
+      snapshots:keepLonger(old.portfolio,portfolio,"snapshots"),
+      portfolioSnapshots:keepLonger(old.portfolio,portfolio,"portfolioSnapshots")};
     remoteApplying=true;
     try{
-      localStorage.setItem(PORTFOLIO,JSON.stringify(portfolio));
+      localStorage.setItem(PORTFOLIO,JSON.stringify(merged));
       localStorage.setItem(LEVELS,JSON.stringify(levels));
     }finally{remoteApplying=false}
+    return changed;
+  }
+
+  // A reload is only a way to re-initialise the app from localStorage. Guard it
+  // by revision and by time so a mismatch can never turn into a reload storm.
+  const RELOAD_KEY="fxmr4_last_reload";
+  function reloadOnce(revision){
+    let last=null;
+    try{last=JSON.parse(sessionStorage.getItem(RELOAD_KEY)||"null")}catch(e){}
+    const now=Date.now();
+    if(last&&last.revision===revision&&now-last.at<60000)return false;
+    if(last&&now-last.at<3000)return false;
+    try{sessionStorage.setItem(RELOAD_KEY,JSON.stringify({revision,at:now}))}catch(e){}
     return true;
   }
 
@@ -63,7 +102,7 @@
     rev=remote.revision;
     const changed=applyRemote(remote);
     info("Сохранено на VPS");
-    if(changed){
+    if(changed&&reloadOnce(remote.revision)){
       // The app initializes its state from localStorage at page load.
       // Reload only after a fully verified remote payload was saved locally.
       location.reload();
