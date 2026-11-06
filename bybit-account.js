@@ -78,7 +78,7 @@
   }
  }
  async function refresh(updateList=true){
-  if(!status.available||status.busy)return;
+  if(!status.available||status.busy||status.formOpen||status.editing)return;
   if(updateList){
    try{
     const data=await getJson("./api/accounts");
@@ -173,5 +173,5 @@
  window.fxmr4Bybit={renderPanel,check,refresh,disconnect,rename,isEditing:()=>status.formOpen,status:()=>({...status})};
  check();
  setInterval(()=>{if(!document.hidden&&status.available&&status.accounts.length)refresh()},60000);
- document.addEventListener("visibilitychange",()=>{if(!document.hidden&&status.available)check()});
+ document.addEventListener("visibilitychange",()=>{if(!document.hidden&&status.available&&!status.formOpen&&!status.editing)check()});
 })();
