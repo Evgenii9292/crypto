@@ -35,7 +35,7 @@
       <div class="sideFooter"><span class="status-dot"></span>Котировки · раз в 60 секунд<div class="tiny">Операции сохраняются в браузере</div><button class="btn navConfig" type="button" data-action="goConnections">Подключения</button></div>
     </aside>
     <section class="workspace">
-      <div class="workspaceHead"><div><div class="workspaceEyebrow">FXMR4 / Личный кабинет</div><h1 id="pageTitle">Обзор</h1></div><div class="headActions"><button class="btn" type="button" data-action="goConnections">Подключения</button><span class="pill">USD</span></div></div>
+      <div class="workspaceHead"><div><div class="workspaceEyebrow">FXMR4 / Личный кабинет</div><h1 id="pageTitle">Обзор</h1></div><div class="headActions"><span class="pill">USD</span></div></div>
       <div id="pnlRibbon" class="pnlRibbon"></div>
       <div id="content" class="pane" role="tabpanel" aria-live="polite"><div class="skeleton">Загружаю портфель…</div></div>
       <div id="message" aria-live="polite"></div>
@@ -94,8 +94,8 @@ function spotDistribution(){
 function overviewSource(ex){
   const open=!!s.openedExchanges[ex.id],isBybit=ex.id==='bybit',count=ex.accounts.length+(isBybit?1:0);
   const spot=isBybit?`<div class="sourceSub"><button type="button" class="sourceSubHeader" data-action="toggleAccount" data-id="bybit:spot-fxmr4"><span><strong>fxmr4</strong><span class="tiny">Spot · ручной учёт</span></span><span class="sourceSubRight">${dollars(sums().total)} <span class="chev ${s.openedAccounts['bybit:spot-fxmr4']?'rotated':''}">⌄</span></span></button>${s.openedAccounts['bybit:spot-fxmr4']?`<div class="sourcePositions">${[['BTC',coin('BTC')],['ETH',coin('ETH')]].map(([sym,x])=>`<div class="sourcePosition"><strong>${sym}</strong><span>${dollars(x.value)}</span><span class="${cls(x.profit)}">${signed(x.profit)}</span></div>`).join('')}</div>`:''}</div>`:'';
-  const accounts=ex.accounts.map(ac=>{const id=ex.id+':'+ac.id;return `<div class="sourceSub"><button type="button" class="sourceSubHeader" data-action="toggleAccount" data-id="${escape(id)}"><span><strong>${escape(ac.name)}</strong><span class="tiny">Futures · ещё не подключён</span></span><span class="sourceSubRight">— <span class="chev ${s.openedAccounts[id]?'rotated':''}">⌄</span></span></button>${s.openedAccounts[id]?'<div class="sourceEmpty">Нет загруженных фьючерсных позиций.</div>':''}</div>`}).join('');
-  return `<div class="sourceCard"><button type="button" class="sourceHeader" data-action="toggleExchange" data-id="${escape(ex.id)}"><div class="sourceLogo">${escape(ex.name.slice(0,1))}</div><span class="sourceName"><strong>${escape(ex.name)}</strong><span class="tiny">${count} аккаунтов · ${ex.connected?'API подключён':'без API'}</span></span><span class="sourceHeaderRight">${isBybit?dollars(sums().total)+' · Spot':'—'} <span class="chev ${open?'rotated':''}">⌄</span></span></button>${open?`<div class="sourceChildren">${spot}${accounts||''}${!count?'<div class="sourceEmpty">Аккаунтов пока нет.</div>':''}</div>`:''}</div>`;
+  const accounts=ex.accounts.map(ac=>{const id=ex.id+':'+ac.id,pp=s.futuresPositions.filter(p=>p.exchangeId===ex.id&&p.accountId===ac.id);return `<div class="sourceSub"><button type="button" class="sourceSubHeader" data-action="toggleAccount" data-id="${escape(id)}"><span><strong>${escape(ac.name)}</strong><span class="tiny">Futures · ${ex.connected?'API Read-Only':'ещё не подключён'}</span></span><span class="sourceSubRight">${ac.balance!=null?dollars(ac.balance)+' · UTA':'—'} <span class="chev ${s.openedAccounts[id]?'rotated':''}">⌄</span></span></button>${s.openedAccounts[id]?(pp.length?pp.map(futurePositionLine).join(''):'<div class="sourceEmpty">Открытых позиций нет или данные не получены.</div>'):''}</div>`}).join('');
+  return `<div class="sourceCard"><button type="button" class="sourceHeader" data-action="toggleExchange" data-id="${escape(ex.id)}"><div class="sourceLogo">${escape(ex.name.slice(0,1))}</div><span class="sourceName"><strong>${escape(ex.name)}</strong><span class="tiny">${count} аккаунтов · ${ex.connected?'API подключён':'без API'}</span></span><span class="sourceHeaderRight">${isBybit&&s.backendConnection.connected&&s.bybitSnapshot?.totals?.equity!=null?dollars(s.bybitSnapshot.totals.equity)+' · UTA':isBybit?dollars(sums().total)+' · Spot':'—'} <span class="chev ${open?'rotated':''}">⌄</span></span></button>${open?`<div class="sourceChildren">${spot}${accounts||''}${!count?'<div class="sourceEmpty">Аккаунтов пока нет.</div>':''}</div>`:''}</div>`;
 }
 function overview(){
   const a=sums();
@@ -144,7 +144,8 @@ function futuresSorted(){
  return [...s.futuresPositions].filter(p=>p&&p.symbol&&Number.isFinite(Number(p.size))).sort((a,b)=>s.futureSort==='symbol'?String(a.symbol).localeCompare(String(b.symbol)):s.futureSort==='size'?Number(b.size)-Number(a.size):Number(b.pnl||0)-Number(a.pnl||0));
 }
 function futurePositionLine(p){
- return `<div class="futurePosition"><span><strong>${escape(p.symbol)}</strong><span class="tiny">${escape(p.side||'')} ${p.leverage?escape(p.leverage+'×'):''}</span></span><span class="right"><strong>${dollars(p.size)}</strong><span class="tiny">Размер</span></span><span class="right ${cls(Number(p.pnl||0))}">${signed(Number(p.pnl||0))}<span class="tiny">PNL</span></span></div>`;
+ const extra=[p.entryPrice!=null?'Вход '+dollars(p.entryPrice):null,p.markPrice!=null?'Марк '+dollars(p.markPrice):null,p.liqPrice!=null&&p.liqPrice>0?'Ликв. '+dollars(p.liqPrice):null].filter(Boolean).join(' · ');
+ return `<div class="futurePosition"><span><strong>${escape(p.symbol)}</strong><span class="tiny">${escape(p.side||'')} ${p.leverage?escape(p.leverage+'×'):''}</span><span class="tiny">${extra||'—'}</span></span><span class="right"><strong>${dollars(p.size)}</strong><span class="tiny">Объём · USD</span></span><span class="right ${cls(Number(p.pnl||0))}">${signed(Number(p.pnl||0))}<span class="tiny">Плавающий PNL</span></span></div>`;
 }
 function futureExchangeCard(ex){
  const opened=!!s.openedExchanges[ex.id],positions=futuresSorted().filter(p=>p.exchangeId===ex.id);
@@ -168,7 +169,7 @@ function futuresForm(){
 }
 function futures(){
  const body=s.futureMode==='exchange'?s.sources.map(futureExchangeCard).join(''):s.futureMode==='account'?futuresByAccount():futuresSorted().length?futuresSorted().map(futurePositionLine).join(''):'<div class="card emptyState"><div class="sectitle">Нет загруженных позиций</div><p>После подключения появятся открытые сделки со всех бирж. Сортировка начнёт работать на полученных позициях.</p></div>';
- return `<div class="hrow"><div><div class="sectitle">Futures · Все биржи</div><div class="tiny">Баланс и позиции по биржам и субаккаунтам</div></div><button class="btn" data-action="goConnections" type="button">${icon('shield')} Подключения</button></div>
+ return `<div class="hrow"><div><div class="sectitle">Futures · Все биржи</div><div class="tiny">Баланс и позиции по биржам и субаккаунтам</div></div><span class="pill">${s.backendConnection.connected?"Bybit · Read-Only":"API не подключён"}</span></div>
  <div class="futureMetrics">${(()=>{
  const snap=s.bybitSnapshot?.totals;
  const ready=!!s.backendConnection.connected && !!snap;
@@ -232,9 +233,9 @@ function onSnapshot(data){
    exchangeId:'bybit',accountId,
    symbol:String(p.symbol).slice(0,30),side:String(p.side||'').slice(0,12),
    quantity:Number(p.quantity)||0,size:Number(p.size)||0,
-   entryPrice:Number.isFinite(Number(p.entryPrice))?Number(p.entryPrice):null,
-   markPrice:Number.isFinite(Number(p.markPrice))?Number(p.markPrice):null,
-   liqPrice:Number.isFinite(Number(p.liqPrice))?Number(p.liqPrice):null,
+   entryPrice:p.entryPrice!=null&&Number.isFinite(Number(p.entryPrice))?Number(p.entryPrice):null,
+   markPrice:p.markPrice!=null&&Number.isFinite(Number(p.markPrice))?Number(p.markPrice):null,
+   liqPrice:p.liqPrice!=null&&Number.isFinite(Number(p.liqPrice))?Number(p.liqPrice):null,
    leverage:Number(p.leverage)||null,
    pnl:Number(p.pnl)||0
   }))
@@ -260,7 +261,7 @@ window.fxmr4App={onBackendStatus,onSnapshot};
     }catch(e){console.warn('Локальное сохранение:',e)}
   }
   function saveLocal(){
-    try{localStorage.setItem(storageKey,JSON.stringify({trades:s.trades,quotes:s.quotes,snapshots:s.snapshots,sources:s.sources}))}catch(e){s.flash='Не удалось сохранить в браузере. Проверь режим приватности.';console.warn(e)}
+    try{localStorage.setItem(storageKey,JSON.stringify({trades:s.trades,quotes:s.quotes,snapshots:s.snapshots,sources:s.sources.map(ex=>({id:ex.id,name:ex.name,accounts:ex.accounts.filter(ac=>ac.id!=='bybit-subaccount').map(ac=>({id:ac.id,name:ac.name}))}))}))}catch(e){s.flash='Не удалось сохранить в браузере. Проверь режим приватности.';console.warn(e)}
   }
   function chart(){
     const windows={'24h':86400000,'7d':604800000,'30d':2592000000,'90d':7776000000};
