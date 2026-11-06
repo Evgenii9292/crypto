@@ -602,3 +602,42 @@
  .spotTop .spotHoldingsCard,.spotTop .spotReserveCard{padding:17px;min-height:140px}
  .spotTop .spotCardBottom{padding-top:18px}
 }
+
+/* Futures position table: a meaningful age column instead of a volume bar. */
+.futurePosition{grid-template-columns:minmax(0,1.6fr) minmax(86px,.62fr) minmax(92px,.85fr) minmax(92px,.85fr);align-items:center;gap:12px}
+.futurePosition .posDuration{color:var(--sub);font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.futurePosition .futureCoin{min-width:0}
+.futurePosition .futureCoin strong{overflow-wrap:anywhere}
+@media(max-width:600px){
+ .futurePosition{grid-template-columns:minmax(76px,1.2fr) minmax(55px,.7fr) minmax(68px,.8fr) minmax(68px,.85fr);gap:7px}
+ .futurePosition .posDuration{font-size:10px}
+ .futurePosition .right strong{font-size:11px}
+ .futurePosition.futureHead{font-size:9px}
+ .futureCoin .posBadges{gap:2px}
+ .futureCoin .posBadge{padding:1px 4px}
+}
+/* One prominent action: Add subaccount. Refresh is intentionally secondary. */
+.connectorTop{margin-bottom:12px}
+.bybitAccountsList{display:flex;flex-direction:column;gap:0}
+.bybitAccountRow{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 0;border-bottom:1px solid var(--border)}
+.bybitAccountMain{display:flex;align-items:flex-start;gap:11px;min-width:0;flex:1}
+.bybitAccountMain>.status-dot{flex:none;margin-top:6px}
+.bybitAccountMain>.status-dot.isError{background:var(--red)}
+.bybitAccountMeta{display:flex;flex-direction:column;gap:4px;min-width:0}
+.bybitAccountMeta strong{font-size:13px;font-weight:680;overflow-wrap:anywhere}
+.bybitAccountMeta small{font-size:11px;color:var(--sub)}
+.bybitAccountMeta .tiny{margin-top:2px}
+.bybitAccountMeta .bybitError{margin-top:3px;font-size:11px}
+.bybitAccountActions{display:flex;align-items:center;gap:6px}
+.bybitAccountActions .btn{height:30px;padding:0 9px;font-size:11px}
+.bybitConnectActions{margin-top:16px}
+.bybitConnectActions>.btn.primary{background:var(--text);color:var(--surface)}
+.bybitConnectActions>.btn:not(.primary){background:transparent}
+.bybitRenameForm{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.bybitRenameForm input{max-width:210px;min-width:110px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);padding:8px;font:inherit;font-size:12px}
+.bybitConnectForm{max-width:650px}
+.bybitConnectForm select{padding:10px;border:1px solid var(--border);border-radius:9px;background:var(--surface);color:var(--text);width:100%}
+@media(max-width:600px){
+ .bybitAccountRow{align-items:flex-start;flex-direction:column}
+ .bybitAccountActions{padding-left:18px}
+}
