@@ -5,6 +5,9 @@ const STORE='fxmr4_spot_levels_v1',symbols=['BTC','ETH'],periods={'7d':{interval
 const HOSTS=['https://api.bybit.id','https://api.bybit.com','https://api.bytick.com'];
 const defaults={BTC:[{id:'btc-75000',price:75000,amount:null},{id:'btc-70000',price:70000,amount:null}],ETH:[]};
 let config={levels:structuredLevels(defaults),alertsEnabled:false},period='30d',edit=null,draft=null,mount=null,cache={},fetching={},lastReaching={},lastSource={},message='',lastState=null;
+ const PANEL_KEY='fxmr4_buyplan_expanded_v1';
+ let planExpanded=false;
+ try{planExpanded=localStorage.getItem(PANEL_KEY)==='1'}catch(e){}
 const money=(v,dec=0)=>'$'+Number(v||0).toLocaleString('en-US',{minimumFractionDigits:dec,maximumFractionDigits:dec});
 const escape=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]));
 const fmtPct=n=>(n<0?'−':n>0?'+':'')+Math.abs(n).toFixed(2)+'%';
@@ -71,9 +74,13 @@ function render(){
  const area=document.getElementById('strategyMount');
  if(!area||!st||st.tab!=='positions'){mount=null;return}
  mount=area;notifyCrossings(st);
- const controls='<div class="sl-top"><div><div class="sl-title">План покупок</div></div><div class="sl-controls"><div class="sl-period">'+Object.keys(periods).map(p=>'<button type="button" class="'+(p===period?'selected':'')+'" data-level-action="period" data-period="'+p+'">'+(p==='all'?'Вся':p==='1y'?'1г':p)+'</button>').join('')+'</div><button class="sl-button" data-level-action="alerts" type="button">'+(config.alertsEnabled?'Уведомления включены':'Уведомлять')+'</button></div></div>';
- const note='';
- area.innerHTML='<div class="sl-shell">'+controls+(message?'<div class="sl-message">'+escape(message)+'</div>':'')+'<div class="sl-grid-cards">'+symbols.map(sym=>card(sym,st)).join('')+'</div>'+note+'</div>';
+ const heading='<button type="button" class="sl-planToggle" data-level-action="togglePlan" aria-expanded="'+String(planExpanded)+'" aria-controls="sl-planBody"><span class="sl-title">План покупок</span><span class="sl-planInfo">BTC · '+config.levels.BTC.length+' &nbsp; ETH · '+config.levels.ETH.length+'</span><span class="sl-planChevron '+(planExpanded?'isOpen':'')+'" aria-hidden="true">⌄</span></button>';
+ if(!planExpanded){
+  area.innerHTML='<div class="sl-shell sl-planShell">'+heading+'</div>';
+  return;
+ }
+ const controls='<div class="sl-top"><div class="sl-controls"><div class="sl-period">'+Object.keys(periods).map(p=>'<button type="button" class="'+(p===period?'selected':'')+'" data-level-action="period" data-period="'+p+'">'+(p==='all'?'Вся':p==='1y'?'1г':p)+'</button>').join('')+'</div><button class="sl-button" data-level-action="alerts" type="button">'+(config.alertsEnabled?'Уведомления включены':'Уведомлять')+'</button></div></div>';
+ area.innerHTML='<div class="sl-shell sl-planShell isOpen">'+heading+'<div id="sl-planBody" class="sl-planBody">'+controls+(message?'<div class="sl-message">'+escape(message)+'</div>':'')+'<div class="sl-grid-cards">'+symbols.map(sym=>card(sym,st)).join('')+'</div></div></div>';
  refreshHistories();
 }
 async function request(url){
@@ -165,6 +172,11 @@ function eventClick(e){
  const b=e.target.closest?.('[data-level-action]');
  if(!b)return;
  const action=b.dataset.levelAction;
+  if(action==='togglePlan'){
+   planExpanded=!planExpanded;
+   try{localStorage.setItem(PANEL_KEY,planExpanded?'1':'0')}catch(e){}
+   render();return;
+  }
  if(action==='add')return startEdit(b.dataset.coin);
  if(action==='edit')return startEdit(b.dataset.coin,Number(b.dataset.index));
  if(action==='cancel'){edit=null;draft=null;message='';render();return}
