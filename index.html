@@ -455,7 +455,21 @@ function onSnapshot(data){
  s.backendConnection={available:true,configured:true,connected:true,error:''};
  recordPortfolioSnapshot();saveLocal(false);render();
 }
-window.fxmr4App={onBackendStatus,onSnapshot,onDisconnected};
+function applyCloudState(){
+ // Only user-authored state comes from VPS. Keep live Bybit account and
+ // positions in memory while refreshing Spot purchases and account labels.
+ const bybit=s.sources.find(x=>x.id==='bybit');
+ const linked=bybit?.accounts?.find(x=>x.id==='bybit-subaccount');
+ loadLocal();
+ if(linked&&s.backendConnection.connected){
+  let exchange=s.sources.find(x=>x.id==='bybit');
+  if(!exchange){exchange={id:'bybit',name:'Bybit',connected:true,accounts:[]};s.sources.unshift(exchange)}
+  exchange.connected=true;
+  if(!exchange.accounts.some(x=>x.id==='bybit-subaccount'))exchange.accounts.push(linked);
+ }
+ render();
+}
+window.fxmr4App={onBackendStatus,onSnapshot,onDisconnected,applyCloudState};
 
   const storageKey='fxmr4_portfolio_public_preview_v1';
   function loadLocal(){
