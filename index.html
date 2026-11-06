@@ -178,18 +178,23 @@ function futurePositionLine(p){
  const extra=[p.entryPrice!=null?'Вход '+dollars(p.entryPrice):null,p.markPrice!=null?'Марк '+dollars(p.markPrice):null,p.liqPrice!=null&&p.liqPrice>0?'Ликв. '+dollars(p.liqPrice):null].filter(Boolean).join(' · ');
  return `<div class="futurePosition"><span><strong>${escape(p.symbol)}</strong><span class="tiny">${escape(p.side||'')} ${p.leverage?escape(p.leverage+'×'):''}</span><span class="tiny">${extra||'—'}</span></span><span class="right"><strong>${dollars(p.size)}</strong><span class="tiny">Объём · USD</span></span><span class="right ${p.pnl==null?'neutral':cls(Number(p.pnl))}">${p.pnl==null?'—':signed(Number(p.pnl))}<span class="tiny">Плавающий PNL</span></span></div>`;
 }
+function futureAccountRow(ex,ac){
+ const id=ex.id+':'+ac.id,pp=futuresSorted().filter(p=>p.exchangeId===ex.id&&p.accountId===ac.id);
+ const linked=ex.id==='bybit'&&ac.id==='bybit-subaccount'&&s.backendConnection.connected;
+ const current=linked&&pp.every(p=>p.pnl!=null)?pp.reduce((v,p)=>v+Number(p.pnl),0):null;
+ const pnl=`<span class="accountMetrics"><span><small>Сейчас</small><b class="${current==null?'neutral':cls(current)}">${current==null?'—':signed(current)}</b></span><span><small>Всё время</small><b class="neutral" title="Для точного расчёта нужна история закрытых позиций">—</b></span></span>`;
+ return `<div class="sourceSub"><div class="accountRow"><button type="button" class="sourceSubHeader" data-action="toggleAccount" data-id="${escape(id)}"><span class="accountIdentity"><strong>${escape(ac.name)}</strong><span class="accountTag">Фьючерсы</span></span><span class="sourceSubRight">${pnl}<span class="chev ${s.openedAccounts[id]?'rotated':''}">⌄</span></span></button><button class="accountManage" type="button" data-action="manageAccount" data-id="${escape(id)}" aria-label="Настройки ${escape(ac.name)}">${icon('settings')}</button></div>${s.openedAccounts[id]?(pp.length?pp.map(futurePositionLine).join(''):'<div class="sourceEmpty">Нет открытых позиций или API не подключён.</div>'):''}</div>`;
+}
 function futureExchangeCard(ex){
- const opened=!!s.openedExchanges[ex.id],positions=futuresSorted().filter(p=>p.exchangeId===ex.id);
- const accounts=ex.accounts.map(ac=>{const id=ex.id+':'+ac.id,open=!!s.openedAccounts[id],pp=positions.filter(p=>p.accountId===ac.id);
-  return `<div class="sourceSub"><button type="button" class="sourceSubHeader" data-action="toggleAccount" data-id="${escape(id)}"><span><strong>${escape(ac.name)}</strong><span class="tiny">${pp.length?pp.length+' позиций':'Без данных API'}</span></span><span class="sourceSubRight">${ac.balance==null?'—':dollars(ac.balance)} <span class="chev ${open?'rotated':''}">⌄</span></span></button>${open?(pp.length?pp.map(futurePositionLine).join(''):'<div class="sourceEmpty">Позиции пока не загружены. Нужен API.</div>'):''}</div>`}).join('');
- return `<section class="sourceCard"><button type="button" class="sourceHeader" data-action="toggleExchange" data-id="${escape(ex.id)}"><span class="sourceLogo">${escape(ex.name.slice(0,1))}</span><span class="sourceName"><strong>${escape(ex.name)}</strong><span class="tiny">${ex.accounts.length} субаккаунтов · ${ex.connected?'Подключено':'Не подключено'}</span></span><span class="sourceHeaderRight">— <span class="chev ${opened?'rotated':''}">⌄</span></span></button>${opened?`<div class="sourceChildren">${accounts||'<div class="sourceEmpty">Субаккаунтов пока нет.</div>'}<div class="sourceAction"><button class="btn" type="button" data-action="addAccount" data-id="${escape(ex.id)}">${icon('plus')} Субаккаунт</button></div></div>`:''}</section>`;
+ const opened=!!s.openedExchanges[ex.id],balance=ex.id==='bybit'&&s.backendConnection.connected&&s.bybitSnapshot?.totals?.equity!=null?dollars(s.bybitSnapshot.totals.equity):'—';
+ return `<section class="sourceCard"><button class="sourceHeader" type="button" data-action="toggleExchange" data-id="${escape(ex.id)}"><span class="sourceLogo">${escape(ex.name.slice(0,1))}</span><span class="sourceName"><strong>${escape(ex.name)}</strong><span class="tiny">${ex.accounts.length} субаккаунтов · ${ex.connected?'Подключено':'Не подключено'}</span></span><span class="sourceHeaderRight">${balance} <span class="chev ${opened?'rotated':''}">⌄</span></span></button>${opened?`<div class="sourceChildren">${ex.accounts.length?ex.accounts.map(ac=>futureAccountRow(ex,ac)).join(''):'<div class="sourceEmpty">Субаккаунты пока не добавлены.</div>'}<div class="sourceAction"><button class="btn" type="button" data-action="addAccount" data-id="${escape(ex.id)}">${icon('plus')} Субаккаунт</button></div></div>`:''}</section>`;
 }
 function futuresByAccount(){
  const acc=s.sources.flatMap(ex=>ex.accounts.map(ac=>({ex,ac})));
- if(!acc.length)return '<div class="card emptyState"><div class="sectitle">Субаккаунты ещё не добавлены</div><p>В режиме «По биржам» раскрой биржу и добавь субаккаунт.</p></div>';
- return acc.map(({ex,ac})=>{const id=ex.id+':'+ac.id,open=!!s.openedAccounts[id],pos=futuresSorted().filter(p=>p.exchangeId===ex.id&&p.accountId===ac.id);
- return `<section class="sourceCard"><button type="button" class="sourceHeader" data-action="toggleAccount" data-id="${escape(id)}"><span class="sourceLogo">${escape(ex.name.slice(0,1))}</span><span class="sourceName"><strong>${escape(ac.name)}</strong><span class="tiny">${escape(ex.name)} · Futures</span></span><span class="sourceHeaderRight">— <span class="chev ${open?'rotated':''}">⌄</span></span></button>${open?(pos.length?pos.map(futurePositionLine).join(''):'<div class="sourceEmpty">Позиции не загружены.</div>'):''}</section>`}).join('');
+ if(!acc.length)return '<div class="card emptyState"><div class="sectitle">Субаккаунты ещё не добавлены</div><p>Добавь их в настройках или подключи Bybit.</p></div>';
+ return acc.map(({ex,ac})=>`<section class="sourceCard">${futureAccountRow(ex,ac)}</section>`).join('');
 }
+
 function futuresForm(){
  if(!s.futureForm)return '';
  const addExchange=s.futureForm==='exchange';
