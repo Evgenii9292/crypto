@@ -306,7 +306,7 @@ function onSnapshot(data){
  );
  s.bybitSnapshot={totals:data.totals,account:data.account,updatedAt:data.updatedAt,warning:data.balanceNote};
  s.backendConnection={available:true,configured:true,connected:true,error:''};
- recordPortfolioSnapshot();saveLocal();render();
+ recordPortfolioSnapshot();saveLocal(false);render();
 }
 window.fxmr4App={onBackendStatus,onSnapshot,onDisconnected};
 
@@ -326,7 +326,7 @@ window.fxmr4App={onBackendStatus,onSnapshot,onDisconnected};
       if(Array.isArray(saved.sources)){const sources=saved.sources.filter(x=>x&&typeof x.id==='string'&&typeof x.name==='string').slice(0,25).map(x=>({id:x.id.slice(0,60),name:x.name.slice(0,60),connected:false,accounts:Array.isArray(x.accounts)?x.accounts.filter(y=>y&&typeof y.id==='string'&&typeof y.name==='string').slice(0,60).map(y=>({id:y.id.slice(0,60),name:y.name.slice(0,40),balance:null})):[]}));if(!sources.some(x=>x.id==='bybit'))sources.unshift({id:'bybit',name:'Bybit',connected:false,accounts:[]});s.sources=sources;}
     }catch(e){console.warn('Локальное сохранение:',e)}
   }
-  function saveLocal(){
+  function saveLocal(syncCloud=true){
     try{
       const payload={
         capital:C,
@@ -340,7 +340,7 @@ window.fxmr4App={onBackendStatus,onSnapshot,onDisconnected};
         }))
       };
       localStorage.setItem(storageKey,JSON.stringify(payload));
-      window.fxmr4Cloud?.schedule?.();
+      if(syncCloud)window.fxmr4Cloud?.schedule?.();
     }catch(e){
       s.flash='Не удалось сохранить портфель.';
       console.warn(e);
@@ -356,7 +356,7 @@ window.fxmr4App={onBackendStatus,onSnapshot,onDisconnected};
     const p={time:Date.now(),pnl:sums().profit};
     const last=s.snapshots[s.snapshots.length-1];
     if(last&&p.time-last.time<1500&&Math.abs(last.pnl-p.pnl)<0.000001)return;
-    s.snapshots.push(p);s.snapshots=s.snapshots.slice(-1500);recordPortfolioSnapshot();saveLocal();chart();
+    s.snapshots.push(p);s.snapshots=s.snapshots.slice(-1500);recordPortfolioSnapshot();saveLocal(false);chart();
   }
   function recordPortfolioSnapshot(){
     const summary=portfolioSummary();
