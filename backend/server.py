@@ -110,6 +110,8 @@ def collect_positions(key, secret, settle_coin):
                 "liqPrice": _num(p.get("liqPrice")),
                 "leverage": _num(p.get("leverage")),
                 "pnl": _num(p.get("unrealisedPnl")),
+                "initialMargin": _num(p.get("positionIM")),
+                "cumulativeRealisedPnl": _num(p.get("cumRealisedPnl")),
                 "takeProfit": _num(p.get("takeProfit")),
                 "stopLoss": _num(p.get("stopLoss")),
                 "accountId": "bybit-subaccount",
@@ -149,6 +151,7 @@ def snapshot():
         "walletBalance": _num(account.get("totalWalletBalance")),
         "availableBalance": _num(account.get("totalAvailableBalance")),
         "perpUPL": _num(account.get("totalPerpUPL")),
+        "accountInitialMargin": _num(account.get("totalInitialMargin")),
         "positionCount": len(pos),
     }
     data = {
@@ -258,11 +261,20 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if not self._require_login():
             return
-        if self.path != "/api/connect":
+        if self.path not in ("/api/connect", "/api/disconnect"):
             self._json({"error": "Not found"}, 404)
             return
         if not self._same_origin_action():
             self._json({"error": "Invalid request origin"}, 403)
+            return
+        if self.path == "/api/disconnect":
+            with LOCK:
+                if os.environ.get("BYBIT_SUBACCOUNT_KEY") or os.environ.get("BYBIT_SUBACCOUNT_SECRET"):
+                    self._json({"error": "Ключ задан в конфигурации VPS. Удали его там и перезапусти службу."}, 409)
+                    return
+                EPHEMERAL.update({"key": None, "secret": None, "label": "Subaccount"})
+                CACHE.update({"at": 0.0, "data": None})
+            self._json({"connected": False, "disconnected": True})
             return
         # Secrets must NEVER traverse the internet in cleartext.
         local = self.headers.get("Host", "").split(":")[0] in ("127.0.0.1", "localhost")
