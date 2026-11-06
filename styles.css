@@ -294,3 +294,63 @@
 @media(prefers-reduced-motion:reduce){.chev::before{transition:none}}
 
 @media(max-width:600px){.capitalSummary{grid-template-columns:repeat(2,minmax(0,1fr));row-gap:15px}}
+
+/* FXMR4 v1.6 · simpler balances, less chrome, Spot accounts */
+.header{min-width:0}
+.header .logoArea{min-width:0}
+.accountTotalBlock{min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:2px}
+.accountTotalLabel{font-size:12px;font-weight:660;color:var(--sub);line-height:1.35}
+.accountTotalValue{font-size:21px;font-weight:730;letter-spacing:-.55px;color:var(--text);font-variant-numeric:tabular-nums;white-space:nowrap;line-height:1.2}
+.accountTotalDetail{font-size:10px;color:var(--muted);line-height:1.35}
+.brandBadge{display:inline-flex;align-items:center;height:23px;padding:0 8px;border:1px solid var(--border);border-radius:7px;background:var(--surface2);font-size:10px;font-weight:720;letter-spacing:.28px;color:var(--sub)}
+.workspaceTitleLine{display:flex;align-items:center;gap:12px;min-width:0}
+.workspaceHead{min-height:36px}
+.connectionStatus{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--sub)}
+.connectionStatus .status-dot{margin:0}
+.connectionStatus .status-dot.isDisconnected{background:var(--muted)}
+.spotTop{grid-template-columns:minmax(0,1.3fr) minmax(0,.9fr);gap:12px;align-items:stretch}
+.spotHoldingsCard,.spotReserveCard{min-width:0;padding:19px 21px;display:flex;flex-direction:column;justify-content:center;min-height:131px}
+.spotHoldingsCard .eyebrow,.spotReserveCard .eyebrow{margin:0 0 7px}
+.spotHeroBottom{display:flex;align-items:baseline;justify-content:space-between;gap:7px 16px;flex-wrap:wrap;margin-top:6px}
+.spotHeroBottom .metric{font-size:13px}
+.spotHeroBottom .tiny{font-size:11px}
+.spotReserveTop{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.spotReserveCard .total{font-size:30px;letter-spacing:-.7px}
+.reservePercent{font-size:11px;color:var(--green);font-weight:700;font-variant-numeric:tabular-nums;border-radius:7px;padding:3px 6px;background:color-mix(in srgb,var(--green) 7%,var(--surface))}
+.spotReserveFoot{display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px 9px;color:var(--muted);font-size:11px;margin-top:9px}
+.reserveProgress{height:5px;background:var(--surface3);border-radius:50px;overflow:hidden;margin-top:10px}
+.reserveProgress span{display:block;height:100%;background:var(--eth);border-radius:50px}
+.spotAccountsBlock{margin-top:20px}
+.spotAccountsBody{border:1px solid var(--border);border-top:0;border-radius:0 0 12px 12px;padding:3px 15px 12px}
+.spotAccount{padding:12px 1px;border-bottom:1px solid var(--border)}
+.spotAccountHead{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.spotAccountHead>div:first-child{display:flex;align-items:center;gap:8px;min-width:0}
+.spotAccountHead strong{font-size:13px;font-weight:670;overflow:hidden;text-overflow:ellipsis}
+.spotAccountTotals{display:flex;flex-direction:column;align-items:flex-end;gap:2px;font-variant-numeric:tabular-nums}
+.spotAccountTotals strong{font-size:14px}
+.spotAccountTotals span{font-size:11px}
+.spotAccountCoins{display:flex;align-items:center;gap:14px;margin-top:11px}
+.spotAccountCoins>div{display:flex;align-items:center;gap:6px;color:var(--sub);font-size:11px}
+.spotAccountCoins strong{font-weight:660;color:var(--text);font-variant-numeric:tabular-nums}
+.spotAccountHint{font-size:10px;color:var(--muted);line-height:1.5;margin-top:10px}
+@media(min-width:961px){
+  .header{position:relative}
+  .header .logoArea{align-items:flex-start}
+  .header .appicon{width:37px;height:37px;flex:none}
+  .header .accountTotalValue{font-size:20px}
+  .header .accountTotalDetail{font-size:10px}
+}
+@media(max-width:960px){
+  .header{flex-direction:row;align-items:center}
+  .header .accountTotalValue{font-size:21px}
+  .header .mobileSettings{margin-left:auto;flex:none}
+  .workspaceTitleLine{gap:10px}
+  .spotTop{grid-template-columns:minmax(0,1.3fr) minmax(0,.9fr)}
+}
+@media(max-width:600px){
+  .spotTop{grid-template-columns:1fr;gap:10px}
+  .spotHoldingsCard,.spotReserveCard{min-height:0;padding:16px}
+  .spotReserveCard .total{font-size:30px}
+  .spotHeroBottom{justify-content:flex-start}
+  .workspaceTitleLine{gap:8px}
+}
