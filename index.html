@@ -135,7 +135,7 @@
     const windows={'24h':86400000,'7d':604800000,'30d':2592000000,'90d':7776000000};
     const from=Date.now()-(windows[s.period]||604800000);
     s.points=s.snapshots.filter(p=>p.time>=from);
-    if(s.tab==='overview')render();
+    if(s.tab==='overview'&&!s.showPrices&&!s.form)render();
   }
   function recordSnapshot(){
     const p={time:Date.now(),pnl:sums().profit};
