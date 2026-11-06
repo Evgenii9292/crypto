@@ -12,7 +12,7 @@ function structuredLevels(o){const out={BTC:[],ETH:[]};for(const sym of symbols)
 function load(){
  try{const raw=localStorage.getItem(STORE);if(raw){const o=JSON.parse(raw);config.levels=structuredLevels(o.levels);config.alertsEnabled=!!o.alertsEnabled;}}catch(e){console.warn('Strategy read error',e)}
 }
-function persist(){try{localStorage.setItem(STORE,JSON.stringify(config));}catch(e){message='Не удалось сохранить уровни в браузере.';console.warn(e)}}
+function persist(){try{localStorage.setItem(STORE,JSON.stringify(config));window.fxmr4Cloud?.schedule?.();}catch(e){message='Не удалось сохранить уровни.';console.warn(e)}}
 function state(){
  const v=typeof window.fxmr4GetState==='function'?window.fxmr4GetState():null;
  return v&&typeof v==='object'?v:null;
