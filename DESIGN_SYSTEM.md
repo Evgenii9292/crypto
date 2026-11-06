@@ -1,34 +1,41 @@
-# FXMR4 · Design system v1.1
+# FXMR4 · Design system v1.2
 
-This document fixes the visual baseline for the portfolio web app. The canonical stylesheet is [styles.css](./styles.css). Keep these tokens consistent when adding screens.
+**Основной файл стилей: [styles.css](./styles.css)**. Текущие цвета, системный шрифт, пропорции карточек и иконки остаются базой для всех новых экранов.
 
-## Foundation
-- Typography: native `-apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, "Segoe UI", sans-serif`, 14px base and 1.45 line height.
-- Light background `#fafbfc`, white cards `#ffffff`, secondary surface `#f5f6f8`, subtle borders `#e6e8ec`.
-- Primary text `#22262e`; subdued `#666f7b`; muted `#858d99`.
-- Positive PNL `#168c58`; negative PNL `#dc4d52`.
-- Asset accents: BTC `#f2a23a`, ETH `#7c8de8`, reserved capital `#8993a3`.
-- Cards: 16px radius; main app shell: 22px radius; buttons: 9px radius.
-- Spacing is intentionally compact, with 10–20px card/grid gaps; retain original icon weight (1.8).
+## Визуальная база (без изменений)
 
-## Responsive behavior
-- Desktop >960px: 238px persistent left sidebar, 2-column overview and 2-column positions if there is room.
-- Mobile/tablet: compact horizontal 5-tab navigation, original small-card behavior, no sidebar column.
-- The theme honors system dark mode and reduced-motion preferences.
-- Always distinguish a missing account connection from an actual zero balance.
+- Системный шрифт: `-apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, "Segoe UI", sans-serif`.
+- Основные цвета: фон `#fafbfc`, карточки `#ffffff`, вторичная поверхность `#f5f6f8`, обводка `#e6e8ec`.
+- Текст: `#22262e`, вспомогательный `#666f7b`, muted `#858d99`.
+- PNL: плюс `#168c58`, минус `#dc4d52`.
+- Монеты: BTC `#f2a23a`, ETH `#7c8de8`, резерв `#8993a3`.
+- Радиусы: карточки 16 px, оболочка 22 px, кнопки 9 px.
+- Отступы компактные, в основном 10–20 px. Линии иконок тонкие: 1.8.
 
-## Data semantics and security
-- `Overview / Spot / Purchases` show manually recorded assets, with gains calculated using saved entry costs.
-- `Trading / Futures / Bots` currently intentionally have no account data; placeholders are not balances.
-- Public spot price updates: on load, on demand, and every 60 seconds while the page is visible; fallback providers are labeled.
-- Entries and PNL observations currently live in the browser's local storage. They are not synced across devices.
-- Never commit or collect Bybit API secrets in GitHub Pages. Implement read-only authenticated access through a private backend first.
-- Public prices may differ from real executions; the first two purchases ($25 each) have provisional entry costs and dates until verified.
+## Навигация v1.2
 
-## Integration plan
-1. Private backend with HTTPS, authentication, encrypted key storage, Bybit read-only permissions and server IP allowlisting.
-2. Read wallet balances and spot transactions, reconstruct accurate cost basis and fees.
-3. Read futures positions, realized/unrealized PNL, then add bot integrations.
-4. Mark all data sources, update times and synchronization errors clearly in the UI.
+Главное левое меню на десктопе и горизонтальные вкладки на телефоне:
+1. **Обзор:** известный капитал и его PNL, отдельно Spot/Futures; PNL-график Spot; раскрывающиеся биржи, затем аккаунты, затем позиции.
+2. **Spot:** капитал в ручном учёте, список BTC/ETH, подробности монеты, резерв, рыночные котировки, встроенная история покупок с формой добавления/правки/удаления.
+3. **Futures:** депозит/PNL/позиции для всех бирж (пока не подключены), место под будущий график, режимы «Все позиции / По биржам / По субаккаунтам», сортировка, добавление названий бирж и субаккаунтов. Нет фиктивных сумм.
 
-No trading, order placement, transfers or withdrawals are part of this design.
+**Подключения** доступны отдельной кнопкой, не занимают основной раздел меню.
+
+## Ответственные расчёты и безопасное хранение
+
+- До подключения Futures **нельзя** показывать Spot как суммарный капитал всех бирж.
+- `—` означает отсутствие данных, а не $0 или нулевой PNL.
+- Первые покупки BTC и ETH по $25 имеют предварительные даты и цены до подтверждения.
+- Спотовый капитал $1000 является **выделенным бюджетом ручного учёта**, не подтверждённым биржевым балансом.
+- Ручные покупки, источники/названия субаккаунтов и история котировок сохраняются в **localStorage** одного браузера, через прежний ключ: `fxmr4_portfolio_public_preview_v1`.
+- Спотовые публичные цены загружаются при открытии, по кнопке и каждые 60 сек при видимой вкладке. Пробуются официальные Bybit ID, global, bytick; резервные публичные источники помечаются отдельно. В браузере возможны CORS/региональные блокировки.
+- PNL-график основан на реальных сохранённых наблюдениях. У осей подписаны USD и даты; вымышленных точек нет.
+
+## Следующий этап
+
+- Защищённый backend + HTTPS + авторизация, раздельные read-only ключи каждой биржи и субаккаунта, IP allowlist.
+- API кошельков/позиций и реальные прибыли, комиссии и активы. Нужна защита от двойного счёта при Unified Trading Account.
+- Отдельные PNL-истории Spot/Futures, фильтрация, загрузка Veles/ботов.
+- Только после отдельного согласования можно рассматривать торговые действия, с собственными правами и подтверждением. Нынешняя версия **не отправляет ордера и не управляет средствами**.
+
+Version: 1.2 · 6 Nov 2026.
