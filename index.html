@@ -424,6 +424,8 @@ function exchangeFooterStatus(){
  return connected.length?{text:'Биржи подключены',error:false,details:connected.map(ex=>ex.name).join(', ')}:{text:'Биржи не подключены',error:false,details:''};
 }
 function render(){
+ // Incoming quotes/PNL must not erase half-entered API credentials.
+ if(s.tab==='connections'&&window.fxmr4Bybit?.isEditing?.()&&document.querySelector('#bybitConnectForm'))return;
  const views={overview,positions,futures,connections};
  $('content').innerHTML=(views[s.tab]||overview)();
  $('content').classList.remove('pane');void $('content').offsetWidth;$('content').classList.add('pane');
