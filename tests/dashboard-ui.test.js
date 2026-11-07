@@ -474,3 +474,34 @@ test('observed equity never invents a jump when another account joins',()=>{
  assert.match(csv,/3300/);
  assert.doesNotMatch(markup,/data-futures-unit="pct" class="active"/);
 });
+
+test('history and daily bars can filter one Bybit subaccount without changing aggregate cards',()=>{
+ const {window,element}=mount([{id:'bybit',name:'Bybit',accounts:[]}]);
+ const v=window.fxmr4Inspect;
+ v.onAccounts([{id:'a',label:'Alpha'},{id:'b',label:'Beta'}]);
+ for(const [id,equity] of [['a',1000],['b',2000]]){
+  v.onSnapshot({account:{id,name:id},updatedAt:Date.now(),
+   totals:{equity,perpUPL:0,positionCount:0},positions:[]});
+ }
+ const end=v.s.monthlyAnchorMs,from=end-30*86400000;
+ const day=new Date(end-86400000).toISOString().slice(0,10);
+ const report=(amount,symbol)=>({
+  from,to:end,netPnl:amount,fees:0,funding:0,
+  points:[{t:from+86400000,netPnl:amount}],
+  days:[{date:day,netPnl:amount}],
+  symbols:[{symbol,netPnl:amount,operations:2}]});
+ v.s.monthlyPerformance.a=report(30,'ADAUSDT');
+ v.s.monthlyPerformance.b=report(-10,'BTCUSDT');
+ assert.equal(v.futuresLedgerData('30d','all').netPnl,20);
+ assert.equal(v.futuresLedgerData('30d','a').netPnl,30);
+ assert.equal(v.futuresLedgerData('30d','b').netPnl,-10);
+ assert.equal(v.futuresValue(30,'pct','a'),'+3.00%');
+ assert.equal(v.futuresValue(-10,'pct','b'),'−0.50%');
+ v.s.tab='futures';
+ v.s.futuresAccountFilter='a';v.s.futuresValueMode='pct';v.render();
+ const markup=element('content').innerHTML;
+ assert.match(markup,/30\.00%/,'the 30-day percent is 30 divided by Alpha balance 1000 = 3%; chart may show differently');
+ assert.match(markup,/ADAUSDT/);
+ assert.doesNotMatch(markup,/BTCUSDT/);
+ assert.match(markup,/data-futures-account/);
+});
