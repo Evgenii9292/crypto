@@ -43,7 +43,7 @@ function mount(sources){
   setTimeout:()=>1,clearTimeout(){},setInterval:()=>{},
   window:{},FormData:class{constructor(form){this.form=form}get(key){return this.form.fields?.[key]??null}}
  };
- vm.runInNewContext(script.replace('window.fxmr4GetState=()=>', 'window.fxmr4Inspect={s,onAccounts,onSnapshot,render,renderLive,reconcileLive,pnlWindow,monthlyFutures,monthlyFuturesSeries,positionAge};window.fxmr4GetState=()=>'),context,{filename:'index.html',timeout:3000});
+ vm.runInNewContext(script.replace('window.fxmr4GetState=()=>', 'window.fxmr4Inspect={s,onAccounts,onSnapshot,render,renderLive,reconcileLive,pnlWindow,monthlyFutures,monthlyFuturesSeries,positionAge,futuresLedgerData,activeFuturesReports,positionAccountEquity,loadFuturesPeriod};window.fxmr4GetState=()=>'),context,{filename:'index.html',timeout:3000});
  const click=action=>{
   const target={dataset:{action},closest(selector){return selector==='[data-action]'?this:null}};
   for(const listener of listeners.click||[])listener({target});
@@ -125,7 +125,7 @@ test('manual theme icon swaps dark/light and persists independently of portfolio
  assert.ok(themeControls.every(b=>b.iconHref==='#moon'));
 });
 
-test('futures shows real 30-day ledger result, funding, fees, muted size and desktop ROI',()=>{
+test('futures shows real 30-day ledger, muted size and percentage of subaccount equity',()=>{
  const {element,window}=mount([{id:'bybit',name:'Bybit',accounts:[]}]);
  const view=window.fxmr4Inspect;
  view.onAccounts([{id:'sub-one',label:'Main subaccount'}]);
@@ -135,17 +135,22 @@ test('futures shows real 30-day ledger result, funding, fees, muted size and des
  const now=Date.now();
  view.s.monthlyPerformance['sub-one']={
   from:now-30*86400000,to:now,netPnl:-5,tradingPnl:-2,funding:-1,fees:2,
-  days:[{date:new Date(now-5*86400000).toISOString().slice(0,10),netPnl:-5}]
+  days:[{date:new Date(now-5*86400000).toISOString().slice(0,10),netPnl:-5}],
+  points:[{t:now-5*86400000,netPnl:-5}]
  };
  view.s.tab='futures';view.render();
  const rendered=element('content').innerHTML;
  assert.match(rendered,/Результат за 30 дней/);
  assert.match(rendered,/Funding: −\$1\.00/);
  assert.match(rendered,/Комиссии: \$2\.00/);
- assert.match(rendered,/ROI · %/);
+ assert.match(rendered,/К балансу, %/);
+ assert.match(rendered,/0\.12%/);
+ assert.doesNotMatch(rendered,/ROI · %/);
  assert.match(rendered,/posSize/);
  assert.match(rendered,/XMRUSDT/);
  assert.match(rendered,/polyline/,'monthly chart comes from the transaction ledger');
+ assert.match(rendered,/Результат торгов · Bybit/);
+ assert.doesNotMatch(rendered,/data-metric="balance"/);
  assert.equal(view.monthlyFutures().netPnl,-5);
  assert.equal(view.monthlyFuturesSeries().length,3);
  assert.equal(view.positionAge(null),'—','unknown open time is not a 344-day position');
@@ -160,7 +165,7 @@ test('no historical ledger never invents a monthly profit',()=>{
  view.s.tab='futures';view.render();
  const rendered=element('content').innerHTML;
  assert.match(rendered,/Результат за 30 дней/);
- assert.match(rendered,/Загружаем операции Bybit/);
+ assert.match(rendered,/Нет истории за этот период/);
  assert.equal(view.monthlyFutures(),null);
 });
 
@@ -298,4 +303,59 @@ test('futures subaccount uses Bybit unrealised value and its own 30-day report',
  assert.match(overview,/−\$14\.00/);
  assert.match(overview,/\+\$21\.00/);
  assert.doesNotMatch(overview,/−\$400\.00/);
+});
+
+test('Bybit performance periods are computed from each subaccount ledger, never account onboarding',()=>{
+ const {window,element}=mount([{id:'bybit',name:'Bybit',accounts:[]}]);
+ const v=window.fxmr4Inspect;
+ v.onAccounts([{id:'a',label:'A'},{id:'b',label:'B'}]);
+ const end=v.s.monthlyAnchorMs,from=end-7*86400000;
+ v.s.periodReports['7d']={
+  a:{period:'7d',from,to:end,netPnl:10,funding:-1,fees:3,receivedAt:Date.now(),
+   points:[{t:from+3600000,netPnl:10}]},
+  b:{period:'7d',from,to:end,netPnl:-4,funding:0,fees:1,receivedAt:Date.now(),
+   points:[{t:from+3600000,netPnl:-4}]}
+ };
+ const combined=v.futuresLedgerData('7d');
+ assert.equal(combined.netPnl,6);
+ assert.equal(combined.points[0].v,0);
+ assert.equal(combined.points.at(-1).v,6);
+ assert.equal(combined.points.length,3);
+ v.s.chartPeriod.futures='7d';v.s.tab='futures';v.render();
+ const screen=element('content').innerHTML;
+ assert.match(screen,/Результат торгов · Bybit/);
+ assert.match(screen,/data-period="7d" data-chart="futures" class="period active"/);
+ assert.match(screen,/polyline/);
+ assert.match(screen,/\+\$6\.00/);
+ assert.doesNotMatch(screen,/PNL счёта/);
+ assert.doesNotMatch(screen,/data-metric="balance"/);
+ // One new subaccount without fetched history must not create fake profit.
+ v.onAccounts([{id:'a',label:'A'},{id:'b',label:'B'},{id:'c',label:'C'}]);
+ assert.equal(v.futuresLedgerData('7d'),null);
+});
+
+test('position percentage uses each account balance, never individual margin',()=>{
+ const {window,element}=mount([{id:'bybit',name:'Bybit',accounts:[]}]);
+ const v=window.fxmr4Inspect;
+ v.onAccounts([{id:'a',label:'A'},{id:'b',label:'B'}]);
+ for(const [id,equity] of [['a',1000],['b',200]]){
+  v.onSnapshot({account:{id,name:id},updatedAt:Date.now(),
+   totals:{equity,perpUPL:10,accountPnl:-100,positionCount:1},
+   positions:[{symbol:'ADAUSDT',side:'Long',pnl:10,size:100,initialMargin:2}]});
+ }
+ v.s.tab='futures';v.render();
+ const screen=element('content').innerHTML;
+ assert.match(screen,/1\.00%/,'position on 1000 subaccount has 1 percent');
+ assert.match(screen,/5\.00%/,'position on 200 subaccount has 5 percent');
+ assert.doesNotMatch(screen,/500\.00%/,'never divide by $2 initial margin');
+ assert.match(screen,/К балансу/);
+ assert.equal(v.positionAccountEquity(v.s.futuresPositions.find(p=>p.accountId==='a')),1000);
+});
+
+test('selected period is requested from Bybit through authenticated backend, not old snapshots',()=>{
+ assert.match(html,/api\/period-performance\?id=/);
+ assert.match(html,/function loadFuturesPeriod\(period\)/);
+ assert.match(html,/void loadFuturesPeriod\(s\.chartPeriod\.futures\)/);
+ assert.match(html,/data-period="\$\{q\}"/);
+ assert.doesNotMatch(html,/title='Доходность к начальной марже'/);
 });
