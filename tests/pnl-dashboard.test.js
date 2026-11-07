@@ -78,12 +78,12 @@ test('closing a losing futures position keeps the realised loss in the trading r
  bridge.onSnapshot({account:{id,name:'Account'},totals:{equity:1000,perpUPL:-12,positionCount:1},
   positions:[{symbol:'XMRUSDT',size:100,pnl:-12,side:'Long'}],updatedAt:at});
  click(listeners,'[data-tab]',{tab:'futures'});
- assert.match(el('content').innerHTML,/Открытые позиции · PNL<\/div><div[^>]*>−\$12\.00/);
+ assert.match(el('content').innerHTML,/Открытые позиции · PNL<\/div>\s*<div[^>]*>−\$12\.00/);
  s.monthlyPerformance[id]=report(-15);
  bridge.onSnapshot({account:{id,name:'Account'},totals:{equity:1000,perpUPL:0,positionCount:0},positions:[],updatedAt:at+300000});
  render();
  const markup=el('content').innerHTML;
- assert.match(markup,/Результат за 30 дней<\/div><div[^>]*>−\$15\.00/);
+ assert.match(markup,/Результат за 30 дней<\/div>\s*<div[^>]*>−\$15\.00/);
  assert.doesNotMatch(markup,/\+\$12\.00/);
 });
 test('equity view charts observed balances as money without a profit sign',()=>{
