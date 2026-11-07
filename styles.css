@@ -796,3 +796,17 @@
  .pnlExport{margin-left:0}
  .pnlAnalyticsPanel{padding:12px}
 }
+
+/* Overview history: three asset scopes; a separate, compact time selector. */
+.overviewHistoryPeriod{display:flex;align-items:center;gap:8px;font-size:11px;
+ color:var(--sub);white-space:nowrap}
+.overviewHistoryPeriod select{font:inherit;font-weight:650;border:1px solid var(--border);
+ border-radius:9px;background:var(--surface2);color:var(--text);padding:7px 10px;max-width:126px}
+.overviewLedger>.pnlMode{margin:12px 0 10px}
+.overviewLedger>.pnlMode button{min-width:70px}
+.overviewLedger .chartbox{margin-top:0}
+@media(max-width:600px){
+ .overviewHistoryPeriod{gap:5px;font-size:10px}
+ .overviewHistoryPeriod select{max-width:105px;padding:7px}
+ .overviewLedger .pnlChartHead{gap:10px}
+}
