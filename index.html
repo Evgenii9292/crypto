@@ -661,7 +661,7 @@ async function loadMonthlyPerformance(id){
   if(r.ok&&Number.isFinite(data.netPnl)&&data.to===anchored){
    s.monthlyPerformance[id]={...data,endAt:anchored,receivedAt:Date.now()};
    if(s.chartMetric.futures==='pnl'&&pnlSeries('futures').points.length<2){s.chartMetric.futures='realized30d';s.chartPeriod.futures='30d'}
-   if(s.pnlMode==='all'&&pnlSeries('all').points.length<2)s.pnlMode='month';
+   // Keep the selected overview mode stable; a new API result must not switch charts.
   }
   else s.monthlyPerformance[id]={error:data.error||'Нет журнала операций',endAt:anchored,receivedAt:Date.now()};
   if(s.tab==='overview'||s.tab==='futures')renderLive();
