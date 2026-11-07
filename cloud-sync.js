@@ -81,6 +81,8 @@
       quotes:old.portfolio.quotes||portfolio.quotes,
       chartPeriod:old.portfolio.chartPeriod||portfolio.chartPeriod,
       chartMetric:old.portfolio.chartMetric||portfolio.chartMetric,
+      futuresView:old.portfolio.futuresView||portfolio.futuresView,
+      futuresValueMode:old.portfolio.futuresValueMode||portfolio.futuresValueMode,
       snapshots:keepLonger(old.portfolio,portfolio,"snapshots"),
       portfolioSnapshots:keepLonger(old.portfolio,portfolio,"portfolioSnapshots")};
     remoteApplying=true;
