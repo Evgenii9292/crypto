@@ -739,3 +739,18 @@
 @media(max-width:600px){
  .futurePosition{grid-template-columns:minmax(76px,1.2fr) minmax(55px,.7fr) minmax(68px,.8fr) minmax(68px,.85fr)}
 }
+
+/* Overview is a verified 30-day report, not a short-lived snapshot dashboard. */
+.overviewHeroMetrics--single{grid-template-columns:minmax(0,1fr)}
+.overviewHeroMetrics--single .overviewMetric{gap:4px}
+.overviewMetric>small{color:var(--muted);font-size:10px;line-height:1.35}
+.overviewLedger .pnlChartHead{align-items:center}
+.overviewLedgerPeriod{color:var(--sub);font-size:11px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.overviewLedgerDetail{margin-top:9px;color:var(--muted);font-size:10px;line-height:1.5}
+.overviewLedger .chartlegend{align-items:flex-start;gap:8px}
+.overviewLedger .chartlegend span{line-height:1.4}
+.overviewLedger .chartlegend strong{flex:none;font-size:12px;font-variant-numeric:tabular-nums}
+@media(max-width:600px){
+ .overviewLedgerPeriod{font-size:10px}
+ .overviewLedger .chartlegend{gap:12px}
+}
