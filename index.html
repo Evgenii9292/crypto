@@ -331,12 +331,25 @@ function pnlBarSections(data,period,accountId='all'){
  const bars=[...buckets].sort((a,b)=>a[0].localeCompare(b[0])).slice(-35);
  const max=Math.max(0.0000001,...bars.map(x=>Math.abs(x[1])));
  const histogram=bars.length?bars.map(([key,val])=>{
-  const height=Math.max(1,Math.abs(val)/max*53);
+  const height=Math.max(1,Math.abs(val)/max*46);
   return `<div class="pnlBarItem" title="${escape(key)} · ${escape(format(val))}">
    <div class="pnlBarSlot"><span class="pnlBarPositive" style="height:${val>0?height:0}%"></span>
     <span class="pnlBarNegative" style="height:${val<0?height:0}%"></span></div>
-   <small>${escape(key.slice(-5))}</small></div>`;
+   </div>`;
  }).join(''):'<span class="tiny">В выбранном периоде закрытых операций нет.</span>';
+ const axisLabel=key=>{
+  if(/^\d{2}:\d{2}$/.test(key))return key;
+  const isMonth=/^\d{4}-\d{2}$/.test(key);
+  const t=Date.parse((isMonth?key+'-01':key)+'T12:00:00Z');
+  if(!Number.isFinite(t))return key;
+  return new Date(t).toLocaleDateString('ru-RU',isMonth?
+   {month:'short',year:'2-digit',timeZone:'UTC'}:
+   {day:'numeric',month:'short',timeZone:'UTC'});
+ };
+ const ticks=bars.length>=3?[0,Math.floor((bars.length-1)/2),bars.length-1]:
+   bars.length===2?[0,1]:bars.length===1?[0]:[];
+ const axis=ticks.length?`<div class="pnlBarAxis" aria-hidden="true">${ticks.map(i=>
+   `<span>${escape(axisLabel(bars[i][0]))}</span>`).join('')}</div>`:'';
  const symbols=(data.symbols||[]).slice(0,10);
  const maxSymbol=Math.max(0.0000001,...symbols.map(x=>Math.abs(x.netPnl)));
  const coins=symbols.length?symbols.map(x=>{
@@ -347,7 +360,7 @@ function pnlBarSections(data,period,accountId='all'){
  }).join(''):'<span class="tiny">Нет операций с определённой монетой.</span>';
  return `<div class="pnlAnalytics">
   <section class="pnlAnalyticsPanel"><div class="sectitle">Результат по периодам</div><div class="tiny">Только закрытые операции · UTC</div>
-   <div class="pnlBarList">${histogram}</div></section>
+   <div class="pnlBarList">${histogram}</div>${axis}</section>
   <section class="pnlAnalyticsPanel"><div class="sectitle">По активам</div><div class="tiny">Чистый результат, с учётом funding и комиссий</div>
    <div class="pnlCoinList">${coins}</div></section></div>`;
 }
@@ -975,11 +988,22 @@ function futures(){
  const open=s.futuresPositions.filter(p=>p.exchangeId==='bybit');
  const monthly=monthlyFutures(),todayReport=futuresLedgerData('today');
  const monthlyError=(s.bybitExpectedIds||[]).map(id=>s.monthlyPerformance[id]?.error).find(Boolean);
- const metrics=[['Баланс субаккаунтов',ready&&snap.equity!=null?dollars(snap.equity):'—',''],
-  ['Открытые позиции · PNL',upl!=null?signed(upl):'—',upl==null?'neutral':cls(upl)],
-  ['PNL за сегодня',todayReport?.netPnl==null?'—':signed(todayReport.netPnl),todayReport?.netPnl==null?'neutral':cls(todayReport.netPnl)],
-  ['Результат за 30 дней',monthly?.netPnl==null?'—':signed(monthly.netPnl),monthly?.netPnl==null?'neutral':cls(monthly.netPnl)]];
- return `<div class="futureMetrics">${metrics.map(([name,value,tone])=>`<div class="card tint futureMetricCard"><div class="eyebrow">${name}</div><div class="num ${tone}">${value}</div>${name==='Баланс субаккаунтов'&&ready?`<div class="pnlParts">Доступно: ${snap.availableBalance==null?'—':dollars(snap.availableBalance)}</div>`:''}${name==='Результат за 30 дней'&&!monthly?`<div class="pnlParts">${escape(monthlyError||'Загружаем операции Bybit…')}</div>`:''}${name==='Открытые позиции · PNL'&&ready?`<div class="pnlParts"><span>${open.length} позиций</span></div>`:''}${name==='PNL за сегодня'?`<div class="pnlParts"><span title="Закрытые сделки с 00:00 UTC, без открытого PNL">${todayReport?'Закрытые сделки':'Загружаем данные…'}</span></div>`:''}</div>`).join('')}</div>
+ const metrics=[
+  ['Баланс субаккаунтов',ready&&snap.equity!=null?dollars(snap.equity):'—','',
+    ready?'Доступно: '+(snap.availableBalance==null?'—':dollars(snap.availableBalance)):'Нет подключения'],
+  ['Открытые позиции · PNL',upl!=null?signed(upl):'—',upl==null?'neutral':cls(upl),
+    open.length+' позиций'],
+  ['PNL за сегодня',todayReport?.netPnl==null?'—':signed(todayReport.netPnl),todayReport?.netPnl==null?'neutral':cls(todayReport.netPnl),
+    todayReport?'Закрытые сделки':'Загружаем данные…'],
+  ['Результат за 30 дней',monthly?.netPnl==null?'—':signed(monthly.netPnl),monthly?.netPnl==null?'neutral':cls(monthly.netPnl),
+    monthly?'Закрытые сделки':(monthlyError||'Загружаем данные…')]
+ ];
+ return `<div class="futureMetrics">${metrics.map(([name,value,tone,footer])=>
+  `<div class="card tint futureMetricCard">
+   <div class="eyebrow">${escape(name)}</div>
+   <div class="num ${tone}">${value}</div>
+   <div class="pnlParts">${escape(footer)}</div>
+  </div>`).join('')}</div>
  ${futuresChartBlock()}
  <section class="section"><div class="futureToolbar"><div><div class="sectitle">Позиции и аккаунты</div><div class="tiny">Раскрывай биржи и выбирай группировку</div></div><button class="btn" type="button" data-action="goConnections">${icon('settings')} Настройки</button></div><div class="futureFilters"><div class="tradeSwitch" role="tablist" aria-label="Группировка фьючерсов">${[['all','Все позиции'],['exchange','По биржам'],['account','По субаккаунтам']].map(([id,name])=>`<button type="button" data-future-mode="${id}" class="${s.futureMode===id?'active':''}">${name}</button>`).join('')}</div></div>${s.futureMode==='all'?futuresSortBar():''}<div class="sourceList futureResults">${body}</div></section>`;
 }
