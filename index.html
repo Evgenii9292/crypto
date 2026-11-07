@@ -869,7 +869,7 @@ function overview(){
  // changes only the chart, never the KPI amounts or KPI labels.
  const monthFutures=futuresLedgerData('30d'),monthSpot=overviewHistoryData('spot','30d');
  const futureNet=monthFutures?.netPnl??null,spotNet=monthSpot?.points.at(-1)?.v??null;
- const tracked=hasTrackedFutures();
+ const tracked=(s.bybitExpectedIds||[]).length>0||hasTrackedFutures();
  const monthTotal=spotNet!=null&&(!tracked||futureNet!=null)?
   spotNet+(tracked?futureNet:0):null;
  return `<div class="overview-layout"><div class="overview-primary">
