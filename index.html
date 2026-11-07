@@ -589,20 +589,20 @@ async function loadMonthlyPerformance(id){
  if(!id||s.monthlyLoading[id]||!s.backendConnection.available)return;
  const prev=s.monthlyPerformance[id];
  const anchored=s.monthlyAnchorMs||Math.floor(Date.now()/300000)*300000;
- if(prev&&prev.to===anchored&&Date.now()-prev.receivedAt<600000)return;
+ if(prev&&prev.endAt===anchored&&Date.now()-prev.receivedAt<600000)return;
  s.monthlyLoading[id]=true;
  try{
   const r=await fetch('./api/monthly-pnl?id='+encodeURIComponent(id)+'&endAt='+anchored,{cache:'no-store',credentials:'same-origin'});
   const data=await r.json();
   if(r.ok&&Number.isFinite(data.netPnl)&&data.to===anchored){
-   s.monthlyPerformance[id]={...data,receivedAt:Date.now()};
+   s.monthlyPerformance[id]={...data,endAt:anchored,receivedAt:Date.now()};
    if(s.chartMetric.futures==='pnl'&&pnlSeries('futures').points.length<2){s.chartMetric.futures='realized30d';s.chartPeriod.futures='30d'}
    if(s.pnlMode==='all'&&pnlSeries('all').points.length<2)s.pnlMode='month';
   }
-  else s.monthlyPerformance[id]={error:data.error||'Нет журнала операций',receivedAt:Date.now()};
+  else s.monthlyPerformance[id]={error:data.error||'Нет журнала операций',endAt:anchored,receivedAt:Date.now()};
   if(s.tab==='overview'||s.tab==='futures')render();
  }catch(e){
-  s.monthlyPerformance[id]={error:'Нет доступа к месячной статистике',receivedAt:Date.now()};
+  s.monthlyPerformance[id]={error:'Нет доступа к месячной статистике',endAt:anchored,receivedAt:Date.now()};
  }finally{delete s.monthlyLoading[id]}
 }
 
