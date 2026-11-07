@@ -402,7 +402,7 @@ def monthly_account_performance(account_id, end_ms=None, period='30d'):
     cache_key = (account_id, period)
     with LOCK:
         cached = MONTH_CACHE.get(cache_key)
-        if cached and cached["fingerprint"] == fingerprint and cached["end_ms"] == end_ms and time.monotonic() - cached["at"] < 600:
+        if cached and cached["fingerprint"] == fingerprint and cached["end_ms"] == end_ms and time.monotonic() - cached["at"] < 600 and isinstance(cached["data"].get("symbolBuckets"), list):
             return cached["data"]
     duration = PERFORMANCE_PERIODS[period]
     result = monthly_futures_activity(key, secret, end_ms=end_ms, period_ms=duration, utc_today=(period == "today"))
@@ -452,7 +452,8 @@ def chunk_account_performance(account_id, start_ms, end_ms):
     with LOCK:
         cached = CHUNK_CACHE.get(cache_key)
         if (cached and cached["fingerprint"] == fingerprint and
-            time.monotonic() - cached["at"] < max_age_s):
+            time.monotonic() - cached["at"] < max_age_s and
+            isinstance(cached["data"].get("symbolBuckets"), list)):
             return cached["data"]
     try:
         saved = saved_state.read_ledger_chunk_cache(token)
@@ -462,7 +463,8 @@ def chunk_account_performance(account_id, start_ms, end_ms):
                               max_age_s * 1000):
         report = saved["report"]
         if (report.get("from") == start_ms and report.get("to") == end_ms
-                and isinstance(report.get("netPnl"), (float, int))):
+                and isinstance(report.get("netPnl"), (float, int))
+                and isinstance(report.get("symbolBuckets"), list)):
             with LOCK:
                 CHUNK_CACHE[cache_key] = {"at": time.monotonic(),
                                           "fingerprint": fingerprint,
