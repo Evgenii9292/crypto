@@ -810,3 +810,16 @@
  .overviewHistoryPeriod select{max-width:105px;padding:7px}
  .overviewLedger .pnlChartHead{gap:10px}
 }
+
+/* Funding and commission belong under their matching open position, never
+   underneath the 30-day summary card. */
+.futurePosition:not(.futureHead)>.posCostsRow{grid-column:1/-1;display:flex;
+ flex-direction:row;justify-content:flex-end;min-width:0;margin-top:-5px}
+.posCosts{display:inline-flex;flex-direction:row;align-items:center;gap:14px;
+ color:var(--sub);font-size:10px;font-weight:480;font-variant-numeric:tabular-nums;
+ line-height:1.4;white-space:nowrap}
+.posCostsMuted{color:var(--muted)}
+@media(max-width:600px){
+ .futurePosition:not(.futureHead)>.posCostsRow{justify-content:flex-start;margin-top:-2px}
+ .posCosts{font-size:9px;gap:10px}
+}
