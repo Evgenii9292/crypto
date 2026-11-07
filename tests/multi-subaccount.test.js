@@ -47,7 +47,7 @@ test('two Bybit subaccounts aggregate equity and PNL exactly once',()=>{
  assert.match(fut,/XMRUSDT/);assert.match(fut,/ADAUSDT/);
  assert.match(fut,/В сделке/);
  assert.doesNotMatch(fut,/Марк \$|posBar/);
- assert.match(fut,/1 ч 0 мин/);
+ assert.match(fut,/1ч 0мин/);
 });
 test('removing a subaccount from the server list keeps the surviving account',()=>{
  const {window,el,go}=app(),bridge=window.fxmr4App;
