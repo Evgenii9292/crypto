@@ -24,7 +24,8 @@
     <symbol id="unlink" viewBox="0 0 24 24"><path d="M9 15 5.5 18.5a3.5 3.5 0 0 1-5-5L4 10M15 9l3.5-3.5a3.5 3.5 0 0 1 5 5L20 14"/><path d="M4 4l16 16"/></symbol>
     <symbol id="trash" viewBox="0 0 24 24"><path d="M4 7h16M10 3h4M6 7l1 14h10l1-14M10 11v6m4-6v6"/></symbol>
     <symbol id="layers" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M7 8h10M7 12h10M7 16h7"/></symbol>
-    <symbol id="activity" viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8M15 7h6v6"/></symbol>
+    <symbol id="activity" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1.8"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.8"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.8"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.8"/></symbol>
+    <symbol id="chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
     <symbol id="calendar" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 10h18"/></symbol>
     <symbol id="shield" viewBox="0 0 24 24"><path d="M12 2 4 5v7c0 5 3.5 8.5 8 10 4.5-1.5 8-5 8-10V5L12 2Z"/><path d="m9 12 2 2 4-4"/></symbol>
     <symbol id="settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></symbol>
@@ -32,8 +33,7 @@
   </svg>
   <main class="page"><div class="shell">
     <aside class="sidebar">
-      <header class="header"><div class="logoArea"><div class="appicon"><svg class="icon"><use href="#wallet"/></svg></div><div class="accountTotalBlock"><div class="accountTotalLabel">Общий баланс</div><strong class="accountTotalValue" id="sidebarTotal">—</strong></div></div><div class="mobileControls"><button class="mobileTheme themeSwitch" type="button" data-action="toggleTheme" aria-label="Сменить тему" title="Сменить тему"><svg class="icon" aria-hidden="true"><use href="#moon"></use></svg></button><button class="mobileSettings" type="button" data-action="goConnections" aria-label="Настройки"><svg class="icon"><use href="#settings"></use></svg></button></div></header>
-      <div class="navLabel">РАЗДЕЛЫ</div>
+      <header class="header"><div class="logoArea"><div class="appicon"><svg class="icon"><use href="#wallet"/></svg></div><div class="accountTotalBlock"><strong class="accountTotalValue" id="sidebarTotal">—</strong></div></div><div class="mobileControls"><button class="mobileTheme themeSwitch" type="button" data-action="toggleTheme" aria-label="Сменить тему" title="Сменить тему"><svg class="icon" aria-hidden="true"><use href="#moon"></use></svg></button><button class="mobileSettings" type="button" data-action="goConnections" aria-label="Настройки"><svg class="icon"><use href="#settings"></use></svg></button></div></header>
       <nav class="tabs" data-active="overview" role="tablist" aria-label="Разделы портфеля">
         <button class="tab active" type="button" role="tab" aria-selected="true" data-tab="overview"><svg class="icon"><use href="#activity"/></svg><span>Обзор</span></button>
         <button class="tab" type="button" role="tab" aria-selected="false" data-tab="positions"><svg class="icon"><use href="#wallet"/></svg><span>Спот</span></button>
@@ -684,10 +684,10 @@ function futuresChartBlock(){
  const total=isEquity?points?.at(-1)?.v:data?.netPnl;
  const title=isEquity?'Стоимость счёта · наблюдения':'Результат торгов · Bybit';
  const allAccounts=s.sources.find(x=>x.id==='bybit')?.accounts.filter(x=>s.bybitExpectedIds.includes(x.id))||[];
- const selector=`<label class="pnlAccountLabel">Субаккаунт <select data-futures-account aria-label="Субаккаунт для статистики">
+ const selector=`<label class="pnlAccountLabel">Субаккаунт <span class="pnlAccountSelect"><select data-futures-account aria-label="Субаккаунт для статистики">
   <option value="all" ${accountId==='all'?'selected':''}>Все подключённые</option>
   ${allAccounts.map(a=>`<option value="${escape(a.id)}" ${accountId===a.id?'selected':''}>${escape(a.name)}</option>`).join('')}
- </select></label>`;
+ </select>${icon('chevron-down')}</span></label>`;
  return `<section class="section pnlChart card futuresLedgerChart">
   <div class="hrow pnlChartHead">
    <div><div class="sectitle">${title}</div>
@@ -896,7 +896,7 @@ function positionAge(time,now=Date.now()){
  return minutes+' мин';
 }
 function futuresTableHead(){
- return `<div class="futurePosition futureHead"><span>Монета</span><span>В сделке</span><span class="right"><span class="hLong">Объём · USD</span><span class="hShort">Объём</span></span><span class="right"><span class="hLong">Плавающий PNL</span><span class="hShort">PNL</span></span><span class="right posRoi" title="Плавающий PNL позиции как процент от текущего баланса её субаккаунта">К балансу, %</span></div>`;
+ return `<div class="futurePosition futureHead"><span>Монета</span><span>В сделке</span><span class="right"><span class="hLong">Объём</span><span class="hShort">Объём</span></span><span class="right"><span class="hLong">PNL</span><span class="hShort">PNL</span></span><span class="right posRoi" title="Плавающий PNL позиции как процент от текущего баланса её субаккаунта">К балансу, %</span></div>`;
 }
 function positionCostsFromBybit(p){
  if(p.exchangeId!=='bybit')return {reason:'Нет данных Bybit'};
@@ -977,9 +977,9 @@ function futures(){
  const monthlyError=(s.bybitExpectedIds||[]).map(id=>s.monthlyPerformance[id]?.error).find(Boolean);
  const metrics=[['Баланс субаккаунтов',ready&&snap.equity!=null?dollars(snap.equity):'—',''],
   ['Открытые позиции · PNL',upl!=null?signed(upl):'—',upl==null?'neutral':cls(upl)],
-  ['Операции за сегодня · UTC',todayReport?.netPnl==null?'—':signed(todayReport.netPnl),todayReport?.netPnl==null?'neutral':cls(todayReport.netPnl)],
+  ['PNL за сегодня',todayReport?.netPnl==null?'—':signed(todayReport.netPnl),todayReport?.netPnl==null?'neutral':cls(todayReport.netPnl)],
   ['Результат за 30 дней',monthly?.netPnl==null?'—':signed(monthly.netPnl),monthly?.netPnl==null?'neutral':cls(monthly.netPnl)]];
- return `<div class="futureMetrics">${metrics.map(([name,value,tone])=>`<div class="card tint"><div class="eyebrow">${name}</div><div class="num ${tone}">${value}</div>${name==='Баланс субаккаунтов'&&ready?`<div class="pnlParts">Доступно: ${snap.availableBalance==null?'—':dollars(snap.availableBalance)}</div>`:''}${name==='Результат за 30 дней'&&!monthly?`<div class="pnlParts">${escape(monthlyError||'Загружаем операции Bybit…')}</div>`:''}${name==='Открытые позиции · PNL'&&ready?`<div class="pnlParts"><span>${open.length} позиций · не закрыты</span></div>`:''}${name==='Операции за сегодня · UTC'?`<div class="pnlParts"><span>${todayReport?'Закрытые операции с 00:00 UTC. Не равно PNL Bybit за сегодня.':escape(futuresPeriodError('today')||'Загружаем операции…')}</span></div>`:''}</div>`).join('')}</div>
+ return `<div class="futureMetrics">${metrics.map(([name,value,tone])=>`<div class="card tint futureMetricCard"><div class="eyebrow">${name}</div><div class="num ${tone}">${value}</div>${name==='Баланс субаккаунтов'&&ready?`<div class="pnlParts">Доступно: ${snap.availableBalance==null?'—':dollars(snap.availableBalance)}</div>`:''}${name==='Результат за 30 дней'&&!monthly?`<div class="pnlParts">${escape(monthlyError||'Загружаем операции Bybit…')}</div>`:''}${name==='Открытые позиции · PNL'&&ready?`<div class="pnlParts"><span>${open.length} позиций</span></div>`:''}${name==='PNL за сегодня'?`<div class="pnlParts"><span title="Закрытые сделки с 00:00 UTC, без открытого PNL">${todayReport?'Закрытые сделки':'Загружаем данные…'}</span></div>`:''}</div>`).join('')}</div>
  ${futuresChartBlock()}
  <section class="section"><div class="futureToolbar"><div><div class="sectitle">Позиции и аккаунты</div><div class="tiny">Раскрывай биржи и выбирай группировку</div></div><button class="btn" type="button" data-action="goConnections">${icon('settings')} Настройки</button></div><div class="futureFilters"><div class="tradeSwitch" role="tablist" aria-label="Группировка фьючерсов">${[['all','Все позиции'],['exchange','По биржам'],['account','По субаккаунтам']].map(([id,name])=>`<button type="button" data-future-mode="${id}" class="${s.futureMode===id?'active':''}">${name}</button>`).join('')}</div></div>${s.futureMode==='all'?futuresSortBar():''}<div class="sourceList futureResults">${body}</div></section>`;
 }
@@ -1480,7 +1480,16 @@ function handleClick(e){
  const sort=e.target.closest('[data-sort]');
  if(sort){const key=sort.dataset.sort;if(s.futureSort===key)s.futureSortDir*=-1;else{s.futureSort=key;s.futureSortDir=(key==='symbol'||key==='side')?1:-1}render();return}
  const mode=e.target.closest('[data-future-mode]');
- if(mode){s.futureMode=mode.dataset.futureMode;render();return}
+ if(mode){
+  s.futureMode=mode.dataset.futureMode;
+  if(s.futureMode==='exchange'||s.futureMode==='account'){
+   for(const ex of s.sources){
+    if(s.futureMode==='exchange')s.openedExchanges[ex.id]=true;
+    for(const ac of ex.accounts)s.openedAccounts[ex.id+':'+ac.id]=true;
+   }
+  }
+  render();return
+ }
  const btn=e.target.closest('[data-action]');if(!btn)return;
  const act=btn.dataset.action,id=btn.dataset.id||'';
  if(act==='sync'){sync();return}
