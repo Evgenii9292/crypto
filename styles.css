@@ -754,3 +754,45 @@
  .overviewLedgerPeriod{font-size:10px}
  .overviewLedger .chartlegend{gap:12px}
 }
+
+/* FXMR4 accounting: separate live open PNL, today's settled activity and historic equity. */
+.overviewHeroMetrics--three{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px 14px}
+.overviewHeroMetrics--three .overviewMetric{gap:5px}
+.overviewHeroMetrics--three .overviewMetric>strong{font-size:14px}
+.overviewMetric>small{font-size:9px;color:var(--muted);line-height:1.45}
+.pnlReportTools{display:flex;align-items:center;gap:9px 13px;flex-wrap:wrap;margin-top:12px}
+.pnlReportTools .pnlMode{margin-top:0}
+.pnlReportTools .pnlMode button[disabled]{opacity:.35;cursor:not-allowed}
+.pnlAccountLabel{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--sub);font-weight:570}
+.pnlAccountLabel select{max-width:170px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:7px 8px;font:inherit}
+.pnlExport{margin-left:auto;padding:7px 11px}
+.pnlAnalytics{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:14px;margin-top:16px}
+.pnlAnalyticsPanel{border:1px solid var(--border);border-radius:12px;padding:13px;min-width:0}
+.pnlAnalyticsPanel .sectitle{font-size:12px}
+.pnlAnalyticsPanel .tiny{margin-top:4px;font-size:10px}
+.pnlBarList{display:flex;align-items:stretch;gap:4px;min-height:130px;margin-top:10px;overflow-x:auto;padding-bottom:3px}
+.pnlBarItem{flex:1 0 9px;min-width:9px;max-width:38px;display:flex;flex-direction:column;align-items:center;gap:4px}
+.pnlBarItem small{font-size:8px;color:var(--muted);white-space:nowrap;transform:scale(.9);transform-origin:center}
+.pnlBarSlot{height:108px;min-height:108px;width:100%;position:relative}
+.pnlBarSlot::before{content:"";position:absolute;left:0;right:0;top:50%;border-top:1px dashed var(--border)}
+.pnlBarPositive,.pnlBarNegative{position:absolute;left:10%;width:80%;border-radius:2px 2px 0 0}
+.pnlBarPositive{bottom:50%;background:var(--green)}
+.pnlBarNegative{top:50%;background:var(--red);border-radius:0 0 2px 2px}
+.pnlCoinList{margin-top:11px;display:flex;flex-direction:column;gap:9px}
+.pnlCoinRow{display:grid;grid-template-columns:minmax(70px,1fr) minmax(50px,1.4fr) minmax(54px,auto);align-items:center;gap:10px;font-variant-numeric:tabular-nums}
+.pnlCoinName{font-size:10px;color:var(--sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pnlCoinTrack{height:7px;border-radius:6px;background:var(--surface2);overflow:hidden}
+.pnlCoinTrack i{display:block;height:100%;border-radius:6px}
+.pnlCoinTrack i.positive{background:var(--green)}
+.pnlCoinTrack i.negative{background:var(--red)}
+.pnlCoinRow strong{font-size:10px;text-align:right}
+@media(max-width:960px){.pnlAnalytics{grid-template-columns:1fr}}
+@media(max-width:600px){
+ .overviewHeroMetrics--three{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+ .overviewHeroMetrics--three .overviewMetric:nth-child(3){grid-column:span 2}
+ .pnlReportTools{gap:8px}
+ .pnlAccountLabel{width:100%;justify-content:space-between}
+ .pnlAccountLabel select{max-width:65%;flex:1}
+ .pnlExport{margin-left:0}
+ .pnlAnalyticsPanel{padding:12px}
+}
