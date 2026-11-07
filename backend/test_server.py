@@ -265,6 +265,35 @@ class TestMonthlyLedger(TestCase):
                 server.monthly_futures_activity("k", "s", end_ms=1762473600000)
 
 
+
+class TestConsistentMonthlyAnchor(TestCase):
+    """All linked subaccounts must use exactly the same reporting boundaries."""
+
+    def setUp(self):
+        server.MONTH_CACHE.clear()
+
+    def test_anchor_rounds_to_utc_5_minutes_and_is_cached(self):
+        now = int(server.time.time() * 1000)
+        anchor = now // 300000 * 300000
+        report = {"netPnl": 8, "from": anchor - server.PERFORMANCE_MS, "to": anchor}
+        with patch.object(server, "credentials", return_value=("key", "secret", "Test")):
+            with patch.object(server, "monthly_futures_activity", return_value=report) as ledger:
+                first = server.monthly_account_performance("bybit-subaccount", anchor)
+                second = server.monthly_account_performance("bybit-subaccount", anchor)
+        self.assertEqual(first, report)
+        self.assertEqual(second, report)
+        ledger.assert_called_once_with("key", "secret", end_ms=anchor)
+
+    def test_stale_or_future_anchors_rejected_before_any_api_call(self):
+        now = int(server.time.time() * 1000)
+        with patch.object(server, "credentials", return_value=("key", "secret", "Test")):
+            with patch.object(server, "monthly_futures_activity") as ledger:
+                for bad in ("bad", now - 3600000, now + 120000):
+                    with self.assertRaises(server.BybitFailure):
+                        server.monthly_account_performance("bybit-subaccount", bad)
+                ledger.assert_not_called()
+
+
 class TestHistorySampler(TestCase):
     """The VPS samples current BTC/ETH prices and API futures while browser is closed."""
 
