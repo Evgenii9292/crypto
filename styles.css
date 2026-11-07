@@ -990,6 +990,11 @@
  font-size:12px;font-weight:400;line-height:1.4;letter-spacing:0;
  color:var(--sub);font-variant-numeric:tabular-nums;
 }
+@media(max-width:960px){
+ /* The percentage data column is hidden on smaller screens, so hide its
+    matching clickable heading as well (higher specificity than flex row). */
+ .futurePosition.futureHead>.futureSortCell.posRoi{display:none}
+}
 @media(max-width:600px){
  .futureSortButton{font-size:9px;gap:2px;letter-spacing:0}
  .futureSortArrow{font-size:9px;min-width:7px}
