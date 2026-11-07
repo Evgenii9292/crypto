@@ -546,16 +546,51 @@ class Handler(BaseHTTPRequestHandler):
 HISTORY_SAMPLE_SECONDS = 300
 
 
-def _spot_pnl(portfolio):
-    """Spot PNL from the saved portfolio, mirroring the browser formula.
+def public_spot_quotes(trades):
+    """Live Bybit spot prices, independently of whether a browser is open.
 
-    Returns None when the inputs are not usable: an unknown value must stay
-    unknown rather than be recorded as a zero result.
+    No API credentials are sent to this public endpoint. Never silently use
+    last browser quotes after the tab closes: that creates a fake flat PNL line.
     """
+    coins = set()
+    for trade in trades:
+        if not isinstance(trade, dict) or trade.get("coin") not in ("BTC", "ETH"):
+            raise BybitFailure("Неизвестная монета Spot")
+        coins.add(trade["coin"])
+    if not coins:
+        return {}
+    last_error = None
+    for host in dict.fromkeys((API_HOST, "https://api.bybit.id", "https://api.bybit.com")):
+        if host not in ALLOWED_HOSTS:
+            continue
+        try:
+            prices = {}
+            for coin in sorted(coins):
+                query = urlencode({"category": "spot", "symbol": coin + "USDT"})
+                request = Request(host + "/v5/market/tickers?" + query, headers={
+                    "Accept": "application/json", "User-Agent": "fxmr4-readonly/1.0"
+                }, method="GET")
+                with urlopen(request, timeout=8) as response:
+                    payload = json.loads(response.read(100_000))
+                if payload.get("retCode") != 0:
+                    raise BybitFailure("Не удалось получить рыночную цену " + coin)
+                values = payload.get("result", {}).get("list") or []
+                price = _num(values[0].get("lastPrice")) if values else None
+                if price is None or price <= 0:
+                    raise BybitFailure("Некорректная цена " + coin)
+                prices[coin] = {"price": price}
+            return prices
+        except (URLError, HTTPError, TimeoutError, ValueError, OSError, BybitFailure) as exc:
+            last_error = type(exc).__name__
+    raise BybitFailure("Нет актуальных котировок Bybit для Spot: " + str(last_error))
+
+
+def _spot_pnl(portfolio, live_quotes=None):
+    """Calculate Spot PNL only from verified prices at the sample timestamp."""
     if not isinstance(portfolio, dict):
         return None
     trades = portfolio.get("trades")
-    quotes = portfolio.get("quotes")
+    quotes = live_quotes  # Never fall back to an old browser price.
     if not isinstance(trades, list) or not isinstance(quotes, dict):
         return None
     profit = 0.0
@@ -579,31 +614,50 @@ def _spot_pnl(portfolio):
 
 
 def sample_history_once():
-    """Sample spot plus every configured futures subaccount as one coherent point."""
+    """Persist PNL on the VPS every 5 min without any open browser.
+
+    Partial failures never turn an unknown account balance into a fake zero.
+    A public Spot price failure cannot erase a valid futures observation.
+    """
     try:
         key, secret, _label = credentials()
         extras = saved_state.list_extra_accounts()
-        if not (key and secret) and not extras:
-            return False
-        futures_parts = []
-        valid = True
-        if key and secret:
-            data = snapshot()
-            v = _num((data.get("totals") or {}).get("perpUPL"))
-            if v is None:
-                valid = False
-            else:
-                futures_parts.append(v)
-        for item in extras:
-            value = snapshot_extra(item["id"])
-            v = _num((value.get("totals") or {}).get("perpUPL"))
-            if v is None:
-                valid = False
-            else:
-                futures_parts.append(v)
-        futures = sum(futures_parts) if valid and futures_parts else None
         portfolio = saved_state.read_profile().get("portfolio")
-        spot = _spot_pnl(portfolio)
+        trades = portfolio.get("trades") if isinstance(portfolio, dict) else None
+        if not (key and secret) and not extras and not trades:
+            return False
+
+        spot = None
+        if isinstance(trades, list):
+            try:
+                spot = _spot_pnl(portfolio, public_spot_quotes(trades))
+            except BybitFailure as exc:
+                print("Spot PNL sample skipped: " + str(exc)[:140], flush=True)
+
+        futures_parts = []
+        futures_complete = True
+        if key and secret:
+            try:
+                result = snapshot()
+                v = _num((result.get("totals") or {}).get("perpUPL"))
+                if v is None:
+                    futures_complete = False
+                else:
+                    futures_parts.append(v)
+            except BybitFailure:
+                futures_complete = False
+        for item in extras:
+            try:
+                result = snapshot_extra(item["id"])
+                v = _num((result.get("totals") or {}).get("perpUPL"))
+                if v is None:
+                    futures_complete = False
+                else:
+                    futures_parts.append(v)
+            except BybitFailure:
+                futures_complete = False
+
+        futures = sum(futures_parts) if futures_complete and futures_parts else None
         point = {"t": int(time.time() * 1000)}
         if spot is not None:
             point["spot"] = spot
@@ -616,7 +670,6 @@ def sample_history_once():
         saved_state.merge_history([point])
         return True
     except Exception as exc:
-        # Never record an incomplete PNL as a full-portfolio observation.
         print("PNL history sample skipped: " + type(exc).__name__, flush=True)
         return False
 
