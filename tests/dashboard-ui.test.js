@@ -95,7 +95,7 @@ test('Capital is an inline, collapsible Spot budget, not a settings tab',()=>{
  assert.doesNotMatch(settings,/settingsTabs|data-settings-pane|Плановый капитал|Запланированный капитал/);
  click('gotoSpot');
  const spot=element('content').innerHTML;
- assert.match(spot,/План \\$1,000/);
+ assert.match(spot,/План \$1,000/);
  assert.doesNotMatch(spot,/id="capitalForm"/,'collapsed by default');
  click('toggleCapital');
  const opened=element('content').innerHTML;
@@ -103,7 +103,7 @@ test('Capital is an inline, collapsible Spot budget, not a settings tab',()=>{
  assert.match(opened,/id="plannedCapital"/);
  submit('capitalForm',{capital:'1200'});
  const saved=element('content').innerHTML;
- assert.match(saved,/План \\$1,200/);
+ assert.match(saved,/План \$1,200/);
  assert.doesNotMatch(saved,/id="capitalForm"/,'auto-collapsed after saving');
  const portfolio=JSON.parse(store.get('fxmr4_portfolio_public_preview_v1'));
  assert.equal(portfolio.capital,1200);
