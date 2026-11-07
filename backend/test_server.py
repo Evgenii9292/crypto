@@ -282,7 +282,7 @@ class TestConsistentMonthlyAnchor(TestCase):
                 second = server.monthly_account_performance("bybit-subaccount", anchor)
         self.assertEqual(first, report)
         self.assertEqual(second, report)
-        ledger.assert_called_once_with("key", "secret", end_ms=anchor)
+        ledger.assert_called_once_with("key", "secret", end_ms=anchor, period_ms=server.PERFORMANCE_MS)
 
     def test_stale_or_future_anchors_rejected_before_any_api_call(self):
         now = int(server.time.time() * 1000)
@@ -292,6 +292,86 @@ class TestConsistentMonthlyAnchor(TestCase):
                     with self.assertRaises(server.BybitFailure):
                         server.monthly_account_performance("bybit-subaccount", bad)
                 ledger.assert_not_called()
+
+
+
+class TestExchangePeriodLedger(TestCase):
+    """Historical chart is derived from exchange operations, not client snapshots."""
+
+    def setUp(self):
+        server.MONTH_CACHE.clear()
+
+    def test_24h_period_uses_exact_exchange_cash_flows_and_ignores_transfers(self):
+        end = 1762473600000
+        start = end - server.PERFORMANCE_PERIODS["24h"]
+        calls = []
+
+        def bybit(path, params, key, secret):
+            calls.append(dict(params))
+            if len(calls) != 1:
+                self.fail("24h should require just one ledger window")
+            return {"nextPageCursor": "", "list": [
+                {"category": "linear", "currency": "USDT", "type": "TRADE",
+                 "transactionTime": str(start + 3600000), "cashFlow": "2.4",
+                 "funding": "", "fee": "0.4"},
+                {"category": "linear", "currency": "USDT", "type": "SETTLEMENT",
+                 "transactionTime": str(start + 7200000), "cashFlow": "0",
+                 "funding": "-0.2", "fee": "0"},
+                {"category": "linear", "currency": "USDT", "type": "TRANSFER_IN",
+                 "transactionTime": str(start + 10000000), "cashFlow": "2000",
+                 "funding": "", "fee": ""}
+            ]}
+
+        with patch.object(server, "request_bybit", side_effect=bybit):
+            report = server.monthly_futures_activity(
+                "k", "s", end_ms=end, period_ms=server.PERFORMANCE_PERIODS["24h"])
+        self.assertEqual(len(calls), 1)
+        self.assertAlmostEqual(report["netPnl"], 1.8)
+        self.assertEqual(report["bucketMs"], 3600000)
+        self.assertEqual(len(report["points"]), 2)
+        self.assertAlmostEqual(sum(p["netPnl"] for p in report["points"]), 1.8)
+        self.assertEqual(report["from"], start)
+        self.assertEqual(report["to"], end)
+
+    def test_week_chart_period_fetches_two_separate_7day_safe_windows(self):
+        end = 1762473600000
+        calls = []
+        def bybit(path, params, key, secret):
+            calls.append(params)
+            self.assertLessEqual(
+                int(params["endTime"])-int(params["startTime"]), 7*86400000)
+            return {"list": [], "nextPageCursor": ""}
+        with patch.object(server, "request_bybit", side_effect=bybit):
+            report = server.monthly_futures_activity(
+                "k", "s", end_ms=end, period_ms=server.PERFORMANCE_PERIODS["7d"])
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(report["netPnl"], 0)
+        self.assertEqual(report["points"], [])
+
+    def test_period_cache_is_separate_for_each_period(self):
+        now = int(server.time.time() * 1000)
+        anchor = now // 300000 * 300000
+        template = {"from": anchor - server.PERFORMANCE_MS, "to": anchor, "netPnl": 0,
+                    "points": []}
+        with patch.object(server, "credentials", return_value=("k", "s", "Sub")):
+            with patch.object(server, "monthly_futures_activity", return_value=template) as ledger:
+                a = server.monthly_account_performance("bybit-subaccount", anchor, "24h")
+                b = server.monthly_account_performance("bybit-subaccount", anchor, "7d")
+                c = server.monthly_account_performance("bybit-subaccount", anchor, "24h")
+        self.assertEqual(ledger.call_count, 2)
+        self.assertEqual(a["period"], "24h")
+        self.assertEqual(b["period"], "7d")
+        self.assertEqual(c["period"], "24h")
+        self.assertEqual(ledger.call_args_list[0].kwargs["period_ms"],
+                         server.PERFORMANCE_PERIODS["24h"])
+        self.assertEqual(ledger.call_args_list[1].kwargs["period_ms"],
+                         server.PERFORMANCE_PERIODS["7d"])
+
+    def test_rejects_unapproved_long_period_before_requesting_credentials(self):
+        with patch.object(server, "credentials") as creds:
+            with self.assertRaisesRegex(server.BybitFailure, "Неизвестный период"):
+                server.monthly_account_performance("bybit-subaccount", period="9000y")
+            creds.assert_not_called()
 
 
 class TestHistorySampler(TestCase):
