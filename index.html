@@ -376,7 +376,7 @@ function futures(){
   ['Доступно',ready&&snap.availableBalance!=null?dollars(snap.availableBalance):'—',''],
   ['Открытых позиций',ready?String(open.length):'—','']];
  const coins=coinStack(open.map(p=>p.symbol));
- return `<div class="futureMetrics">${metrics.map(([name,value,tone])=>`<div class="card tint"><div class="eyebrow">${name}</div><div class="num ${tone}">${value}</div>${name==='Открытых позиций'&&coins?`<div class="metricCoins">${coins}</div>`:''}</div>`).join('')}</div>
+ return `<div class="futureMetrics">${metrics.map(([name,value,tone])=>`<div class="card tint"><div class="eyebrow">${name}</div><div class="num ${tone}">${value}</div>${name==='PNL счёта'&&ready?`<div class="pnlParts"><span>Закрыто: ${snap.realisedPnl==null?'—':signed(Number(snap.realisedPnl))}</span><span>Открыто: ${upl==null?'—':signed(upl)}</span></div>`:''}${name==='Открытых позиций'&&coins?`<div class="metricCoins">${coins}</div>`:''}</div>`).join('')}</div>
  ${futuresChartBlock()}
  <section class="section"><div class="futureToolbar"><div><div class="sectitle">Позиции и аккаунты</div><div class="tiny">Раскрывай биржи и выбирай группировку</div></div><button class="btn" type="button" data-action="goConnections">${icon('settings')} Настройки</button></div><div class="futureFilters"><div class="tradeSwitch" role="tablist" aria-label="Группировка фьючерсов">${[['all','Все позиции'],['exchange','По биржам'],['account','По субаккаунтам']].map(([id,name])=>`<button type="button" data-future-mode="${id}" class="${s.futureMode===id?'active':''}">${name}</button>`).join('')}</div></div>${s.futureMode==='all'?futuresSortBar():''}<div class="sourceList futureResults">${body}</div></section>`;
 }
@@ -662,7 +662,7 @@ window.fxmr4App={onBackendStatus,onSnapshot,onAccounts,onDisconnected,applyCloud
       p.total=summary.spot.profit;
     }
     const last=s.portfolioSnapshots[s.portfolioSnapshots.length-1];
-    if(last&&p.time-last.time<1500&&Math.abs((last.totalAccount??last.total??last.spot)-(p.totalAccount??p.total??p.spot))<0.000001)return;
+    if(last&&p.time-last.time<1500&&Math.abs((last.totalAccount??last.total??last.spot)-(p.totalAccount??p.total??p.spot))<0.000001&&Math.abs((last.futures??0)-(p.futures??0))<0.000001)return;
     s.portfolioSnapshots.push(p);s.portfolioSnapshots=s.portfolioSnapshots.slice(-1500);
     pushPnlHistory();
   }
