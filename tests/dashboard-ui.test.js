@@ -382,7 +382,8 @@ test('clicking history period fetches both Bybit subaccounts and reuses cached r
   return {ok:true,json:async()=>({
    period:'24h',from:end-86400000,to:end,bucketMs:3600000,
    netPnl:key==='sub-a'?7:-2,funding:0,fees:0,
-   points:[{t:end-3600000,netPnl:key==='sub-a'?7:-2}]
+   points:[{t:end-3600000,netPnl:key==='sub-a'?7:-2}],
+   symbolBuckets:[{t:end-3600000,symbol:'ADAUSDT',netPnl:key==='sub-a'?7:-2}]
   })};
  };
  const {window,element}=mount([{id:'bybit',name:'Bybit',accounts:[]}],stub);
@@ -582,7 +583,8 @@ test('six-day Bybit chunks merge into 180-day report without gaps, duplicates or
   return {ok:true,json:async()=>({from:start,to:end,netPnl:2,tradingPnl:2,
    funding:0,fees:0,points:[{t:start+1000,netPnl:2}],
    days:[{date:new Date(start).toISOString().slice(0,10),netPnl:2}],
-   symbols:[{symbol:'ADAUSDT',netPnl:2,operations:1}]})};
+   symbols:[{symbol:'ADAUSDT',netPnl:2,operations:1}],
+   symbolBuckets:[{t:start+1000,symbol:'ADAUSDT',netPnl:2}]})};
  };
  const {window}=mount([{id:'bybit',name:'Bybit',accounts:[]}],stub);
  const v=window.fxmr4Inspect;
@@ -755,7 +757,8 @@ test('saved complete 180-day Bybit chart survives full browser reload with zero 
   return {ok:true,json:async()=>({from:start,to:end,netPnl:3,tradingPnl:3,
    funding:0,fees:0,points:[{t:start+1000,netPnl:3}],
    days:[{date:new Date(start).toISOString().slice(0,10),netPnl:3}],
-   symbols:[{symbol:'BTCUSDT',netPnl:3,operations:1}]})};
+   symbols:[{symbol:'BTCUSDT',netPnl:3,operations:1}],
+   symbolBuckets:[{t:start+1000,symbol:'BTCUSDT',netPnl:3}]})};
  };
  const first=mount([{id:'bybit',name:'Bybit',accounts:[]}],stub,shared);
  first.window.fxmr4Inspect.onAccounts([{id:'a',label:'Account A'}]);
@@ -809,7 +812,8 @@ test('chunk downloads reuse fixed historical windows and never repeat closed old
   urls.push(u);
   const start=Number(u.match(/startAt=(\d+)/)[1]),end=Number(u.match(/endAt=(\d+)/)[1]);
   return {ok:true,json:async()=>({from:start,to:end,netPnl:1,tradingPnl:1,
-   funding:0,fees:0,points:[{t:start+1000,netPnl:1}],days:[],symbols:[]})};
+   funding:0,fees:0,points:[{t:start+1000,netPnl:1}],days:[],symbols:[],
+   symbolBuckets:[{t:start+1000,symbol:'ADAUSDT',netPnl:1}]})};
  };
  const {window}=mount([{id:'bybit',name:'Bybit',accounts:[]}],stub);
  const v=window.fxmr4Inspect;
