@@ -726,3 +726,16 @@
  .mobileControls .mobileTheme:hover{background:var(--surface2);color:var(--text)}
  .mobileControls .mobileTheme .icon{width:17px;height:17px}
 }
+
+/* Desktop futures: volume is supporting information; ROI is derived from Bybit margin. */
+.futurePosition{grid-template-columns:minmax(0,1.45fr) minmax(80px,.62fr) minmax(85px,.82fr) minmax(92px,.88fr) minmax(74px,.54fr)}
+.futurePosition:not(.futureHead) .posSize strong{color:var(--sub);font-weight:540}
+.futurePosition .posRoi{font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right;align-self:center;font-size:11px}
+.futurePosition.futureHead .posRoi{align-self:auto}
+@media(max-width:960px){
+ .futurePosition{grid-template-columns:minmax(0,1.6fr) minmax(75px,.62fr) minmax(83px,.85fr) minmax(88px,.85fr)}
+ .futurePosition .posRoi{display:none}
+}
+@media(max-width:600px){
+ .futurePosition{grid-template-columns:minmax(76px,1.2fr) minmax(55px,.7fr) minmax(68px,.8fr) minmax(68px,.85fr)}
+}
