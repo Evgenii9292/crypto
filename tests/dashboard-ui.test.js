@@ -8,7 +8,7 @@ const css=fs.readFileSync(path.join(__dirname,'..','styles.css'),'utf8');
 const script=html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
 if(!script)throw Error('inline portfolio script is missing');
 
-function mount(sources){
+function mount(sources,fetchImpl=null){
  const elements=new Map(),listeners={},store=new Map();
  const themeControls=Array.from({length:2},()=>({
   attrs:{},iconHref:'',
@@ -38,7 +38,7 @@ function mount(sources){
  };
  const context={
   document,localStorage,
-  fetch:()=>new Promise(()=>{}),
+  fetch:fetchImpl||(()=>new Promise(()=>{})),
   console,AbortController:class{abort(){}get signal(){return {}}},
   setTimeout:()=>1,clearTimeout(){},setInterval:()=>{},
   window:{},FormData:class{constructor(form){this.form=form}get(key){return this.form.fields?.[key]??null}}
@@ -358,4 +358,35 @@ test('selected period is requested from Bybit through authenticated backend, not
  assert.match(html,/void loadFuturesPeriod\(s\.chartPeriod\.futures\)/);
  assert.match(html,/data-period="\$\{q\}"/);
  assert.doesNotMatch(html,/title='Доходность к начальной марже'/);
+});
+
+test('clicking history period fetches both Bybit subaccounts and reuses cached reporting',async()=>{
+ const urls=[];
+ const stub=async url=>{
+  if(!String(url).includes('/api/period-performance?'))return new Promise(()=>{});
+  urls.push(String(url));
+  const key=url.includes('id=sub-a')?'sub-a':'sub-b';
+  const end=Number(url.match(/endAt=(\d+)/)[1]);
+  return {ok:true,json:async()=>({
+   period:'24h',from:end-86400000,to:end,bucketMs:3600000,
+   netPnl:key==='sub-a'?7:-2,funding:0,fees:0,
+   points:[{t:end-3600000,netPnl:key==='sub-a'?7:-2}]
+  })};
+ };
+ const {window,element}=mount([{id:'bybit',name:'Bybit',accounts:[]}],stub);
+ const v=window.fxmr4Inspect;
+ v.onAccounts([{id:'sub-a',label:'Alpha'},{id:'sub-b',label:'Beta'}]);
+ v.s.backendConnection.available=true;
+ await v.loadFuturesPeriod('24h');
+ assert.equal(urls.length,2);
+ assert.ok(urls.every(url=>url.includes('period=24h')&&url.includes('endAt=')));
+ assert.equal(v.futuresLedgerData('24h').netPnl,5);
+ await v.loadFuturesPeriod('24h');
+ assert.equal(urls.length,2,'period data stays cached for same reporting window');
+ v.s.chartPeriod.futures='24h';
+ v.s.tab='futures';v.render();
+ const markup=element('content').innerHTML;
+ assert.match(markup,/data-period="24h" data-chart="futures" class="period active"/);
+ assert.match(markup,/\+\$5\.00/);
+ assert.match(markup,/polyline/);
 });
