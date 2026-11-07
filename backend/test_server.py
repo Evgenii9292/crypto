@@ -191,6 +191,80 @@ class TestPositionOpenTime(TestCase):
             self.assertIsNone(server._int_ms(value), value)
 
 
+    def test_current_position_open_time_never_uses_first_symbol_creation(self):
+        payload = {"list": [{"symbol": "XMRUSDT", "side": "Buy",
+                             "size": "4", "positionValue": "91.72",
+                             "createdTime": "1600000000000",
+                             "openTime": "1762000000000"}]}
+        with patch.object(server, "request_bybit", return_value=payload):
+            rows = server.collect_positions("mock-key", "mock-secret", "USDT")
+        self.assertEqual(rows[0]["openedAt"], 1762000000000)
+        payload["list"][0]["openTime"] = "0"
+        with patch.object(server, "request_bybit", return_value=payload):
+            rows = server.collect_positions("mock-key", "mock-secret", "USDT")
+        self.assertIsNone(rows[0]["openedAt"])
+
+
+class TestMonthlyLedger(TestCase):
+    """UTC futures cash movements excluding transfers, not historical UPL guesses."""
+
+    def setUp(self):
+        server.MONTH_CACHE.clear()
+
+    def test_rolling_month_counts_trades_funding_fees_with_real_pagination_windows(self):
+        end = 1762473600000
+        start = end - server.PERFORMANCE_MS
+        calls = []
+
+        def bybit(path, params, key, secret):
+            self.assertEqual(path, "/v5/account/transaction-log")
+            self.assertEqual(params["category"], "linear")
+            self.assertEqual(params["accountType"], "UNIFIED")
+            left = int(params["startTime"])
+            self.assertLessEqual(int(params["endTime"]) - left, 7 * 86400000)
+            calls.append(left)
+            stamp = str(left + 1000)
+            if left == start:
+                rows = [{"category": "linear", "currency": "USDT", "type": "TRADE",
+                         "transactionTime": stamp, "cashFlow": "-4",
+                         "funding": "", "fee": "0.25"}]
+            elif left == start + server.LEDGER_WINDOW_MS:
+                rows = [{"category": "linear", "currency": "USDT", "type": "SETTLEMENT",
+                         "transactionTime": stamp, "cashFlow": "0",
+                         "funding": "0.5", "fee": "0"}]
+            else:
+                rows = [{"category": "linear", "currency": "USDT", "type": "TRANSFER",
+                         "transactionTime": stamp, "cashFlow": "10000",
+                         "funding": "", "fee": ""}]
+            return {"list": rows, "nextPageCursor": ""}
+
+        with patch.object(server, "request_bybit", side_effect=bybit):
+            report = server.monthly_futures_activity("mock-key", "mock-secret", end_ms=end)
+        self.assertEqual(len(calls), 5)
+        self.assertAlmostEqual(report["tradingPnl"], -4)
+        self.assertAlmostEqual(report["funding"], 0.5)
+        self.assertAlmostEqual(report["fees"], 0.25)
+        self.assertAlmostEqual(report["netPnl"], -3.75)
+        self.assertFalse(report["includesUnrealised"])
+        self.assertEqual(len(report["days"]), 2)
+
+    def test_unknown_derivatives_activity_is_not_silently_called_zero_pnl(self):
+        def bybit(path, params, key, secret):
+            return {"list": [{"category": "linear", "currency": "USDT",
+                              "type": "UNKNOWN_TRADE", "transactionTime": params["startTime"],
+                              "cashFlow": "-1"}], "nextPageCursor": ""}
+        with patch.object(server, "request_bybit", side_effect=bybit):
+            with self.assertRaisesRegex(server.BybitFailure, "Неизвестный тип"):
+                server.monthly_futures_activity("k", "s", end_ms=1762473600000)
+
+    def test_repeating_cursor_fails_instead_of_incomplete_month(self):
+        def bybit(path, params, key, secret):
+            return {"list": [], "nextPageCursor": "repeated"}
+        with patch.object(server, "request_bybit", side_effect=bybit):
+            with self.assertRaisesRegex(server.BybitFailure, "курсор"):
+                server.monthly_futures_activity("k", "s", end_ms=1762473600000)
+
+
 class TestHistorySampler(TestCase):
     """The VPS samples current BTC/ETH prices and API futures while browser is closed."""
 
