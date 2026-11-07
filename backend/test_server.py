@@ -354,7 +354,7 @@ class TestExchangePeriodLedger(TestCase):
         template = {"from": anchor - server.PERFORMANCE_MS, "to": anchor, "netPnl": 0,
                     "points": []}
         with patch.object(server, "credentials", return_value=("k", "s", "Sub")):
-            with patch.object(server, "monthly_futures_activity", return_value=template) as ledger:
+            with patch.object(server, "monthly_futures_activity", side_effect=lambda *a, **k: dict(template)) as ledger:
                 a = server.monthly_account_performance("bybit-subaccount", anchor, "24h")
                 b = server.monthly_account_performance("bybit-subaccount", anchor, "7d")
                 c = server.monthly_account_performance("bybit-subaccount", anchor, "24h")
