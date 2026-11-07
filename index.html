@@ -371,7 +371,7 @@ function combineBybitChunks(chunks,from,to,period){
    points.set(x.t,(points.get(x.t)||0)+x.netPnl);
   }
   for(const d of part.days||[]){
-   if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(String(d.date)))continue;
+   if(!/^\d{4}-\d{2}-\d{2}$/.test(String(d.date)))continue;
    const value=days.get(d.date)||{date:d.date,netPnl:0,funding:0,fees:0};
    for(const key of ['netPnl','funding','fees'])value[key]+=Number(d[key])||0;
    days.set(d.date,value);
