@@ -821,3 +821,15 @@ test('chunk downloads reuse fixed historical windows and never repeat closed old
  await v.loadFuturesPeriod('90d');
  assert.equal(urls.length,before,'same UTC day only reuses downloaded chunks');
 });
+
+test('desktop sidebar stays viewport-height and sticky while main content scrolls',()=>{
+ const desktop=css.match(/@media\(min-width:961px\)\s*\{([\s\S]*?)\n\}/)?.[1];
+ assert.ok(desktop,'desktop breakpoint exists');
+ assert.match(desktop,/\.sidebar\s*\{[^}]*position:sticky;top:26px/);
+ assert.match(desktop,/\.sidebar\s*\{[^}]*height:calc\(100dvh - 52px\)/);
+ assert.match(desktop,/\.sidebar\s*\{[^}]*align-self:start/);
+ assert.match(desktop,/\.shell\s*\{[^}]*overflow:visible/);
+ assert.match(desktop,/\.sidebar\s*\{[^}]*overflow-y:auto/);
+ assert.match(css,/@media\(max-width:960px\)\s*\{[\s\S]*?\.tabs\s*\{\s*position:fixed/);
+ assert.doesNotMatch(css,/@media\(max-width:960px\)\s*\{\s*\.sidebar\s*\{[^}]*position:sticky/);
+});
