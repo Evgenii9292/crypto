@@ -193,12 +193,21 @@ function futuresLedgerData(period,accountId='all'){
  const reports=activeFuturesReports(period,accountId);
  if(!reports)return null;
  const bins=new Map(),first=reports[0].from,last=reports[0].to;
- const bySymbol=new Map(),byDay=new Map();
- let net=0,funding=0,fees=0;
+ const bySymbol=new Map(),byDay=new Map(),bySymbolBucket=new Map();
+ let net=0,funding=0,fees=0,symbolBucketsComplete=true;
  for(const report of reports){
   net+=Number(report.netPnl);
   funding+=Number(report.funding)||0;
   fees+=Number(report.fees)||0;
+  if(!Array.isArray(report.symbolBuckets))symbolBucketsComplete=false;
+  else for(const entry of report.symbolBuckets){
+   const t=Number(entry.t),name=String(entry.symbol||'OTHER'),v=Number(entry.netPnl);
+   if(!Number.isFinite(t)||!Number.isFinite(v)||t<first||t>=last){
+    symbolBucketsComplete=false;continue;
+   }
+   const key=t+'|'+name;
+   bySymbolBucket.set(key,(bySymbolBucket.get(key)||0)+v);
+  }
   for(const symbol of report.symbols||[]){
    const name=String(symbol.symbol||'OTHER');
    const row=bySymbol.get(name)||{symbol:name,netPnl:0,operations:0};
@@ -229,6 +238,10 @@ function futuresLedgerData(period,accountId='all'){
  series.push({t:last,v:net});
  return {netPnl:net,funding,fees,from:first,to:last,points:series,
   buckets:[...bins].sort((a,b)=>a[0]-b[0]).map(([t,netPnl])=>({t,netPnl})),
+  symbolBuckets:symbolBucketsComplete?[...bySymbolBucket].map(([key,netPnl])=>{
+   const split=key.indexOf('|');
+   return {t:Number(key.slice(0,split)),symbol:key.slice(split+1),netPnl};
+  }):null,
   days:[...byDay].sort((a,b)=>a[0].localeCompare(b[0])).map(([date,netPnl])=>({date,netPnl})),
   symbols:[...bySymbol.values()].sort((a,b)=>Math.abs(b.netPnl)-Math.abs(a.netPnl))};
 }
@@ -379,7 +392,8 @@ function combineBybitChunks(chunks,from,to,period){
  const sorted=[...chunks].sort((a,b)=>a.from-b.from);
  let current=from;
  const totals={netPnl:0,tradingPnl:0,funding:0,fees:0};
- const points=new Map(),days=new Map(),symbols=new Map();
+ const points=new Map(),days=new Map(),symbols=new Map(),symbolBuckets=new Map();
+ let symbolBucketsComplete=true;
  for(const part of sorted){
   if(part.from!==current||part.to<=current||part.to>to||
      !Number.isFinite(part.netPnl)||!Array.isArray(part.points)){
@@ -398,6 +412,15 @@ function combineBybitChunks(chunks,from,to,period){
    for(const key of ['netPnl','funding','fees'])value[key]+=Number(d[key])||0;
    days.set(d.date,value);
   }
+  if(!Array.isArray(part.symbolBuckets))symbolBucketsComplete=false;
+  else for(const record of part.symbolBuckets){
+   const t=Number(record.t),name=String(record.symbol||'OTHER'),value=Number(record.netPnl);
+   if(!Number.isFinite(t)||!Number.isFinite(value)||t<part.from||t>=part.to){
+    symbolBucketsComplete=false;continue;
+   }
+   const key=t+'|'+name;
+   symbolBuckets.set(key,(symbolBuckets.get(key)||0)+value);
+  }
   for(const record of part.symbols||[]){
    const name=String(record.symbol||'OTHER');
    const value=symbols.get(name)||{symbol:name,netPnl:0,operations:0};
@@ -410,6 +433,10 @@ function combineBybitChunks(chunks,from,to,period){
  return {...totals,from,to,period,
   points:[...points].sort((a,b)=>a[0]-b[0]).map(([t,netPnl])=>({t,netPnl})),
   days:[...days.values()].sort((a,b)=>a.date.localeCompare(b.date)),
+  symbolBuckets:symbolBucketsComplete?[...symbolBuckets].map(([key,netPnl])=>{
+   const split=key.indexOf('|');
+   return {t:Number(key.slice(0,split)),symbol:key.slice(split+1),netPnl};
+  }):null,
   symbols:[...symbols.values()].sort((a,b)=>Math.abs(b.netPnl)-Math.abs(a.netPnl))};
 }
 async function fetchLongBybitPeriod(accountId,period,anchor){
@@ -1334,6 +1361,7 @@ window.fxmr4App={onBackendStatus,onSnapshot,onAccounts,onDisconnected,applyCloud
     funding:v.funding||0,fees:v.fees||0,period:v.period||'',
     points:v.points.slice(-10000),days:(v.days||[]).slice(-750),
     symbols:(v.symbols||[]).slice(0,100),
+    symbolBuckets:Array.isArray(v.symbolBuckets)?v.symbolBuckets.slice(0,25000):null,
     receivedAt:Number(v.receivedAt)||Date.now(),
     costEvents:[],costEventsComplete:false};
   }
