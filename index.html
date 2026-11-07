@@ -474,7 +474,7 @@ async function fetchLongBybitPeriod(accountId,period,anchor){
 async function loadFuturesPeriod(period){
  if(period==='30d'||!s.bybitExpectedIds?.length||!s.backendConnection.available)return;
  if(s.periodLoading[period]||Date.now()<(s.periodErrorRetryAt[period]||0))return;
- const long='60d'||period==='90d'||period==='6m'||period==='1y'||period==='all';
+ const long=period==='60d'||period==='90d'||period==='6m'||period==='1y'||period==='all';
  // Long-range analysis is day-aligned so it can reuse downloaded 6-day
  // slices. The current UTC day's operations are shown separately.
  const anchor=long?Math.floor(Date.now()/86400000)*86400000:
