@@ -198,6 +198,18 @@ def futures_pnl_totals(account):
 # accumulated 30 days of snapshot samples. Bybit limits each query to 7 days.
 PERFORMANCE_MS = 30 * 24 * 3600 * 1000
 LEDGER_WINDOW_MS = 6 * 24 * 3600 * 1000
+# Transaction-log supplies up to two years of history, not historical equity.
+# 1y/all are fetched only if the user explicitly selects the range.
+PERFORMANCE_PERIODS = {
+    "24h": 24 * 3600 * 1000,
+    "7d": 7 * 24 * 3600 * 1000,
+    "30d": PERFORMANCE_MS,
+    "90d": 90 * 24 * 3600 * 1000,
+    "6m": 180 * 24 * 3600 * 1000,
+    "1y": 365 * 24 * 3600 * 1000,
+    "all": 729 * 24 * 3600 * 1000,
+}
+
 LEDGER_TYPES = {"TRADE", "SETTLEMENT", "DELIVERY", "LIQUIDATION", "ADL",
                 "FEE_REFUND", "FORWARD_SPLIT_SETTLE", "FORWARD_SPLIT_OPEN",
                 "REVERSE_SPLIT_SETTLE", "REVERSE_SPLIT_OPEN"}
@@ -210,14 +222,19 @@ NON_PNL_LEDGER_TYPES = {"TRANSFER_IN", "TRANSFER_OUT", "TRANSFER", "AIRDROP",
                         "FLOATING_TO_FIXED_REPAY"}
 
 
-def monthly_futures_activity(key, secret, end_ms=None):
+def monthly_futures_activity(key, secret, end_ms=None, period_ms=PERFORMANCE_MS):
     """Closed/settled derivatives cash flows + funding - trading fees, UTC.
 
     Excludes transfers and open-position unrealised PNL. Do not silently return
     a partial total when pagination or a monetary field is unknown.
     """
     end_ms = int(time.time() * 1000) if end_ms is None else int(end_ms)
-    start_ms = end_ms - PERFORMANCE_MS
+    if period_ms not in PERFORMANCE_PERIODS.values():
+        raise BybitFailure("Неподдерживаемый период истории Bybit")
+    start_ms = end_ms - period_ms
+    # Cumulative net PNL points are aggregated from actual exchange records.
+    bucket_ms = 3600000 if period_ms <= 7 * 86400000 else 86400000
+    series_bins = {}
     totals = {"tradingPnl": 0.0, "funding": 0.0, "fees": 0.0}
     daily = {}
     unknown_types = set()
@@ -263,6 +280,9 @@ def monthly_futures_activity(key, secret, end_ms=None):
                     if value is None:
                         raise BybitFailure("Bybit вернул некорректную сумму операции")
                     pieces[name] = value
+                net_change = pieces["tradingPnl"] + pieces["funding"] - pieces["fees"]
+                slot = when // bucket_ms * bucket_ms
+                series_bins[slot] = series_bins.get(slot, 0.0) + net_change
                 date = time.strftime("%Y-%m-%d", time.gmtime(when / 1000))
                 bucket = daily.setdefault(date, {"tradingPnl": 0.0, "funding": 0.0, "fees": 0.0})
                 for name, value in pieces.items():
@@ -283,7 +303,9 @@ def monthly_futures_activity(key, secret, end_ms=None):
     for date, values in sorted(daily.items()):
         days.append({"date": date, "netPnl": round(values["tradingPnl"] + values["funding"] - values["fees"], 8),
                      "funding": round(values["funding"], 8), "fees": round(values["fees"], 8)})
+    series = [{"t": t, "netPnl": round(value, 8)} for t, value in sorted(series_bins.items())]
     result = {"from": start_ms, "to": end_ms, "days": days,
+              "points": series, "bucketMs": bucket_ms,
               "tradingPnl": round(totals["tradingPnl"], 8),
               "funding": round(totals["funding"], 8),
               "fees": round(totals["fees"], 8),
@@ -293,13 +315,15 @@ def monthly_futures_activity(key, secret, end_ms=None):
     return result
 
 
-def monthly_account_performance(account_id, end_ms=None):
+def monthly_account_performance(account_id, end_ms=None, period='30d'):
     """Return the same UTC reporting interval for every linked subaccount.
 
     A client supplies a 5-minute UTC anchor for all accounts. Restrict the
     window to recent history so this read-only endpoint cannot be abused to
     repeatedly query arbitrarily large historical ranges.
     """
+    if period not in PERFORMANCE_PERIODS:
+        raise BybitFailure("Неизвестный период статистики")
     now_ms = int(time.time() * 1000)
     if end_ms is None:
         end_ms = now_ms
@@ -320,13 +344,19 @@ def monthly_account_performance(account_id, end_ms=None):
     if not key or not secret:
         raise BybitFailure("API-ключ субаккаунта не настроен")
     fingerprint = hashlib.sha256((key + ":" + secret).encode("utf-8")).digest()
+    cache_key = (account_id, period)
     with LOCK:
-        cached = MONTH_CACHE.get(account_id)
+        cached = MONTH_CACHE.get(cache_key)
         if cached and cached["fingerprint"] == fingerprint and cached["end_ms"] == end_ms and time.monotonic() - cached["at"] < 600:
             return cached["data"]
-    result = monthly_futures_activity(key, secret, end_ms=end_ms)
+    duration = PERFORMANCE_PERIODS[period]
+    result = monthly_futures_activity(key, secret, end_ms=end_ms, period_ms=duration)
+    result["period"] = period
     with LOCK:
-        MONTH_CACHE[account_id] = {"at": time.monotonic(), "end_ms": end_ms, "fingerprint": fingerprint, "data": result}
+        # Keep the cache bounded if many periods/accounts are selected over time.
+        if len(MONTH_CACHE) > 180:
+            MONTH_CACHE.clear()
+        MONTH_CACHE[cache_key] = {"at": time.monotonic(), "end_ms": end_ms, "fingerprint": fingerprint, "data": result}
     return result
 
 
@@ -499,12 +529,13 @@ class Handler(BaseHTTPRequestHandler):
             except saved_state.StateError as exc:
                 self._json({"error": str(exc)}, 500)
             return
-        if path == "/api/monthly-pnl":
+        if path in ("/api/monthly-pnl", "/api/period-performance"):
             try:
                 query = parse_qs(urlsplit(self.path).query)
                 account_id = query.get("id", [""])[0]
                 end_at = query.get("endAt", [None])[0]
-                self._json(monthly_account_performance(account_id, end_at))
+                period = "30d" if path == "/api/monthly-pnl" else query.get("period", ["30d"])[0]
+                self._json(monthly_account_performance(account_id, end_at, period))
             except BybitFailure as exc:
                 self._json({"error": str(exc)}, 503)
             except saved_state.StateError as exc:
