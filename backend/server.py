@@ -559,6 +559,16 @@ class Handler(BaseHTTPRequestHandler):
             except saved_state.StateError as exc:
                 self._json({"error": str(exc)}, 500)
             return
+        if path == "/api/equity-history":
+            try:
+                allowed = {a["id"] for a in linked_accounts()}
+                rows = [r for r in saved_state.read_equity_history()["points"]
+                        if r.get("accountId") in allowed]
+                self._json({"points": rows, "source": "FXMR4 authenticated Bybit equity snapshots",
+                            "historicalBackfill": False})
+            except saved_state.StateError as exc:
+                self._json({"error": str(exc)}, 500)
+            return
         if path in ("/api/monthly-pnl", "/api/period-performance"):
             try:
                 query = parse_qs(urlsplit(self.path).query)
@@ -889,12 +899,17 @@ def sample_history_once():
 
         futures_parts = []
         account_parts = []
+        equity_samples = []
         futures_complete = True
         account_complete = True
         if key and secret:
             try:
                 result = snapshot()
                 totals = result.get("totals") or {}
+                eq = _num(totals.get("equity"))
+                if eq is not None and eq >= 0:
+                    equity_samples.append({"t": int(time.time()*1000),
+                                           "accountId": "bybit-subaccount", "equity": eq})
                 v = _num(totals.get("perpUPL"))
                 a = _num(totals.get("accountPnl"))
                 if v is None:
@@ -912,6 +927,10 @@ def sample_history_once():
             try:
                 result = snapshot_extra(item["id"])
                 totals = result.get("totals") or {}
+                eq = _num(totals.get("equity"))
+                if eq is not None and eq >= 0:
+                    equity_samples.append({"t": int(time.time()*1000),
+                                           "accountId": item["id"], "equity": eq})
                 v = _num(totals.get("perpUPL"))
                 a = _num(totals.get("accountPnl"))
                 if v is None:
@@ -926,6 +945,13 @@ def sample_history_once():
                 futures_complete = False
                 account_complete = False
 
+        if equity_samples:
+            # Store individual accounts, never a partial "all accounts" number.
+            # Adding a new account must not create a vertical balance jump.
+            try:
+                saved_state.merge_equity_history(equity_samples)
+            except saved_state.StateError as exc:
+                print("Equity history sample skipped: " + str(exc)[:140], flush=True)
         futures = sum(futures_parts) if futures_complete and futures_parts else None
         account_pnl = sum(account_parts) if account_complete and account_parts else None
         point = {"t": int(time.time() * 1000)}
