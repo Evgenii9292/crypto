@@ -31,104 +31,73 @@ function mount(history=[],localPortfolio=null){
   console,AbortController:class{abort(){}get signal(){return {}}},
   setTimeout:()=>1,clearTimeout(){},setInterval:()=>{},
   FormData:class{}};
- vm.runInNewContext(main,context,{filename:'index.html',timeout:3000});
+ const instrumented=main.replace('window.fxmr4GetState=()=>','window.fxmr4Test={s,render};window.fxmr4GetState=()=>');
+ vm.runInNewContext(instrumented,context,{filename:'index.html',timeout:3000});
  return {el,window,document,listeners,data};
 }
-test('overview restores three labeled current and monthly PNL pairs',()=>{
+test('overview labels current PNL and historical results separately',()=>{
  const {el}=mount();
  const markup=el('content').innerHTML;
  assert.match(markup,/Баланс портфеля/);
- assert.equal((markup.match(/Текущий PNL/g)||[]).length,3);
- assert.equal((markup.match(/Месячный PNL/g)||[]).length,3);
- assert.doesNotMatch(markup,/Всего на счетах|heroBreakdown|Баланс субаккаунта/);
+ assert.match(markup,/Текущий PNL[\s\S]*Учтённые покупки Spot \+ открытые фьючерсы/);
+ assert.match(markup,/Фьючерсы · 30 дней[\s\S]*Результат закрытых операций Bybit/);
+ for(const mode of ['all','spot','futures'])assert.match(markup,new RegExp(`data-pnl-mode="${mode}"`));
+ assert.doesNotMatch(markup,/data-pnl-mode="month"|Всего на счетах|heroBreakdown/);
  assert.match(markup,/class="assetTopline"/);
 });
-test('combined chart does not mistake Spot-only history for total PNL',async()=>{
+test('overview never treats Spot-only samples as combined ledger history',async()=>{
  const now=Date.now();
- const h=[
-  {t:now-3*3600000,spot:-.12,futures:-2.2,futuresAccount:-12.2,totalAccount:-12.32},
-  {t:now-2*3600000,spot:-.17,futures:-2.1,futuresAccount:-12.1,totalAccount:-12.27},
-  {t:now-3600000,spot:-.18,total:49.7},
-  {t:now-200000,spot:-.20,futures:-3.1,futuresAccount:-13.1,totalAccount:-13.30}
- ];
- const {window,el}=mount(h);
+ const history=[{t:now-3600000,spot:-.18,total:49.7},{t:now-200000,spot:-.2,total:53}];
+ const {window,el}=mount(history);
  for(let i=0;i<100;i++)await Promise.resolve();
- window.fxmr4App.onSnapshot({
-  account:{name:'sub'},totals:{equity:1100,perpUPL:-3.12,realisedPnl:-10,accountPnl:-13.12},
-  positions:[],updatedAt:now
- });
+ window.fxmr4App.onAccounts([{id:'bybit-subaccount',label:'Account'}]);
+ window.fxmr4App.onSnapshot({account:{id:'bybit-subaccount'},totals:{equity:1100,perpUPL:-3.12},positions:[],updatedAt:now});
  const markup=el('content').innerHTML;
- const points=markup.match(/<polyline points="([^"]+)"/)?.[1];
- assert.ok(points);
- assert.ok(points.trim().split(' ').length>=3);
- assert.doesNotMatch(markup,/\+\$49\.7/);
+ assert.match(markup,/нет полной сопоставимой истории/);
+ assert.doesNotMatch(markup,/<polyline points=|\+\$49\.7|\+\$53\.00/);
 });
-test('offline server PNL samples fill gaps BETWEEN existing local samples',async()=>{
- const now=Date.now();
- const t=h=>now-h*3600000;
- const local={
-   capital:1000,trades:[
-     {id:1,coin:'BTC',spent:25,entry:76200,buy_date:'2026-11-06'},
-     {id:2,coin:'ETH',spent:25,entry:2247,buy_date:'2026-11-06'}
-   ],
-   snapshots:[{time:t(6),pnl:-.50},{time:t(1),pnl:-.30}],
-   portfolioSnapshots:[
-     {time:t(6),spot:-.50,futures:-2,futuresAccount:-12,totalAccount:-12.50},
-     {time:t(1),spot:-.30,futures:-1,futuresAccount:-11,totalAccount:-11.30}
-   ]
- };
- const offline=[
-   {t:t(4),spot:-.40,futures:-1.8,futuresAccount:-11.8,totalAccount:-12.2},
-   {t:t(2),spot:-.38,futures:-1.5,futuresAccount:-11.5,totalAccount:-11.88}
- ];
- const {el,listeners}=mount(offline,local);
+test('offline server samples fill gaps in the Spot observations chart',async()=>{
+ const now=Date.now(),t=h=>now-h*3600000;
+ const local={capital:1000,trades:[],snapshots:[{time:t(6),pnl:-.50},{time:t(1),pnl:-.30}]};
+ const {el,listeners}=mount([{t:t(4),spot:-.40},{t:t(2),spot:-.38}],local);
  for(let i=0;i<150;i++)await Promise.resolve();
- const extract=()=>el('content').innerHTML.match(/<polyline points="([^"]+)"/)?.[1]?.trim().split(' ').length;
- assert.equal(extract(),4,'combined chart contains both local and offline server samples');
- for(const cb of listeners.click||[])cb({target:{closest:selector=>selector==='[data-tab]'?{dataset:{tab:'positions'}}:null}});
- assert.equal(extract(),4,'Spot chart also uses server history during closed browser time');
+ click(listeners,'[data-tab]',{tab:'positions'});
+ const points=el('content').innerHTML.match(/<polyline points="([^"]+)"/)?.[1];
+ assert.equal(points?.trim().split(' ').length,4);
 });
-test('closing a losing futures position does not turn losses into account profit',()=>{
+function click(listeners,selector,dataset){
+ for(const fn of listeners.click||[])fn({target:{closest:q=>q===selector?{dataset}:null}});
+}
+test('closing a losing futures position keeps the realised loss in the trading result',()=>{
  const {window,el,listeners}=mount();
- const bridge=window.fxmr4App;
- bridge.onAccounts([{id:'bybit-subaccount',label:'Account'}]);
- const at=Date.now();
- bridge.onSnapshot({
-  account:{id:'bybit-subaccount',name:'Account'},
-  totals:{equity:1000,perpUPL:-12,realisedPnl:-3,accountPnl:-15,positionCount:1},
-  positions:[{symbol:'XMRUSDT',size:100,pnl:-12,side:'Long'}],updatedAt:at
- });
- for(const fn of listeners.click||[])fn({target:{closest:q=>q==='[data-tab]'?{dataset:{tab:'futures'}}:null}});
- const before=el('content').innerHTML;
- assert.match(before,/PNL счёта/);
- assert.match(before,/−\$15\.00/);
- assert.match(before,/Плавающий/);
- bridge.onSnapshot({
-  account:{id:'bybit-subaccount',name:'Account'},
-  totals:{equity:1000,perpUPL:0,realisedPnl:-15,accountPnl:-15,positionCount:0},
-  positions:[],updatedAt:at+300000
- });
- const after=el('content').innerHTML;
- assert.match(after,/−\$15\.00/);
- assert.doesNotMatch(after,/\+\$12\.00/);
+ const bridge=window.fxmr4App,{s,render}=window.fxmr4Test;
+ const id='bybit-subaccount',at=Date.now(),end=s.monthlyAnchorMs,from=end-30*86400000;
+ bridge.onAccounts([{id,label:'Account'}]);
+ const report=netPnl=>({from,to:end,netPnl,days:[],points:[{t:end-300000,netPnl}]});
+ s.monthlyPerformance[id]=report(-3);
+ bridge.onSnapshot({account:{id,name:'Account'},totals:{equity:1000,perpUPL:-12,positionCount:1},
+  positions:[{symbol:'XMRUSDT',size:100,pnl:-12,side:'Long'}],updatedAt:at});
+ click(listeners,'[data-tab]',{tab:'futures'});
+ assert.match(el('content').innerHTML,/Открытые позиции · PNL<\/div><div[^>]*>−\$12\.00/);
+ s.monthlyPerformance[id]=report(-15);
+ bridge.onSnapshot({account:{id,name:'Account'},totals:{equity:1000,perpUPL:0,positionCount:0},positions:[],updatedAt:at+300000});
+ render();
+ const markup=el('content').innerHTML;
+ assert.match(markup,/Результат за 30 дней<\/div><div[^>]*>−\$15\.00/);
+ assert.doesNotMatch(markup,/\+\$12\.00/);
 });
-test('balance mode presents actual equity as money, never as positive profit',()=>{
+test('equity view charts observed balances as money without a profit sign',()=>{
  const {window,el,listeners}=mount();
- window.fxmr4App.onSnapshot({
-  account:{name:'sub'},totals:{equity:1100,perpUPL:-3},
-  positions:[],updatedAt:Date.now()
- });
- const click=target=>{
-  for(const fn of listeners.click||[])fn({target:{closest:selector=>
-    selector==='[data-tab]'&&target.tab?{dataset:{tab:target.tab}}:
-    selector==='[data-metric]'&&target.metric?{dataset:{metric:target.metric,chart:'futures'}}:null}});
- };
- click({tab:'futures'});
- click({metric:'balance'});
- const output=el('content').innerHTML;
- assert.match(output,/График баланса|История баланса/);
- assert.match(output,/>\$1,100\.00</); 
- assert.doesNotMatch(output,/\+\$1,100/);
+ const id='bybit-subaccount',now=Date.now();
+ window.fxmr4App.onAccounts([{id,label:'Account'}]);
+ window.fxmr4Test.s.equityHistory=[{t:now-600000,accountId:id,equity:1000},{t:now-300000,accountId:id,equity:1100}];
+ click(listeners,'[data-tab]',{tab:'futures'});
+ click(listeners,'[data-futures-view]',{futuresView:'equity'});
+ const chart=el('content').innerHTML.split('<section class="section pnlChart')[1];
+ assert.match(chart,/Стоимость счёта · наблюдения/);
+ assert.match(chart,/<polyline/);
+ assert.match(chart,/>\$1,100\.00</);
+ assert.doesNotMatch(chart,/\+\$1,100/);
 });
 test('Spot cards no longer show invested/coin-stack noise',()=>{
  const {window,el,listeners}=mount();
