@@ -85,7 +85,7 @@
   const nowLocal=()=>{const d=new Date();return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-')};
   const fmtDate=d=>{if(!d)return 'Нет даты';const a=d.slice(0,10).split('-');return a.length===3?`${a[2]}.${a[1]}.${a[0]}`:d};
   const fmtTime=d=>{if(!d)return '';const x=new Date(d);return isNaN(x)?'':x.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})};
-  const s={tab:'overview',trades:[{id:1,coin:'BTC',spent:25,entry:76200,buy_date:'2026-11-06',confirmed:false},{id:2,coin:'ETH',spent:25,entry:2247,buy_date:'2026-11-06',confirmed:false}],quotes:{BTC:{price:initial.BTC,source:'Предварительно'},ETH:{price:initial.ETH,source:'Предварительно'}},capital:C,period:'7d',chartPeriod:{overview:'all',spot:'all',futures:'30d'},chartMetric:{spot:'pnl',futures:'realized30d'},points:[],snapshots:[],sync:null,form:false,editing:null,deleteId:null,busy:false,flash:'',formError:'',showPrices:false,tradingSubtab:'futures',futureMode:'all',futureSort:'pnl',futureSortDir:-1,pnlMode:'all',capitalOpen:false,portfolioSnapshots:[],pnlHistory:[],pendingRemove:null,renameId:null,renameValue:'',renameError:'',futureForm:null,futureFormError:'',sources:[{id:'bybit',name:'Bybit',connected:false,accounts:[]}],futuresPositions:[],openedExchanges:{},openedAccounts:{},spotHistoryOpen:false,spotAccountsOpen:false,spotOpen:{},bybitSnapshot:null,bybitAccountsSnapshots:{},monthlyPerformance:{},monthlyLoading:{},monthlyAnchorMs:null,periodReports:{},periodLoading:{},periodProgress:{},periodChunkCache:{},monthlyErrors:{},periodErrors:{},completeReportSnapshots:{},spotHistoricalReports:{},spotHistoryLoading:{},equityHistory:[],equityHistoryAt:0,equityHistoryLoading:false,futuresView:'pnl',futuresValueMode:'usd',futuresAccountFilter:'all',bybitExpectedIds:[],backendConnection:{available:false,configured:false,connected:false,error:''}};
+  const s={tab:'overview',trades:[{id:1,coin:'BTC',spent:25,entry:76200,buy_date:'2026-11-06',confirmed:false},{id:2,coin:'ETH',spent:25,entry:2247,buy_date:'2026-11-06',confirmed:false}],quotes:{BTC:{price:initial.BTC,source:'Предварительно'},ETH:{price:initial.ETH,source:'Предварительно'}},capital:C,period:'7d',chartPeriod:{overview:'all',spot:'all',futures:'30d'},chartMetric:{spot:'pnl',futures:'realized30d'},points:[],snapshots:[],sync:null,form:false,editing:null,deleteId:null,busy:false,flash:'',formError:'',showPrices:false,tradingSubtab:'futures',futureMode:'all',futureSort:'pnl',futureSortDir:-1,pnlMode:'all',capitalOpen:false,portfolioSnapshots:[],pnlHistory:[],pendingRemove:null,renameId:null,renameValue:'',renameError:'',futureForm:null,futureFormError:'',sources:[{id:'bybit',name:'Bybit',connected:false,accounts:[]}],futuresPositions:[],openedExchanges:{},openedAccounts:{},spotHistoryOpen:false,spotAccountsOpen:false,spotOpen:{},bybitSnapshot:null,bybitAccountsSnapshots:{},monthlyPerformance:{},monthlyLoading:{},monthlyAnchorMs:null,periodReports:{},periodLoading:{},periodProgress:{},periodChunkCache:{},monthlyErrors:{},periodErrors:{},periodErrorRetryAt:{},completeReportSnapshots:{},spotHistoricalReports:{},spotHistoryLoading:{},equityHistory:[],equityHistoryAt:0,equityHistoryLoading:false,futuresView:'pnl',futuresValueMode:'usd',futuresAccountFilter:'all',bybitExpectedIds:[],backendConnection:{available:false,configured:false,connected:false,error:''}};
   function coin(m){const trades=s.trades.filter(t=>t.coin===m);const invested=trades.reduce((t,x)=>t+Number(x.spent),0);const quantity=trades.reduce((t,x)=>t+Number(x.spent)/Number(x.entry),0);const current=Number(s.quotes[m]?.price||initial[m]);const value=quantity*current;return {invested,quantity,current,value,profit:value-invested,remaining:C/2-invested,avg:quantity?invested/quantity:0,provisional:trades.some(t=>!t.confirmed)}}
   function sums(){const btc=coin('BTC'),eth=coin('ETH'),invested=btc.invested+eth.invested,cash=C-invested,holdings=btc.value+eth.value,profit=holdings-invested;return {btc,eth,invested,cash,holdings,profit,total:cash+holdings}}
 
@@ -473,8 +473,8 @@ async function fetchLongBybitPeriod(accountId,period,anchor){
 }
 async function loadFuturesPeriod(period){
  if(period==='30d'||!s.bybitExpectedIds?.length||!s.backendConnection.available)return;
- if(s.periodLoading[period])return;
- const long=period==='60d'||period==='90d'||period==='6m'||period==='1y'||period==='all';
+ if(s.periodLoading[period]||Date.now()<(s.periodErrorRetryAt[period]||0))return;
+ const long='60d'||period==='90d'||period==='6m'||period==='1y'||period==='all';
  // Long-range analysis is day-aligned so it can reuse downloaded 6-day
  // slices. The current UTC day's operations are shown separately.
  const anchor=long?Math.floor(Date.now()/86400000)*86400000:
@@ -513,11 +513,16 @@ async function loadFuturesPeriod(period){
     if(data&&data.to===anchor&&Number.isFinite(data.netPnl)&&Array.isArray(data.points)){
      s.periodReports[period][id]={...data,receivedAt:Date.now()};
      delete s.periodErrors[period];
+     delete s.periodErrorRetryAt[period];
      persistBybitHistory();
-    }else s.periodErrors[period]='История Bybit неполная';
+    }else{
+     s.periodErrors[period]='История Bybit неполная';
+     s.periodErrorRetryAt[period]=Date.now()+60000;
+    }
    }catch(error){
     // A network or Bybit failure must not erase the last confirmed chart.
     s.periodErrors[period]=String(error.message||'История Bybit недоступна').slice(0,150);
+    s.periodErrorRetryAt[period]=Date.now()+60000;
    }
   }));
  }finally{
@@ -1401,7 +1406,7 @@ window.fxmr4App={onBackendStatus,onSnapshot,onAccounts,onDisconnected,applyCloud
   }
   function clearBybitHistory(){
    s.monthlyPerformance={};s.periodReports={};s.periodChunkCache={};
-   s.completeReportSnapshots={};s.periodErrors={};s.monthlyErrors={};
+   s.completeReportSnapshots={};s.periodErrors={};s.periodErrorRetryAt={};s.monthlyErrors={};
    try{localStorage.setItem(historyCacheKey,'');localStorage.setItem(chunksCacheKey,'')}catch(e){}
   }
   
