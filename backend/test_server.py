@@ -406,6 +406,11 @@ class TestBybitTodayAndSymbolBreakdown(TestCase):
         self.assertAlmostEqual(sum(x["netPnl"] for x in result["symbols"]),
                                result["netPnl"])
         self.assertEqual(result["symbols"][0]["operations"], 2)
+        self.assertTrue(result["costEventsComplete"])
+        self.assertEqual(len(result["costEvents"]), 2)
+        self.assertEqual(result["costEvents"][0]["symbol"], "ADAUSDT")
+        self.assertAlmostEqual(sum(p["funding"] for p in result["costEvents"]), -0.5)
+        self.assertAlmostEqual(sum(p["fees"] for p in result["costEvents"]), 0.2)
 
     def test_60_day_period_is_supported_without_synthetic_equity_history(self):
         self.assertEqual(server.PERFORMANCE_PERIODS["60d"], 60 * 86400000)
