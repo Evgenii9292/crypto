@@ -43,7 +43,7 @@ function mount(sources){
   setTimeout:()=>1,clearTimeout(){},setInterval:()=>{},
   window:{},FormData:class{constructor(form){this.form=form}get(key){return this.form.fields?.[key]??null}}
  };
- vm.runInNewContext(script,context,{filename:'index.html',timeout:3000});
+ vm.runInNewContext(script.replace('window.fxmr4GetState=()=>', 'window.fxmr4Inspect={s,onAccounts,onSnapshot,render,monthlyFutures,monthlyFuturesSeries,positionAge};window.fxmr4GetState=()=>'),context,{filename:'index.html',timeout:3000});
  const click=action=>{
   const target={dataset:{action},closest(selector){return selector==='[data-action]'?this:null}};
   for(const listener of listeners.click||[])listener({target});
@@ -124,4 +124,43 @@ test('manual theme icon swaps dark/light and persists independently of portfolio
  assert.equal(document.documentElement.dataset.theme,'light');
  assert.equal(store.get('fxmr4_theme_v1'),'light');
  assert.ok(themeControls.every(b=>b.iconHref==='#moon'));
+});
+
+test('futures shows real 30-day ledger result, funding, fees, muted size and desktop ROI',()=>{
+ const {element,window}=mount([{id:'bybit',name:'Bybit',accounts:[]}]);
+ const view=window.fxmr4Inspect;
+ view.onAccounts([{id:'sub-one',label:'Main subaccount'}]);
+ view.onSnapshot({account:{id:'sub-one',name:'Main subaccount'},
+  totals:{equity:3213.49,availableBalance:3000,perpUPL:-10,realisedPnl:-30,accountPnl:-40},
+  positions:[{symbol:'XMRUSDT',side:'Long',size:91.72,initialMargin:20,pnl:4,openedAt:null}]});
+ const now=Date.now();
+ view.s.monthlyPerformance['sub-one']={
+  from:now-30*86400000,to:now,netPnl:-5,tradingPnl:-2,funding:-1,fees:2,
+  days:[{date:new Date(now-5*86400000).toISOString().slice(0,10),netPnl:-5}]
+ };
+ view.s.tab='futures';view.render();
+ const rendered=element('content').innerHTML;
+ assert.match(rendered,/30 дней · PNL/);
+ assert.match(rendered,/Funding: −\$1\.00/);
+ assert.match(rendered,/Комиссии: \$2\.00/);
+ assert.match(rendered,/ROI · %/);
+ assert.match(rendered,/posSize/);
+ assert.match(rendered,/XMRUSDT/);
+ assert.match(rendered,/polyline/,'monthly chart comes from the transaction ledger');
+ assert.equal(view.monthlyFutures().netPnl,-5);
+ assert.equal(view.monthlyFuturesSeries().length,3);
+ assert.equal(view.positionAge(null),'—','unknown open time is not a 344-day position');
+ assert.match(css,/\.futurePosition:not\(\.futureHead\) \.posSize strong\{color:var\(--sub\)/);
+ assert.match(css,/@media\(max-width:960px\)[\s\S]*?\.futurePosition \.posRoi\{display:none\}/);
+});
+
+test('no historical ledger never invents a monthly profit',()=>{
+ const {element,window}=mount([{id:'bybit',name:'Bybit',accounts:[]}]);
+ const view=window.fxmr4Inspect;
+ view.onAccounts([{id:'sub-two',label:'Second'}]);
+ view.s.tab='futures';view.render();
+ const rendered=element('content').innerHTML;
+ assert.match(rendered,/30 дней · PNL/);
+ assert.match(rendered,/Загружаем операции Bybit/);
+ assert.equal(view.monthlyFutures(),null);
 });
