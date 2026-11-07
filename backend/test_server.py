@@ -233,7 +233,7 @@ class TestMonthlyLedger(TestCase):
                          "transactionTime": stamp, "cashFlow": "0",
                          "funding": "0.5", "fee": "0"}]
             else:
-                rows = [{"category": "linear", "currency": "USDT", "type": "TRANSFER",
+                rows = [{"category": "linear", "currency": "USDT", "type": "TRANSFER_IN",
                          "transactionTime": stamp, "cashFlow": "10000",
                          "funding": "", "fee": ""}]
             return {"list": rows, "nextPageCursor": ""}
