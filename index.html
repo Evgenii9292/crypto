@@ -437,11 +437,12 @@ function futurePositionLine(p){
 }
 function futureAccountRow(ex,ac){
  const id=ex.id+':'+ac.id,pp=futuresSorted().filter(p=>p.exchangeId===ex.id&&p.accountId===ac.id);
- const linked=ex.id==='bybit'&&!!s.bybitAccountsSnapshots?.[ac.id]&&s.backendConnection.connected;
- const snapshot=linked?s.bybitAccountsSnapshots[ac.id]:null;
+ const latest=ex.id==='bybit'?s.bybitAccountsSnapshots?.[ac.id]:null;
+ // One disconnected account must not hide a different account's fresh PNL.
+ const snapshot=latest&&Date.now()-Number(latest.updatedAt||0)<180000?latest:null;
  const openRaw=snapshot?.totals?.perpUPL;
  const open=openRaw==null||!Number.isFinite(Number(openRaw))?null:Number(openRaw);
- const report=linked?s.monthlyPerformance[ac.id]:null;
+ const report=ex.id==='bybit'?s.monthlyPerformance[ac.id]:null;
  const monthly=report&&Number.isFinite(report.netPnl)?report.netPnl:null;
  const reportHint=report?.error||'Результат закрытых операций Bybit за последние 30 дней';
  const metrics=`<span class="accountMetrics">
@@ -1003,6 +1004,15 @@ function handleChange(e){
     saveLocal(false);
    }
   }catch(e){/* Stored chart preferences remain optional. */}
+  try{
+   const reportMigration='fxmr4_futures_report_default_v1';
+   if(!localStorage.getItem(reportMigration)){
+    s.chartMetric.futures='realized30d';
+    s.chartPeriod.futures='30d';
+    localStorage.setItem(reportMigration,'1');
+    saveLocal(false);
+   }
+  }catch(e){/* Never prevent the dashboard from loading. */}
   render();chart();sync({quiet:true});loadPnlHistory();
   setInterval(()=>{if(!document.hidden&&!s.busy)sync({quiet:true})},60000);
   document.addEventListener('visibilitychange',()=>{
