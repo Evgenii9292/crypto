@@ -998,7 +998,12 @@ function render(){
  window.fxmr4Bybit?.renderPanel?.();
  if(s.tab==='futures'&&s.futuresView==='pnl'&&s.chartPeriod.futures!=='30d')void loadFuturesPeriod(s.chartPeriod.futures);
  if(s.tab==='futures')void loadEquityHistory();
- if(s.tab==='futures'||s.tab==='overview')void loadFuturesPeriod('today');
+ if(s.tab==='overview'){
+  const period=s.chartPeriod.overview||'30d';
+  void loadSpotHistory(period);
+  if(period!=='30d')void loadFuturesPeriod(period);
+ }
+ if(s.tab==='futures')void loadFuturesPeriod('today');
 }
 function reconcileLive(current,next){
  if(next.nodeType===11){
@@ -1050,7 +1055,12 @@ function renderLive(){
  window.fxmr4Levels?.refreshQuotes?.();
  if(s.tab==='futures'&&s.futuresView==='pnl'&&s.chartPeriod.futures!=='30d')void loadFuturesPeriod(s.chartPeriod.futures);
  if(s.tab==='futures')void loadEquityHistory();
- if(s.tab==='futures'||s.tab==='overview')void loadFuturesPeriod('today');
+ if(s.tab==='overview'){
+  const period=s.chartPeriod.overview||'30d';
+  void loadSpotHistory(period);
+  if(period!=='30d')void loadFuturesPeriod(period);
+ }
+ if(s.tab==='futures')void loadFuturesPeriod('today');
 }
 
 function saveCapital(fd){
@@ -1235,7 +1245,8 @@ window.fxmr4App={onBackendStatus,onSnapshot,onAccounts,onDisconnected,applyCloud
       if(saved.chartMetric&&typeof saved.chartMetric==='object'){
         for(const k of ['spot','futures'])if(['pnl','balance','floating','realized30d'].includes(saved.chartMetric[k]))s.chartMetric[k]=saved.chartMetric[k];
       }
-      if(['usd','pct'].includes(saved.futuresValueMode))s.futuresValueMode=saved.futuresValueMode;
+      if(['all','spot','futures'].includes(saved.pnlMode))s.pnlMode=saved.pnlMode;
+       if(['usd','pct'].includes(saved.futuresValueMode))s.futuresValueMode=saved.futuresValueMode;
        if(['pnl','equity'].includes(saved.futuresView))s.futuresView=saved.futuresView;
        if(saved.futureSort&&FUTURE_SORTS.some(([k])=>k===saved.futureSort))s.futureSort=saved.futureSort;else if(saved.futureSort==='roi')s.futureSort='share';
       if(saved.futureSortDir===-1||saved.futureSortDir===1)s.futureSortDir=saved.futureSortDir;
@@ -1252,6 +1263,7 @@ window.fxmr4App={onBackendStatus,onSnapshot,onAccounts,onDisconnected,applyCloud
         portfolioSnapshots:s.portfolioSnapshots,
         chartPeriod:s.chartPeriod,
         chartMetric:s.chartMetric,
+        pnlMode:s.pnlMode,
         futuresValueMode:s.futuresValueMode,
         futuresView:s.futuresView,
         futureSort:s.futureSort,
@@ -1421,7 +1433,7 @@ function handleClick(e){
  const tab=e.target.closest('[data-tab]');
  if(tab){s.tab=tab.dataset.tab;s.flash='';s.form=false;s.deleteId=null;render();return}
  const pnl=e.target.closest('[data-pnl-mode]');
- if(pnl){s.pnlMode=pnl.dataset.pnlMode;render();return}
+ if(pnl){s.pnlMode=pnl.dataset.pnlMode;saveLocal(false);render();return}
  const per=e.target.closest('[data-period]');
  const view=e.target.closest('[data-futures-view]');
   if(view){s.futuresView=view.dataset.futuresView;saveLocal(false);render();return}
@@ -1471,6 +1483,11 @@ function handleSubmit(e){
  if(e.target.id==='capitalForm'){e.preventDefault();saveCapital(new FormData(e.target))}
 }
 function handleChange(e){
+ if(e.target.matches?.('[data-overview-period]')){
+  s.chartPeriod.overview=e.target.value;
+  s.period=e.target.value;
+  saveLocal(false);render();return;
+ }
  if(e.target.matches?.('[data-futures-account]')){s.futuresAccountFilter=e.target.value;render();return}
  if(e.target.id==='coin'&&s.editing===null){const input=$('entry');if(input)input.value=Number(s.quotes[e.target.value]?.price||initial[e.target.value])}
 }
@@ -1501,6 +1518,13 @@ function handleChange(e){
     saveLocal(false);
    }
   }catch(e){/* Never prevent the dashboard from loading. */}
+  try{
+   const overviewUpgrade='fxmr4_overview_historical_tabs_v3';
+   if(!localStorage.getItem(overviewUpgrade)){
+    s.pnlMode='all';s.chartPeriod.overview='30d';s.period='30d';
+    localStorage.setItem(overviewUpgrade,'1');saveLocal(false);
+   }
+  }catch(e){/* Initial chart still works without localStorage. */}
   render();chart();sync({quiet:true});loadPnlHistory();
   setInterval(()=>{if(!document.hidden&&!s.busy)sync({quiet:true})},60000);
   document.addEventListener('visibilitychange',()=>{
