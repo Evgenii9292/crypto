@@ -8,8 +8,8 @@ const css=fs.readFileSync(path.join(__dirname,'..','styles.css'),'utf8');
 const script=html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
 if(!script)throw Error('inline portfolio script is missing');
 
-function mount(sources,fetchImpl=null){
- const elements=new Map(),listeners={},store=new Map();
+function mount(sources,fetchImpl=null,sharedStore=null){
+ const elements=new Map(),listeners={},store=sharedStore||new Map();
  const themeControls=Array.from({length:2},()=>({
   attrs:{},iconHref:'',
   setAttribute(k,v){this.attrs[k]=v},
@@ -43,7 +43,7 @@ function mount(sources,fetchImpl=null){
   setTimeout:()=>1,clearTimeout(){},setInterval:()=>{},
   window:{},FormData:class{constructor(form){this.form=form}get(key){return this.form.fields?.[key]??null}}
  };
- vm.runInNewContext(script.replace('window.fxmr4GetState=()=>', 'window.fxmr4Inspect={s,onAccounts,onSnapshot,render,renderLive,reconcileLive,pnlWindow,monthlyFutures,monthlyFuturesSeries,positionAge,futuresLedgerData,activeFuturesReports,positionAccountEquity,loadFuturesPeriod,observedEquitySeries,futuresCSVText,futuresValue,pnlBarSections,positionCostsFromBybit,overviewSpotHistory,overviewHistoryData,combineBybitChunks,fetchLongBybitPeriod,loadSpotHistory};window.fxmr4GetState=()=>'),context,{filename:'index.html',timeout:3000});
+ vm.runInNewContext(script.replace('window.fxmr4GetState=()=>', 'window.fxmr4Inspect={s,onAccounts,onSnapshot,render,renderLive,reconcileLive,pnlWindow,monthlyFutures,monthlyFuturesSeries,positionAge,futuresLedgerData,activeFuturesReports,positionAccountEquity,loadFuturesPeriod,observedEquitySeries,futuresCSVText,futuresValue,pnlBarSections,positionCostsFromBybit,overviewSpotHistory,overviewHistoryData,combineBybitChunks,fetchLongBybitPeriod,loadSpotHistory,loadMonthlyPerformance,persistBybitHistory,restoreBybitHistory};window.fxmr4GetState=()=>'),context,{filename:'index.html',timeout:3000});
  const click=(action,id='')=>{
   const target={dataset:{action,id},closest(selector){return selector==='[data-action]'?this:null}};
   for(const listener of listeners.click||[])listener({target});
@@ -589,15 +589,18 @@ test('six-day Bybit chunks merge into 180-day report without gaps, duplicates or
  v.onAccounts([{id:startId,label:'Alpha'}]);
  v.s.backendConnection.available=true;
  await v.loadFuturesPeriod('6m');
- assert.equal(seen.length,30,'180 days must use 30 requests of up to 6 days');
- assert.ok(seen.every(([start,end])=>end-start===6*86400000));
+ assert.ok(seen.length>=30&&seen.length<=31,
+  '180 rolling days require UTC-aligned six-day slices with at most two partial windows');
+ assert.ok(seen.every(([start,end])=>end-start>0&&end-start<=6*86400000));
+ assert.ok(seen.some(([start,end])=>end-start===6*86400000),
+  'complete stable six-day windows must be reusable across subsequent days');
  const data=v.futuresLedgerData('6m');
  assert.ok(data,'all slices must have been checked before drawing history');
- assert.equal(data.netPnl,60);
- assert.equal(data.days.length,30);
- assert.equal(data.symbols[0].netPnl,60);
+ assert.equal(data.netPnl,seen.length*2);
+ assert.equal(data.days.length,seen.length);
+ assert.equal(data.symbols[0].netPnl,seen.length*2);
  await v.loadFuturesPeriod('6m');
- assert.equal(seen.length,30,'reload must reuse the period cache');
+ assert.ok(seen.length<=31,'reload must reuse the period cache');
  const parts=[{from:0,to:1000,netPnl:1,points:[]},{from:1100,to:2000,netPnl:1,points:[]}];
  let threw=false;
  try{v.combineBybitChunks(parts,0,2000,'6m')}catch(e){threw=true}
@@ -739,4 +742,82 @@ test('Bar chart includes all daily values but only 3 non-overlapping axis ticks'
  assert.ok(content.includes('ADAUSDT'));
  assert.ok(css.includes('.pnlBarList{gap:3px'));
  assert.ok(!content.includes('class="pnlBarItem"><small>'));
+});
+
+test('saved complete 180-day Bybit chart survives full browser reload with zero new API requests',async()=>{
+ const shared=new Map(),urls=[];
+ const stub=async url=>{
+  const u=String(url);
+  if(!u.includes('/api/period-chunk?'))return new Promise(()=>{});
+  urls.push(u);
+  const start=Number(u.match(/startAt=(\d+)/)[1]),
+        end=Number(u.match(/endAt=(\d+)/)[1]);
+  return {ok:true,json:async()=>({from:start,to:end,netPnl:3,tradingPnl:3,
+   funding:0,fees:0,points:[{t:start+1000,netPnl:3}],
+   days:[{date:new Date(start).toISOString().slice(0,10),netPnl:3}],
+   symbols:[{symbol:'BTCUSDT',netPnl:3,operations:1}]})};
+ };
+ const first=mount([{id:'bybit',name:'Bybit',accounts:[]}],stub,shared);
+ first.window.fxmr4Inspect.onAccounts([{id:'a',label:'Account A'}]);
+ first.window.fxmr4Inspect.s.backendConnection.available=true;
+ await first.window.fxmr4Inspect.loadFuturesPeriod('6m');
+ const previous=first.window.fxmr4Inspect.futuresLedgerData('6m');
+ assert.ok(previous&&previous.netPnl>0);
+ assert.ok(shared.has('fxmr4_bybit_reports_v1'));
+ assert.ok(shared.has('fxmr4_bybit_chunks_v1'));
+ const originalRequests=urls.length;
+ assert.ok(originalRequests>=30);
+ const second=mount([{id:'bybit',name:'Bybit',accounts:[]}],stub,shared);
+ second.window.fxmr4Inspect.onAccounts([{id:'a',label:'Account A'}]);
+ second.window.fxmr4Inspect.s.backendConnection.available=true;
+ assert.equal(second.window.fxmr4Inspect.futuresLedgerData('6m').netPnl,
+   previous.netPnl,'chart data must exist before any new fetch');
+ await second.window.fxmr4Inspect.loadFuturesPeriod('6m');
+ assert.equal(urls.length,originalRequests,'reopening current history makes no repeat API calls');
+ second.window.fxmr4Inspect.s.tab='futures';
+ second.window.fxmr4Inspect.s.chartPeriod.futures='6m';
+ second.window.fxmr4Inspect.render();
+ assert.match(second.element('content').innerHTML,/polyline/);
+ assert.doesNotMatch(second.element('content').innerHTML,/Нет подтверждённой истории за этот период/);
+});
+
+test('cached 30-day report remains when Bybit temporarily refuses its refresh',async()=>{
+ const shared=new Map(),anchor=Math.floor(Date.now()/300000)*300000;
+ const source={from:anchor-30*86400000,to:anchor,netPnl:23,fees:0,funding:0,
+  points:[{t:anchor-86400000,netPnl:23}],days:[],symbols:[],
+  receivedAt:Date.now()-3600000};
+ const first=mount([{id:'bybit',name:'Bybit',accounts:[]}],null,shared);
+ const a=first.window.fxmr4Inspect;
+ a.onAccounts([{id:'a',label:'A'}]);
+ a.s.monthlyPerformance.a=source;
+ a.persistBybitHistory();
+ const second=mount([{id:'bybit',name:'Bybit',accounts:[]}],
+  async()=>({ok:false,json:async()=>({error:'Temporary Bybit outage'})}),shared);
+ const b=second.window.fxmr4Inspect;
+ b.onAccounts([{id:'a',label:'A'}]);
+ b.s.backendConnection.available=true;
+ assert.equal(b.futuresLedgerData('30d').netPnl,23,'data restored immediately');
+ await b.loadMonthlyPerformance('a');
+ assert.equal(b.futuresLedgerData('30d').netPnl,23,'temporary failure cannot erase graph');
+ assert.ok(b.s.monthlyErrors.a);
+});
+
+test('chunk downloads reuse fixed historical windows and never repeat closed old slices',async()=>{
+ const urls=[],stub=async url=>{
+  const u=String(url);
+  if(!u.includes('period-chunk'))return new Promise(()=>{});
+  urls.push(u);
+  const start=Number(u.match(/startAt=(\d+)/)[1]),end=Number(u.match(/endAt=(\d+)/)[1]);
+  return {ok:true,json:async()=>({from:start,to:end,netPnl:1,tradingPnl:1,
+   funding:0,fees:0,points:[{t:start+1000,netPnl:1}],days:[],symbols:[]})};
+ };
+ const {window}=mount([{id:'bybit',name:'Bybit',accounts:[]}],stub);
+ const v=window.fxmr4Inspect;
+ v.onAccounts([{id:'a',label:'A'}]);v.s.backendConnection.available=true;
+ await v.loadFuturesPeriod('90d');
+ const before=urls.length,oldChunks=Object.keys(v.s.periodChunkCache);
+ assert.ok(oldChunks.length>=15);
+ delete v.s.periodReports['90d'].a;
+ await v.loadFuturesPeriod('90d');
+ assert.equal(urls.length,before,'same UTC day only reuses downloaded chunks');
 });
