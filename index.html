@@ -1169,7 +1169,7 @@ function onDisconnected(){
  const bybit=s.sources.find(x=>x.id==='bybit');
  if(bybit){bybit.connected=false;bybit.accounts=bybit.accounts.filter(x=>x.id!=='bybit-subaccount')}
  s.futuresPositions=s.futuresPositions.filter(x=>x.accountId!=='bybit-subaccount');
- delete s.monthlyPerformance['bybit-subaccount'];
+ clearBybitHistory();
  s.bybitSnapshot=null;s.backendConnection={available:true,configured:false,connected:false,error:''};s.pendingRemove=null;saveLocal();render();
 }
 function onBackendStatus(status){
@@ -1294,6 +1294,94 @@ function applyCloudState(){
 window.fxmr4App={onBackendStatus,onSnapshot,onAccounts,onDisconnected,applyCloudState};
 
   const storageKey='fxmr4_portfolio_public_preview_v1';
+  const historyCacheKey='fxmr4_bybit_reports_v1';
+  const chunksCacheKey='fxmr4_bybit_chunks_v1';
+  function compactBybitReport(v){
+   if(!v||!Number.isFinite(v.from)||!Number.isFinite(v.to)||
+      !Number.isFinite(v.netPnl)||!Array.isArray(v.points)||v.to<=v.from||
+      v.to>Date.now()+86400000)return null;
+   // Cost events are deliberately not persisted: a position fee must be
+   // rechecked against the current exact open time after reconnection.
+   return {from:v.from,to:v.to,netPnl:v.netPnl,tradingPnl:v.tradingPnl||0,
+    funding:v.funding||0,fees:v.fees||0,period:v.period||'',
+    points:v.points.slice(-10000),days:(v.days||[]).slice(-750),
+    symbols:(v.symbols||[]).slice(0,100),
+    receivedAt:Number(v.receivedAt)||Date.now(),
+    costEvents:[],costEventsComplete:false};
+  }
+  function saveBoundedCache(key,records,maxChars=1850000){
+   try{
+    const sorted=records.filter(x=>x&&Array.isArray(x)&&x.length===3)
+     .sort((a,b)=>(b[2].receivedAt||0)-(a[2].receivedAt||0));
+    let payload=JSON.stringify({version:1,rows:sorted});
+    // Keep the most recently used complete reports if storage is limited.
+    while(payload.length>maxChars&&sorted.length){
+     sorted.pop();payload=JSON.stringify({version:1,rows:sorted});
+    }
+    localStorage.setItem(key,payload);
+   }catch(e){/* History caching is optional; existing reports stay in RAM. */}
+  }
+  function persistBybitHistory(){
+   const reports=[];
+   for(const [id,p] of Object.entries(s.monthlyPerformance)){
+    const v=compactBybitReport(p);
+    if(v)reports.push(['30d',id,v]);
+   }
+   for(const [period,group] of Object.entries(s.periodReports)){
+    if(!PERIODS[period])continue;
+    for(const [id,p] of Object.entries(group||{})){
+     const v=compactBybitReport(p);
+     if(v)reports.push([period,id,v]);
+    }
+   }
+   saveBoundedCache(historyCacheKey,reports);
+   const chunks=[];
+   for(const [key,entry] of Object.entries(s.periodChunkCache)){
+    const v=compactBybitReport(entry?.data);
+    if(v){
+     const receivedAt=Number(entry.receivedAt)||Date.now();
+     chunks.push(['chunk',key,{...v,receivedAt}]);
+    }
+   }
+   saveBoundedCache(chunksCacheKey,chunks,1900000);
+  }
+  function restoreBybitHistory(){
+   for(const key of [historyCacheKey,chunksCacheKey]){
+    let rows;
+    try{
+     const saved=JSON.parse(localStorage.getItem(key)||'null');
+     if(saved?.version!==1||!Array.isArray(saved.rows))continue;
+     rows=saved.rows.slice(0,1500);
+    }catch(e){continue}
+    for(const entry of rows){
+     if(!Array.isArray(entry)||entry.length!==3)continue;
+     const [period,id,p]=entry;
+     if(typeof id!=='string'||id.length>160)continue;
+     const v=compactBybitReport(p);
+     if(!v)continue;
+     v.receivedAt=Number(p.receivedAt)||0;
+     if(v.to<Date.now()-731*86400000)continue;
+     if(key===chunksCacheKey){
+      if(period!=='chunk')continue;
+      const parts=id.split(':');
+      if(parts.length<3)continue;
+      const start=Number(parts.at(-2)),stop=Number(parts.at(-1));
+      if(v.from!==start||v.to!==stop)continue;
+      s.periodChunkCache[id]={data:v,receivedAt:v.receivedAt};
+     }else if(period==='30d'){
+      s.monthlyPerformance[id]=v;
+     }else if(PERIODS[period]){
+      (s.periodReports[period] ||= {})[id]=v;
+     }
+    }
+   }
+  }
+  function clearBybitHistory(){
+   s.monthlyPerformance={};s.periodReports={};s.periodChunkCache={};
+   s.completeReportSnapshots={};s.periodErrors={};s.monthlyErrors={};
+   try{localStorage.setItem(historyCacheKey,'');localStorage.setItem(chunksCacheKey,'')}catch(e){}
+  }
+  
   function loadLocal(){
     try{
       const saved=JSON.parse(localStorage.getItem(storageKey)||'null');
@@ -1582,6 +1670,7 @@ function handleChange(e){
   window.fxmr4GetState=()=>({tab:s.tab,quotes:s.quotes,holdings:{BTC:coin('BTC'),ETH:coin('ETH')},capital:C});
   // Standalone web preview. Every edit is saved only in this browser, never to a public repository.
   loadLocal();
+  restoreBybitHistory();
   // Switch this existing install from the old 24-hour view to the entire
   // recorded history once, without overriding later user period selections.
   try{
