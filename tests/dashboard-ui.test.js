@@ -54,19 +54,19 @@ function mount(sources){
  return {elements,window:context.window,element,store,document,themeControls,click,submit};
 }
 
-test('dashboard shows labeled current and monthly PNL with top-aligned Spot/Futures tiles',()=>{
+test('overview clearly separates 30-day realised PNL from currently open positions',()=>{
  const {element}=mount([{id:'bybit',name:'Bybit',accounts:[]}]);
  const overview=element('content').innerHTML;
  assert.match(overview,/class="card tint overviewHero"/);
  assert.match(overview,/Баланс портфеля/);
- assert.match(overview,/class="sectitle">Портфель<\/div>/);
- assert.equal((overview.match(/Текущий PNL/g)||[]).length,3);
- assert.equal((overview.match(/Месячный PNL/g)||[]).length,3);
- assert.match(overview,/class="assetTopline"/);
- assert.match(overview,/class="assetPnlMetrics"/);
- for(const noise of ['Всего на счетах','Общий текущий PNL','heroBreakdown','assetSub','Весь портфель, спот или фьючерсы отдельно']){
-  assert.ok(!overview.includes(noise),'unexpected UI noise: '+noise);
- }
+ assert.match(overview,/class="sectitle">Результат за 30 дней<\/div>/);
+ assert.match(overview,/Открытые монеты/);
+ assert.match(overview,/Открытые позиции/);
+ assert.doesNotMatch(overview,/Текущий PNL/);
+ assert.doesNotMatch(overview,/PNL счёта/);
+ assert.doesNotMatch(overview,/data-period="24h" data-chart="overview"/);
+ assert.doesNotMatch(overview,/data-pnl-mode=/);
+ assert.match(overview,/не входят в этот результат/);
  assert.ok(!html.includes('class="brandBadge">FXMR4'));
 });
 
@@ -140,7 +140,7 @@ test('futures shows real 30-day ledger result, funding, fees, muted size and des
  };
  view.s.tab='futures';view.render();
  const rendered=element('content').innerHTML;
- assert.match(rendered,/30 дней · PNL/);
+ assert.match(rendered,/Результат за 30 дней/);
  assert.match(rendered,/Funding: −\$1\.00/);
  assert.match(rendered,/Комиссии: \$2\.00/);
  assert.match(rendered,/ROI · %/);
@@ -160,12 +160,12 @@ test('no historical ledger never invents a monthly profit',()=>{
  view.onAccounts([{id:'sub-two',label:'Second'}]);
  view.s.tab='futures';view.render();
  const rendered=element('content').innerHTML;
- assert.match(rendered,/30 дней · PNL/);
+ assert.match(rendered,/Результат за 30 дней/);
  assert.match(rendered,/Загружаем операции Bybit/);
  assert.equal(view.monthlyFutures(),null);
 });
 
-test('overview month mode draws exchange cash-PNL, not a synthetic portfolio curve',()=>{
+test('overview draws exactly the 30-day Bybit ledger without fake period selectors',()=>{
  const {element,window}=mount([{id:'bybit',name:'Bybit',accounts:[]}]);
  const v=window.fxmr4Inspect;
  v.onAccounts([{id:'sub-one',label:'Primary'}]);
@@ -174,14 +174,15 @@ test('overview month mode draws exchange cash-PNL, not a synthetic portfolio cur
   from:end-30*86400000,to:end,netPnl:13,tradingPnl:16,funding:-1,fees:2,
   days:[{date:new Date(end-86400000).toISOString().slice(0,10),netPnl:13}]
  };
- v.s.pnlMode='month';v.s.tab='overview';v.render();
- const html=element('content').innerHTML;
- assert.match(html,/PNL · Фьючерсы за 30 дней/);
- assert.match(html,/Результат завершённых операций/);
- assert.match(html,/data-pnl-mode="month"/);
- assert.match(html,/polyline/);
- assert.match(html,/\+\$13\.00/);
- assert.doesNotMatch(html,/data-period="24h" data-chart="overview"/);
+ v.s.tab='overview';v.render();
+ const overview=element('content').innerHTML;
+ assert.match(overview,/Результат за 30 дней/);
+ assert.match(overview,/Подключённые субаккаунты Bybit/);
+ assert.match(overview,/Закрытые сделки \+ funding − комиссии/);
+ assert.match(overview,/polyline/);
+ assert.match(overview,/\+\$13\.00/);
+ assert.doesNotMatch(overview,/data-period="30d" data-chart="overview"/);
+ assert.doesNotMatch(overview,/data-pnl-mode=/);
 });
 
 test('multiaccount monthly summary requires one identical 30-day reporting window',()=>{
@@ -198,7 +199,7 @@ test('multiaccount monthly summary requires one identical 30-day reporting windo
  assert.equal(v.monthlyFutures().netPnl,5);
 });
 
-test('each chart can show one year or all observed history with explicit dates',()=>{
+test('observation periods remain available only in Spot and Futures sections',()=>{
  const {window,element}=mount([{id:'bybit',name:'Bybit',accounts:[]}]);
  const view=window.fxmr4Inspect,now=Date.now();
  view.s.backendConnection.configured=true;
@@ -208,17 +209,11 @@ test('each chart can show one year or all observed history with explicit dates',
  ];
  const total=view.pnlWindow('all','all').points;
  assert.equal(total.length,2);
- assert.equal(total[0].v,0,'the first observed reading is the period baseline');
+ assert.equal(total[0].v,0);
  assert.ok(Math.abs(total[1].v-13.5)<0.000001);
  assert.ok(Math.abs(view.pnlWindow('spot','1y').points[1].v-0.5)<0.000001);
- assert.equal(view.pnlWindow('futures','24h').points[1].v,13);
- view.s.tab='overview';view.s.chartPeriod.overview='all';view.render();
- const overview=element('content').innerHTML;
- assert.match(overview,/data-period="1y"/);
- assert.match(overview,/data-period="all"/);
- assert.match(overview,/данные с/);
- assert.match(overview,/изменение PNL/);
- assert.match(overview,/Всё/);
+ view.s.tab='overview';view.render();
+ assert.doesNotMatch(element('content').innerHTML,/data-period="all" data-chart="overview"/);
  view.s.tab='positions';view.render();
  assert.match(element('content').innerHTML,/data-period="1y" data-chart="spot"/);
  assert.match(element('content').innerHTML,/data-period="all" data-chart="spot"/);
@@ -267,12 +262,41 @@ test('automatic updates do not restart pane animation or remount buying strategy
  assert.doesNotMatch(html,/classList\.add\('pane'\)/);
 });
 
-test('existing portfolio opens the available full PNL history once',()=>{
+test('existing portfolio keeps a full historical Spot chart without overview time controls',()=>{
  const {window,store,element}=mount([{id:'bybit',name:'Bybit',accounts:[]}]);
- assert.equal(window.fxmr4Inspect.s.chartPeriod.overview,'all');
  assert.equal(window.fxmr4Inspect.s.chartPeriod.spot,'all');
  assert.equal(store.get('fxmr4_chart_range_all_v1'),'1');
- const saved=JSON.parse(store.get('fxmr4_portfolio_public_preview_v1'));
- assert.equal(saved.chartPeriod.overview,'all');
- assert.match(element('content').innerHTML,/data-period="all" data-chart="overview" class="period active"/);
+ assert.match(element('content').innerHTML,/class="overviewLedger"/);
+ assert.doesNotMatch(element('content').innerHTML,/data-period="all" data-chart="overview"/);
+});
+test('futures subaccount uses Bybit unrealised value and its own 30-day report',()=>{
+ const {element,window}=mount([{id:'bybit',name:'Bybit',accounts:[]}]);
+ const v=window.fxmr4Inspect;
+ v.onAccounts([{id:'sub-a',label:'Alpha'},{id:'sub-b',label:'Beta'}]);
+ for(const [id,upl] of [['sub-a',-17],['sub-b',3]]){
+  v.onSnapshot({account:{id,name:id},updatedAt:Date.now(),
+   totals:{equity:100,perpUPL:upl,accountPnl:-200,realisedPnl:-186,positionCount:1},
+   positions:[{symbol:'BTCUSDT',side:'Long',pnl:upl,size:120}]});
+ }
+ const end=v.s.monthlyAnchorMs;
+ const base={from:end-30*86400000,to:end,tradingPnl:0,funding:0,fees:0,days:[]};
+ v.s.monthlyPerformance['sub-a']={...base,netPnl:25};
+ v.s.monthlyPerformance['sub-b']={...base,netPnl:-4};
+ v.s.tab='futures';v.s.futureMode='account';v.render();
+ const futures=element('content').innerHTML;
+ assert.match(futures,/Открытые позиции · PNL/);
+ assert.match(futures,/−\$14\.00/,'sum open unrealised only, not lifetime account total');
+ assert.match(futures,/\+\$21\.00/,'sum 30-day net activity');
+ assert.match(futures,/Alpha/);
+ assert.match(futures,/Beta/);
+ assert.match(futures,/−\$17\.00/);
+ assert.match(futures,/\+\$25\.00/);
+ assert.match(futures,/\+\$3\.00/);
+ assert.match(futures,/−\$4\.00/);
+ v.s.tab='overview';v.render();
+ const overview=element('content').innerHTML;
+ assert.match(overview,/Открытые позиции/);
+ assert.match(overview,/−\$14\.00/);
+ assert.match(overview,/\+\$21\.00/);
+ assert.doesNotMatch(overview,/−\$400\.00/);
 });
