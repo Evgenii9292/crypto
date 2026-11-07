@@ -368,14 +368,14 @@ function balanceSeries(kind,period){
   .sort((a,b)=>a.t-b.t).slice(-1500);
  return {points,from,first:points[0]?.t??null,last:points.at(-1)?.t??null};
 }
-function chartHTML(kind,period,metric='pnl',externalPoints=null){
+function chartHTML(kind,period,metric='pnl',externalPoints=null,axisUnit='usd'){
  const balance=metric==='balance',win=balance?balanceSeries(kind,period):pnlWindow(kind,period,metric),data=externalPoints||win.points;
  if(data.length<2)return '<div class="emptychart"><strong>История '+(balance?'баланса':'PNL')+' формируется</strong><span>Здесь появится история измерений без выдуманных значений.</span></div>';
  const start=data[0].t,end=data[data.length-1].t,W=660,H=224,L=65,R=16,T=14,B=39;
  const vals=data.map(x=>x.v),min=balance?Math.min(...vals):Math.min(0,...vals),max=balance?Math.max(...vals):Math.max(0,...vals);
  const spread=Math.max(max-min,balance?Math.abs(max)*.003:.25,.01),low=min-.18*spread,high=max+.18*spread;
  const x=t=>L+(t-start)/Math.max(1,end-start)*(W-L-R),y=v=>T+(high-v)/(high-low)*(H-T-B);
- const axis=n=>balance?dollars(n):axisMoney(n);
+ const axis=n=>axisUnit==='pct'?(n<0?'−':'+')+Math.abs(n).toFixed(2)+'%':balance?dollars(n):axisMoney(n);
  let guide='';
  for(let k=0;k<=4;k++){let value=high-(high-low)*k/4,cy=y(value);guide+='<line x1="'+L+'" x2="'+(W-R)+'" y1="'+cy.toFixed(1)+'" y2="'+cy.toFixed(1)+'" class="chartGrid"/><text x="'+(L-9)+'" y="'+(cy+4).toFixed(1)+'" text-anchor="end" class="chartAxis">'+axis(value)+'</text>'}
  const f=t=>period==='24h'||end-start<86400000?new Date(t).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}):new Date(t).toLocaleDateString('ru-RU',{month:'short',day:'numeric',year:period==='all'||period==='1y'?'2-digit':undefined});
@@ -435,23 +435,44 @@ function spotChartBlock(){
 }
 function futuresChartBlock(){
  const period=s.chartPeriod.futures||'30d',data=futuresLedgerData(period);
+ const isEquity=s.futuresView==='equity',equity=Number(s.bybitSnapshot?.totals?.equity);
+ const unit=!isEquity&&s.futuresValueMode==='pct'&&equity>0?'pct':'usd';
+ const raw=isEquity?observedEquitySeries(period):data?.points;
+ const points=unit==='pct'&&raw?raw.map(p=>({t:p.t,v:p.v/equity*100})):raw;
  const error=futuresPeriodError(period);
- const rangeName=period==='all'?'До 2 лет':(PERIOD_NAMES[period]||'30 дней');
- const hint=error||(!s.bybitExpectedIds?.length?'Нет подключённых субаккаунтов Bybit':
-  s.periodLoading[period]?'Получаем операции Bybit…':'Нет истории за этот период. Проверь подключение API.');
- const title=period==='all'?'Вся доступная история Bybit (до 2 лет)':rangeName;
+ const rangeName=period==='all'?'до 2 лет':(PERIOD_NAMES[period]||'30 дней');
+ const hint=isEquity
+   ?'История стоимости счёта собирается на сервере каждые 5 минут. Предыдущие даты требуют выписки Bybit.'
+   :(error||(!s.bybitExpectedIds?.length?'Нет подключённых субаккаунтов Bybit':
+     s.periodLoading[period]?'Получаем операции Bybit…':'Нет подтверждённой истории за этот период.'));
+ const total=isEquity?points?.at(-1)?.v:data?.netPnl;
+ const title=isEquity?'Стоимость счёта · наблюдения':'Результат торгов · Bybit';
  return `<section class="section pnlChart card futuresLedgerChart">
   <div class="hrow pnlChartHead">
-   <div><div class="sectitle">Результат торгов · Bybit</div>
-    <div class="tiny">Закрытые операции, funding и комиссии · все подключённые субаккаунты</div></div>
+   <div><div class="sectitle">${title}</div>
+    <div class="tiny">${isEquity?'Сумма стоимости подключённых субаккаунтов. Только даты с полными данными.':'Закрытые сделки, funding и комиссии · все подключённые субаккаунты'}</div></div>
    ${periodButtons(period,'futures')}
   </div>
-  <div class="chartbox">${data?chartHTML('futures',period,'realized30d',data.points):
-   `<div class="emptychart"><strong>${escape(hint)}</strong></div>`}</div>
-  <div class="chartlegend"><span>${escape(title)} · ${data?'данные Bybit':'нет подтверждённых данных'}${data?
-   ' · с '+new Date(data.from).toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric'}):''}</span>
-   <strong class="${data==null?'neutral':cls(data.netPnl)}">${data==null?'—':signed(data.netPnl)}</strong></div>
-  <div class="overviewLedgerDetail">Это чистый результат операций. Текущий баланс и плавающий PNL открытых позиций показываются выше.</div>
+  <div class="pnlReportTools">
+   <div class="pnlMode" aria-label="Тип истории">
+    <button type="button" data-futures-view="pnl" class="${!isEquity?'active':''}">Торговый PNL</button>
+    <button type="button" data-futures-view="equity" class="${isEquity?'active':''}">Стоимость счёта</button>
+   </div>
+   <div class="pnlMode" aria-label="Единицы результата">
+    <button type="button" data-futures-unit="usd" class="${unit==='usd'?'active':''}">$</button>
+    <button type="button" data-futures-unit="pct" class="${unit==='pct'?'active':''}" ${isEquity||!(equity>0)?'disabled':''} title="Доля результата от текущего баланса всех подключённых субаккаунтов">%</button>
+   </div>
+   <button type="button" class="btn pnlExport" data-action="exportFuturesCsv" ${!data?'disabled':''}>CSV</button>
+  </div>
+  <div class="chartbox">${points?.length>=2?chartHTML('futures',period,isEquity?'balance':'realized30d',points,unit):
+    `<div class="emptychart"><strong>${escape(hint)}</strong></div>`}</div>
+  <div class="chartlegend"><span>${escape(rangeName)} · ${points?.length>=2?'с '+new Date(points[0].t).toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric'}):'нет полной истории'}</span>
+   <strong class="${total==null?'neutral':isEquity?'':cls(total)}">${total==null?'—':isEquity?dollars(total):futuresValue(total,unit)}</strong></div>
+  <div class="overviewLedgerDetail">${isEquity?
+    'История стоимости сохраняется автоматически на VPS. Добавление нового счёта не считается прибылью. Архивные даты пока доступны только через выписку Bybit.':
+    unit==='pct'?'Проценты рассчитаны относительно текущего баланса, не равны официальной доходности Bybit за период.':
+    'Это результат закрытых операций. Плавающий PNL открытых позиций показан отдельно.'}</div>
+  ${!isEquity?pnlBarSections(data,period):''}
  </section>`;
 }
 function spotDistribution(){
