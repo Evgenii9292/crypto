@@ -293,7 +293,23 @@ def monthly_futures_activity(key, secret, end_ms=None):
     return result
 
 
-def monthly_account_performance(account_id):
+def monthly_account_performance(account_id, end_ms=None):
+    """Return the same UTC reporting interval for every linked subaccount.
+
+    A client supplies a 5-minute UTC anchor for all accounts. Restrict the
+    window to recent history so this read-only endpoint cannot be abused to
+    repeatedly query arbitrarily large historical ranges.
+    """
+    now_ms = int(time.time() * 1000)
+    if end_ms is None:
+        end_ms = now_ms
+    try:
+        end_ms = int(end_ms)
+    except (ValueError, TypeError) as exc:
+        raise BybitFailure("Некорректная дата месячного отчёта") from exc
+    if not now_ms - 1800000 <= end_ms <= now_ms + 60000:
+        raise BybitFailure("Месячный отчёт должен быть за текущий период")
+    end_ms = end_ms // 300000 * 300000
     if account_id == "bybit-subaccount":
         key, secret, _ = credentials()
     else:
@@ -306,11 +322,11 @@ def monthly_account_performance(account_id):
     fingerprint = hashlib.sha256((key + ":" + secret).encode("utf-8")).digest()
     with LOCK:
         cached = MONTH_CACHE.get(account_id)
-        if cached and cached["fingerprint"] == fingerprint and time.monotonic() - cached["at"] < 900:
+        if cached and cached["fingerprint"] == fingerprint and cached["end_ms"] == end_ms and time.monotonic() - cached["at"] < 600:
             return cached["data"]
-    result = monthly_futures_activity(key, secret)
+    result = monthly_futures_activity(key, secret, end_ms=end_ms)
     with LOCK:
-        MONTH_CACHE[account_id] = {"at": time.monotonic(), "fingerprint": fingerprint, "data": result}
+        MONTH_CACHE[account_id] = {"at": time.monotonic(), "end_ms": end_ms, "fingerprint": fingerprint, "data": result}
     return result
 
 
@@ -485,8 +501,10 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/monthly-pnl":
             try:
-                account_id = parse_qs(urlsplit(self.path).query).get("id", [""])[0]
-                self._json(monthly_account_performance(account_id))
+                query = parse_qs(urlsplit(self.path).query)
+                account_id = query.get("id", [""])[0]
+                end_at = query.get("endAt", [None])[0]
+                self._json(monthly_account_performance(account_id, end_at))
             except BybitFailure as exc:
                 self._json({"error": str(exc)}, 503)
             except saved_state.StateError as exc:
