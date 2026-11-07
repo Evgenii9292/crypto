@@ -64,7 +64,10 @@ test('overview has only All Spot Futures modes and true current open PNL',()=>{
  assert.match(overview,/class="card tint overviewHero"/);
  assert.match(overview,/Баланс портфеля/);
  assert.match(overview,/Текущий PNL/);
- assert.match(overview,/Учтённые покупки Spot \+ открытые фьючерсы/);
+ assert.match(overview,/PNL за месяц/);
+ assert.equal((overview.match(/PNL за месяц/g)||[]).length,3,'all three overview KPI groups have identical monthly labels');
+ assert.match(overview,/class="pnlAccountSelect overviewPeriodSelect"/);
+ assert.match(overview,/data-overview-period/);
  assert.match(overview,/data-overview-period/);
  assert.match(overview,/История PNL/);
  assert.match(overview,/data-pnl-mode="all"/);
@@ -915,4 +918,64 @@ test('old Bybit history without coin-time buckets shows unknown, not fabricated 
  assert.match(html,/Детализация монет пока недоступна/);
  assert.doesNotMatch(html,/pnlTooltipRow/);
  assert.match(html,/\+12\.00 USDT/,'total in USDT remains visible');
+});
+
+test('overview 30-day card totals stay fixed when chart period changes',()=>{
+ const {element,window}=mount([{id:'bybit',name:'Bybit',accounts:[]}]);
+ const v=window.fxmr4Inspect;
+ const now=Math.floor(Date.now()/86400000)*86400000;
+ const first=now-28*86400000,second=now;
+ v.s.trades=[
+  {id:1,coin:'BTC',spent:100,entry:100,buy_date:new Date(first-2*86400000).toISOString().slice(0,10),confirmed:true},
+  {id:2,coin:'ETH',spent:100,entry:200,buy_date:new Date(first-2*86400000).toISOString().slice(0,10),confirmed:true}
+ ];
+ v.s.spotHistoricalReports['30d']={from:first,to:second,receivedAt:Date.now(),
+  prices:{BTC:[{t:first,close:100},{t:second,close:110}],
+          ETH:[{t:first,close:200},{t:second,close:220}]}};
+ v.onAccounts([{id:'a',label:'Alpha'}]);
+ const end=v.s.monthlyAnchorMs;
+ v.s.monthlyPerformance.a={from:end-30*86400000,to:end,netPnl:30,
+  tradingPnl:30,fees:0,funding:0,days:[],points:[],symbols:[]};
+ assert.equal(v.overviewHistoryData('spot','30d').points.at(-1).v,20);
+ const getSections=()=>{
+  const m=element('content').innerHTML;
+  const hero=m.match(/<div class="overviewHeroMetrics">([\s\S]*?)<\/div>\s*<\/div>\s*<section/)?.[1];
+  const aside=m.split('<div class="overview-aside">')[1]?.split('</div></div>')[0];
+  return {m,hero,aside};
+ };
+ v.s.tab='overview';v.s.chartPeriod.overview='60d';v.render();
+ const before=getSections();
+ assert.ok(before.hero,'monthly hero should render');
+ assert.match(before.hero,/PNL за месяц/);
+ assert.match(before.hero,/\+\$50\.00/,'monthly hero must include Spot 20 and Futures 30');
+ assert.match(before.aside,/Спот/);
+ assert.match(before.aside,/Фьючерсы/);
+ assert.match(before.aside,/\+\$20\.00/);
+ assert.match(before.aside,/\+\$30\.00/);
+ assert.equal((before.aside.match(/Текущий PNL/g)||[]).length,2);
+ assert.equal((before.aside.match(/PNL за месяц/g)||[]).length,2);
+ assert.doesNotMatch(before.hero,/Фьючерсы ·|60 дней|90 дней|Изменение/);
+ assert.match(before.m,/<option value="60d" selected>60 дней<\/option>/);
+ v.s.chartPeriod.overview='90d';v.render();
+ const after=getSections();
+ assert.equal(after.hero,before.hero,'hero must not change when changing chart period');
+ assert.equal(after.aside,before.aside,'Spot/Futures cards must not change when changing chart period');
+ assert.match(after.m,/<option value="90d" selected>90 дней<\/option>/);
+ assert.match(css,/\.overviewHistoryPeriod \.overviewPeriodSelect select\{[^}]*appearance:none/);
+ assert.match(css,/\.overviewHistoryPeriod \.overviewPeriodSelect:focus-within/);
+});
+
+test('overview monthly PNL does not substitute Futures-only or guessed Spot history',()=>{
+ const {element,window}=mount([{id:'bybit',name:'Bybit',accounts:[]}]);
+ const v=window.fxmr4Inspect;v.onAccounts([{id:'a',label:'Alpha'}]);
+ const end=v.s.monthlyAnchorMs;
+ v.s.monthlyPerformance.a={from:end-30*86400000,to:end,netPnl:40,
+  tradingPnl:40,fees:0,funding:0,days:[],points:[],symbols:[]};
+ v.s.tab='overview';v.s.chartPeriod.overview='60d';v.render();
+ const markup=element('content').innerHTML;
+ const hero=markup.split('<div class="overviewHeroMetrics">')[1].split('</div>\n   </div>')[0];
+ assert.match(hero,/PNL за месяц/);
+ assert.match(hero,/<strong class="neutral" title="Spot и закрытые сделки фьючерсов за 30 дней">—<\/strong>/);
+ assert.match(markup,/\+\$40\.00/,'Futures month remains available in its own card');
+ assert.doesNotMatch(hero,/\+\$40\.00/,'the combined month must not pretend Futures equals total portfolio');
 });
