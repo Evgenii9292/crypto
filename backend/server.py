@@ -222,8 +222,8 @@ def monthly_futures_activity(key, secret, end_ms=None):
     daily = {}
     unknown_types = set()
     left = start_ms
-    while left <= end_ms:
-        right = min(end_ms, left + LEDGER_WINDOW_MS - 1)
+    while left < end_ms:
+        right = min(end_ms - 1, left + LEDGER_WINDOW_MS - 1)
         cursor = ""
         for page_number in range(100):
             params = {"accountType": "UNIFIED", "category": "linear",
@@ -239,7 +239,7 @@ def monthly_futures_activity(key, secret, end_ms=None):
                 when = _int_ms(record.get("transactionTime"))
                 if when is None:
                     raise BybitFailure("В операции Bybit отсутствует дата")
-                if not start_ms <= when <= end_ms:
+                if not start_ms <= when < end_ms:
                     continue
                 currency = str(record.get("currency") or "").upper()
                 if currency not in ("USDT", "USDC"):
