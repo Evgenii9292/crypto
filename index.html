@@ -173,7 +173,7 @@ function monthlyFuturesSeries(){
 function pnlWindow(kind,period,metric='pnl'){
  const from=Date.now()-(PERIODS[period]||PERIODS['7d']);
  const all=kind==='futures'&&metric==='realized30d'?monthlyFuturesSeries():pnlSeries(kind,metric).points;
- const points=all.filter(p=>p.t>=from).slice(-1500);
+ const points=kind==='futures'&&metric==='realized30d'?all:all.filter(p=>p.t>=from).slice(-1500);
  return {all,points,from,first:points.length?points[0].t:null,last:points.length?points[points.length-1].t:null};
 }
 function balanceSeries(kind,period){
@@ -618,8 +618,8 @@ function onSnapshot(data){
  );
  s.bybitAccountsSnapshots[accountId]=data;
  rebuildBybitTotals();
- loadMonthlyPerformance(accountId);
  s.backendConnection={available:true,configured:true,connected:!!s.bybitSnapshot,error:''};
+ loadMonthlyPerformance(accountId);
  recordPortfolioSnapshot();saveLocal(false);render();
 }
 function applyCloudState(){
