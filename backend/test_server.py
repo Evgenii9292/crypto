@@ -282,7 +282,7 @@ class TestConsistentMonthlyAnchor(TestCase):
                 second = server.monthly_account_performance("bybit-subaccount", anchor)
         self.assertEqual(first, report)
         self.assertEqual(second, report)
-        ledger.assert_called_once_with("key", "secret", end_ms=anchor, period_ms=server.PERFORMANCE_MS)
+        ledger.assert_called_once_with("key", "secret", end_ms=anchor, period_ms=server.PERFORMANCE_MS, utc_today=False)
 
     def test_stale_or_future_anchors_rejected_before_any_api_call(self):
         now = int(server.time.time() * 1000)
@@ -372,6 +372,82 @@ class TestExchangePeriodLedger(TestCase):
             with self.assertRaisesRegex(server.BybitFailure, "Неизвестный период"):
                 server.monthly_account_performance("bybit-subaccount", period="9000y")
             creds.assert_not_called()
+
+
+
+class TestBybitTodayAndSymbolBreakdown(TestCase):
+    def test_today_uses_utc_midnight_not_trailing_24_hours(self):
+        end = 1762473600000 + 3 * 3600000
+        midnight = end // 86400000 * 86400000
+        calls = []
+        def bybit(path, params, key, secret):
+            calls.append(dict(params))
+            return {"list": [
+                {"type": "TRADE", "currency": "USDT", "category": "linear",
+                 "symbol": "ADAUSDT", "transactionTime": str(midnight + 3600000),
+                 "cashFlow": "5", "fee": "0.2", "funding": "0"},
+                {"type": "SETTLEMENT", "currency": "USDT", "category": "linear",
+                 "symbol": "ADAUSDT", "transactionTime": str(midnight + 2*3600000),
+                 "cashFlow": "0", "fee": "0", "funding": "-0.5"},
+                {"type": "TRANSFER_IN", "currency": "USDT", "category": "linear",
+                 "symbol": "", "transactionTime": str(midnight + 2*3600000),
+                 "cashFlow": "2500", "fee": "", "funding": ""}
+            ], "nextPageCursor": ""}
+        with patch.object(server, "request_bybit", side_effect=bybit):
+            result = server.monthly_futures_activity(
+                "k", "s", end_ms=end, period_ms=server.PERFORMANCE_PERIODS["today"],
+                utc_today=True)
+        self.assertEqual(result["from"], midnight)
+        self.assertEqual(result["intervalType"], "UTC day")
+        self.assertEqual(int(calls[0]["startTime"]), midnight)
+        self.assertAlmostEqual(result["netPnl"], 4.3)
+        self.assertAlmostEqual(result["symbols"][0]["netPnl"], 4.3)
+        self.assertEqual(result["symbols"][0]["symbol"], "ADAUSDT")
+        self.assertAlmostEqual(sum(x["netPnl"] for x in result["symbols"]),
+                               result["netPnl"])
+        self.assertEqual(result["symbols"][0]["operations"], 2)
+
+    def test_60_day_period_is_supported_without_synthetic_equity_history(self):
+        self.assertEqual(server.PERFORMANCE_PERIODS["60d"], 60 * 86400000)
+        self.assertEqual(server.PERFORMANCE_PERIODS["all"], 729 * 86400000)
+
+
+class TestPrivateEquityHistory(TestCase):
+    def test_equity_snapshots_are_private_and_summed_only_when_all_accounts_exist(self):
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(server.saved_state, "DATA_DIR", Path(tmp)):
+                with patch.object(server.saved_state, "EQUITY_HISTORY_PATH",
+                                  Path(tmp) / "equity.json"):
+                    now = int(server.time.time() * 1000)
+                    items = [{"t": now, "accountId": "sub-a", "equity": 1000.0},
+                             {"t": now, "accountId": "sub-b", "equity": 2000.0}]
+                    result = server.saved_state.merge_equity_history(items)
+                    self.assertEqual(result["points"], 2)
+                    records = server.saved_state.read_equity_history()["points"]
+                    self.assertEqual(len(records), 2)
+                    self.assertEqual({x["accountId"] for x in records}, {"sub-a", "sub-b"})
+                    self.assertEqual((Path(tmp) / "equity.json").stat().st_mode & 0o777, 0o600)
+                    with self.assertRaises(server.saved_state.StateError):
+                        server.saved_state.merge_equity_history(
+                            [{"t": now, "accountId": "sub-a", "equity": "-1"}])
+                    self.assertEqual(len(server.saved_state.read_equity_history()["points"]), 2)
+
+    def test_server_equity_sampling_never_invents_zero_on_partial_failures(self):
+        with patch.object(server.saved_state, "merge_equity_history") as saved:
+            with patch.object(server.saved_state, "merge_history"):
+                with patch.object(server, "credentials", return_value=("k", "s", "sub")):
+                    with patch.object(server.saved_state, "list_extra_accounts", return_value=[]):
+                        with patch.object(server.saved_state, "read_profile", return_value={"portfolio": {}}):
+                            with patch.object(server, "snapshot", return_value={
+                                "totals": {"equity": "1234.5", "perpUPL": "0", "accountPnl": "1"}}):
+                                self.assertTrue(server.sample_history_once())
+            saved.assert_called_once()
+            rows = saved.call_args.args[0]
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["accountId"], "bybit-subaccount")
+            self.assertAlmostEqual(rows[0]["equity"], 1234.5)
 
 
 class TestHistorySampler(TestCase):
