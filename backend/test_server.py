@@ -450,6 +450,87 @@ class TestPrivateEquityHistory(TestCase):
             self.assertAlmostEqual(rows[0]["equity"], 1234.5)
 
 
+
+class TestLongTermBybitHistory(TestCase):
+    def setUp(self):
+        server.CHUNK_CACHE.clear()
+        server.SPOT_HISTORY_CACHE.clear()
+
+    def test_six_day_slice_is_cached_without_replaying_old_exchange_requests(self):
+        now = int(server.time.time() * 1000)
+        stop = now // 300000 * 300000
+        start = stop - 6 * 86400000
+        calls = []
+        def response(path, params, key, secret):
+            calls.append((path, params))
+            return {"list": [{"type": "TRADE", "category": "linear",
+                              "currency": "USDT", "symbol": "ADAUSDT",
+                              "transactionTime": str(start+3600000),
+                              "cashFlow": "3", "fee": "0.2", "funding": "0"}],
+                    "nextPageCursor": ""}
+        with patch.object(server, "credentials", return_value=("test-key", "test-secret", "Mock")):
+            with patch.object(server, "request_bybit", side_effect=response):
+                a = server.chunk_account_performance("bybit-subaccount", start, stop)
+                b = server.chunk_account_performance("bybit-subaccount", start, stop)
+        self.assertEqual(len(calls), 1, "One six-day range is one Bybit transaction window")
+        self.assertEqual(a, b)
+        self.assertAlmostEqual(a["netPnl"], 2.8)
+        self.assertEqual(a["from"], start)
+        self.assertEqual(a["to"], stop)
+        self.assertEqual(a["symbols"][0]["symbol"], "ADAUSDT")
+        self.assertEqual(a["days"][0]["netPnl"], 2.8)
+
+    def test_slice_rejects_gaps_over_six_days_and_outdated_history(self):
+        now = int(server.time.time() * 1000)
+        with patch.object(server, "credentials") as credential:
+            for start,stop in ((now-8*86400000,now),
+                               (now-731*86400000, now-730*86400000),
+                               (now, now+100000)):
+                with self.assertRaises(server.BybitFailure):
+                    server.chunk_account_performance("bybit-subaccount",start,stop)
+            credential.assert_not_called()
+
+    def test_public_spot_prices_are_real_daily_bybit_candles_without_api_key(self):
+        now = int(server.time.time() * 1000)
+        end = now // 86400000 * 86400000
+        start = end - 30*86400000
+        accessed = []
+        class Reply:
+            def __init__(self,body):
+                self.body = body
+            def __enter__(self):
+                return self
+            def __exit__(self,*args):
+                return False
+            def read(self,_):
+                return self.body
+        def fetch(request,timeout):
+            accessed.append(request)
+            row=[str(start), "100", "150", "80", "120", "1000", "2000"]
+            payload={"retCode":0,"result":{"list":[row]}}
+            return Reply(json.dumps(payload).encode("utf-8"))
+        with patch.object(server, "API_HOST", "https://api.bybit.com"):
+            with patch.object(server, "urlopen", side_effect=fetch):
+                data = server.public_spot_history("30d")
+                again = server.public_spot_history("30d")
+        self.assertEqual(data, again)
+        self.assertEqual(len(accessed), 2, "One public request per coin, cache on repeat")
+        self.assertEqual(data["prices"]["BTC"][0]["close"], 120)
+        self.assertEqual(data["prices"]["ETH"][0]["close"], 120)
+        self.assertTrue(all("/v5/market/kline?" in r.full_url for r in accessed))
+        self.assertTrue(all("category=spot" in r.full_url for r in accessed))
+        self.assertTrue(all("interval=D" in r.full_url for r in accessed))
+        self.assertTrue(all("X-BAPI-API-KEY" not in dict(r.header_items()) for r in accessed))
+        self.assertEqual(data["from"], start)
+        self.assertEqual(data["to"], end)
+
+    def test_public_spot_history_rejects_unsupported_periods(self):
+        with patch.object(server, "urlopen") as bybit:
+            with self.assertRaises(server.BybitFailure):
+                server.public_spot_history("bogus")
+            bybit.assert_not_called()
+
+
 class TestHistorySampler(TestCase):
     """The VPS samples current BTC/ETH prices and API futures while browser is closed."""
 
