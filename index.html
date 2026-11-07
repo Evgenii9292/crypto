@@ -85,7 +85,7 @@
   const nowLocal=()=>{const d=new Date();return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-')};
   const fmtDate=d=>{if(!d)return 'Нет даты';const a=d.slice(0,10).split('-');return a.length===3?`${a[2]}.${a[1]}.${a[0]}`:d};
   const fmtTime=d=>{if(!d)return '';const x=new Date(d);return isNaN(x)?'':x.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})};
-  const s={tab:'overview',trades:[{id:1,coin:'BTC',spent:25,entry:76200,buy_date:'2026-11-06',confirmed:false},{id:2,coin:'ETH',spent:25,entry:2247,buy_date:'2026-11-06',confirmed:false}],quotes:{BTC:{price:initial.BTC,source:'Предварительно'},ETH:{price:initial.ETH,source:'Предварительно'}},capital:C,period:'7d',chartPeriod:{overview:'all',spot:'all',futures:'30d'},chartMetric:{spot:'pnl',futures:'realized30d'},points:[],snapshots:[],sync:null,form:false,editing:null,deleteId:null,busy:false,flash:'',formError:'',showPrices:false,tradingSubtab:'futures',futureMode:'all',futureSort:'pnl',futureSortDir:-1,pnlMode:'all',capitalOpen:false,portfolioSnapshots:[],pnlHistory:[],pendingRemove:null,renameId:null,renameValue:'',renameError:'',futureForm:null,futureFormError:'',sources:[{id:'bybit',name:'Bybit',connected:false,accounts:[]}],futuresPositions:[],openedExchanges:{},openedAccounts:{},spotHistoryOpen:false,spotAccountsOpen:false,spotOpen:{},bybitSnapshot:null,bybitAccountsSnapshots:{},monthlyPerformance:{},monthlyLoading:{},monthlyAnchorMs:null,bybitExpectedIds:[],backendConnection:{available:false,configured:false,connected:false,error:''}};
+  const s={tab:'overview',trades:[{id:1,coin:'BTC',spent:25,entry:76200,buy_date:'2026-11-06',confirmed:false},{id:2,coin:'ETH',spent:25,entry:2247,buy_date:'2026-11-06',confirmed:false}],quotes:{BTC:{price:initial.BTC,source:'Предварительно'},ETH:{price:initial.ETH,source:'Предварительно'}},capital:C,period:'7d',chartPeriod:{overview:'all',spot:'all',futures:'30d'},chartMetric:{spot:'pnl',futures:'realized30d'},points:[],snapshots:[],sync:null,form:false,editing:null,deleteId:null,busy:false,flash:'',formError:'',showPrices:false,tradingSubtab:'futures',futureMode:'all',futureSort:'pnl',futureSortDir:-1,pnlMode:'all',capitalOpen:false,portfolioSnapshots:[],pnlHistory:[],pendingRemove:null,renameId:null,renameValue:'',renameError:'',futureForm:null,futureFormError:'',sources:[{id:'bybit',name:'Bybit',connected:false,accounts:[]}],futuresPositions:[],openedExchanges:{},openedAccounts:{},spotHistoryOpen:false,spotAccountsOpen:false,spotOpen:{},bybitSnapshot:null,bybitAccountsSnapshots:{},monthlyPerformance:{},monthlyLoading:{},monthlyAnchorMs:null,periodReports:{},periodLoading:{},bybitExpectedIds:[],backendConnection:{available:false,configured:false,connected:false,error:''}};
   function coin(m){const trades=s.trades.filter(t=>t.coin===m);const invested=trades.reduce((t,x)=>t+Number(x.spent),0);const quantity=trades.reduce((t,x)=>t+Number(x.spent)/Number(x.entry),0);const current=Number(s.quotes[m]?.price||initial[m]);const value=quantity*current;return {invested,quantity,current,value,profit:value-invested,remaining:C/2-invested,avg:quantity?invested/quantity:0,provisional:trades.some(t=>!t.confirmed)}}
   function sums(){const btc=coin('BTC'),eth=coin('ETH'),invested=btc.invested+eth.invested,cash=C-invested,holdings=btc.value+eth.value,profit=holdings-invested;return {btc,eth,invested,cash,holdings,profit,total:cash+holdings}}
 
@@ -171,6 +171,79 @@ function monthlyFuturesSeries(){
  return points.sort((a,b)=>a.t-b.t);
 }
 
+
+function activeFuturesReports(period){
+ const ids=s.bybitExpectedIds||[];
+ if(!ids.length)return null;
+ const current=ids.map(id=>period==='30d'?s.monthlyPerformance[id]:s.periodReports[period]?.[id]);
+ if(current.some(p=>!p||!Number.isFinite(p.netPnl)||!Array.isArray(p.points)))return null;
+ if(current.some(p=>p.from!==current[0].from||p.to!==current[0].to))return null;
+ return current;
+}
+function futuresLedgerData(period){
+ const reports=activeFuturesReports(period);
+ if(!reports)return null;
+ const bins=new Map(),first=reports[0].from,last=reports[0].to;
+ let net=0,funding=0,fees=0;
+ for(const report of reports){
+  net+=Number(report.netPnl);
+  funding+=Number(report.funding)||0;
+  fees+=Number(report.fees)||0;
+  for(const point of report.points){
+   const t=Number(point.t),v=Number(point.netPnl);
+   if(!Number.isFinite(t)||!Number.isFinite(v)||t<first||t>=last)continue;
+   bins.set(t,(bins.get(t)||0)+v);
+  }
+ }
+ const series=[{t:first,v:0}];
+ let running=0;
+ for(const [t,v] of [...bins].sort((a,b)=>a[0]-b[0])){
+  running+=v;
+  if(t===first)series[0].v=running;
+  else series.push({t,v:running});
+ }
+ // The summary is authoritative; make the last point agree with the displayed
+ // amount even if fractional cents were rounded inside time buckets.
+ series.push({t:last,v:net});
+ return {netPnl:net,funding,fees,from:first,to:last,points:series};
+}
+function futuresPeriodError(period){
+ const ids=s.bybitExpectedIds||[];
+ return ids.map(id=>(period==='30d'?s.monthlyPerformance[id]:s.periodReports[period]?.[id])?.error).find(Boolean);
+}
+async function loadFuturesPeriod(period){
+ if(period==='30d'||!s.bybitExpectedIds?.length||!s.backendConnection.available)return;
+ if(s.periodLoading[period])return;
+ const anchor=s.monthlyAnchorMs||Math.floor(Date.now()/300000)*300000;
+ const ids=[...s.bybitExpectedIds];
+ const already=ids.every(id=>{
+  const v=s.periodReports[period]?.[id];
+  return v&&v.to===anchor&&Date.now()-v.receivedAt<600000;
+ });
+ if(already)return;
+ s.periodLoading[period]=true;
+ s.periodReports[period] ||= {};
+ try{
+  await Promise.all(ids.map(async id=>{
+   const prev=s.periodReports[period][id];
+   if(prev&&prev.to===anchor&&Date.now()-prev.receivedAt<600000)return;
+   try{
+    const url='./api/period-performance?id='+encodeURIComponent(id)+'&period='+encodeURIComponent(period)+'&endAt='+anchor;
+    const response=await fetch(url,{cache:'no-store',credentials:'same-origin'});
+    const data=await response.json();
+    s.periodReports[period][id]=response.ok&&data.to===anchor&&Number.isFinite(data.netPnl)&&Array.isArray(data.points)
+     ? {...data,receivedAt:Date.now()}
+     : {error:data.error||'Не удалось получить историю Bybit',to:anchor,receivedAt:Date.now()};
+   }catch(error){
+    s.periodReports[period][id]={error:'История Bybit недоступна',to:anchor,receivedAt:Date.now()};
+   }
+  }));
+ }finally{
+  delete s.periodLoading[period];
+  if(s.tab==='futures')renderLive();
+ }
+}
+
 function pnlWindow(kind,period,metric='pnl'){
  const windowMs=PERIODS[period]??PERIODS['7d'];
  const from=windowMs===Infinity?-Infinity:Date.now()-windowMs;
@@ -193,8 +266,8 @@ function balanceSeries(kind,period){
   .sort((a,b)=>a.t-b.t).slice(-1500);
  return {points,from,first:points[0]?.t??null,last:points.at(-1)?.t??null};
 }
-function chartHTML(kind,period,metric='pnl'){
- const balance=metric==='balance',win=balance?balanceSeries(kind,period):pnlWindow(kind,period,metric),data=win.points;
+function chartHTML(kind,period,metric='pnl',externalPoints=null){
+ const balance=metric==='balance',win=balance?balanceSeries(kind,period):pnlWindow(kind,period,metric),data=externalPoints||win.points;
  if(data.length<2)return '<div class="emptychart"><strong>История '+(balance?'баланса':'PNL')+' формируется</strong><span>Здесь появится история измерений без выдуманных значений.</span></div>';
  const start=data[0].t,end=data[data.length-1].t,W=660,H=224,L=65,R=16,T=14,B=39;
  const vals=data.map(x=>x.v),min=balance?Math.min(...vals):Math.min(0,...vals),max=balance?Math.max(...vals):Math.max(0,...vals);
@@ -259,9 +332,25 @@ function spotChartBlock(){
   metricSwitch:true,current:p.spot.profit,summary:p,invested:a.invested});
 }
 function futuresChartBlock(){
- const p=portfolioSummary();
- return pnlChartBlock({key:'futures',kind:'futures',title:'Фьючерсы · статистика',subtitle:'30 дней: операции Bybit. Динамика счёта: история наблюдений после подключения.',
-  metricSwitch:true,current:p.futuresPnl,summary:p,invested:p.margin});
+ const period=s.chartPeriod.futures||'30d',data=futuresLedgerData(period);
+ const error=futuresPeriodError(period);
+ const rangeName=period==='all'?'До 2 лет':(PERIOD_NAMES[period]||'30 дней');
+ const hint=error||(!s.bybitExpectedIds?.length?'Нет подключённых субаккаунтов Bybit':
+  s.periodLoading[period]?'Получаем операции Bybit…':'Нет истории за этот период. Проверь подключение API.');
+ const title=period==='all'?'Вся доступная история Bybit (до 2 лет)':rangeName;
+ return `<section class="section pnlChart card futuresLedgerChart">
+  <div class="hrow pnlChartHead">
+   <div><div class="sectitle">Результат торгов · Bybit</div>
+    <div class="tiny">Закрытые операции, funding и комиссии · все подключённые субаккаунты</div></div>
+   ${periodButtons(period,'futures')}
+  </div>
+  <div class="chartbox">${data?chartHTML('futures',period,'realized30d',data.points):
+   `<div class="emptychart"><strong>${escape(hint)}</strong></div>`}</div>
+  <div class="chartlegend"><span>${escape(title)} · ${data?'данные Bybit':'нет подтверждённых данных'}${data?
+   ' · с '+new Date(data.from).toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric'}):''}</span>
+   <strong class="${data==null?'neutral':cls(data.netPnl)}">${data==null?'—':signed(data.netPnl)}</strong></div>
+  <div class="overviewLedgerDetail">Это чистый результат операций. Текущий баланс и плавающий PNL открытых позиций показываются выше.</div>
+ </section>`;
 }
 function spotDistribution(){
   const a=sums();
@@ -394,9 +483,18 @@ function coinStack(symbols){
   return t.slice(0,4);};
  return `<span class="coinStack">${list.map(sym=>`<i class="coinChip" title="${escape(String(sym))}">${escape(label(sym))}</i>`).join('')}${extra?`<i class="coinChip more">+${extra}</i>`:''}</span>`;
 }
-const FUTURE_SORTS=[['roi','ROI · %'],['pnl','Плавающий PNL'],['size','Объём'],['symbol','Монета'],['leverage','Плечо'],['opened','Дата открытия'],['side','Направление']];
+const FUTURE_SORTS=[['share','К балансу · %'],['pnl','Плавающий PNL'],['size','Объём'],['symbol','Монета'],['leverage','Плечо'],['opened','Дата открытия'],['side','Направление']];
+function positionAccountEquity(p){
+ if(p.exchangeId!=='bybit')return null;
+ const snap=s.bybitAccountsSnapshots[p.accountId],raw=snap?.totals?.equity;
+ const equity=raw==null?null:Number(raw);
+ return equity>0&&Number.isFinite(equity)?equity:null;
+}
 function futureSortValue(p,key){
- if(key==='roi')return p.initialMargin>0&&p.pnl!=null?Number(p.pnl)/Number(p.initialMargin):-Infinity;
+ if(key==='share'){
+  const equity=positionAccountEquity(p);
+  return equity>0&&p.pnl!=null?Number(p.pnl)/equity:-Infinity;
+ }
  if(key==='size')return Number(p.size)||0;
  if(key==='symbol')return String(p.symbol||'').toLowerCase();
  if(key==='leverage')return Number(p.leverage)||0;
@@ -425,15 +523,16 @@ function positionAge(time,now=Date.now()){
  return minutes+' мин';
 }
 function futuresTableHead(){
- return `<div class="futurePosition futureHead"><span>Монета</span><span>В сделке</span><span class="right"><span class="hLong">Объём · USD</span><span class="hShort">Объём</span></span><span class="right"><span class="hLong">Плавающий PNL</span><span class="hShort">PNL</span></span><span class="right posRoi">ROI · %</span></div>`;
+ return `<div class="futurePosition futureHead"><span>Монета</span><span>В сделке</span><span class="right"><span class="hLong">Объём · USD</span><span class="hShort">Объём</span></span><span class="right"><span class="hLong">Плавающий PNL</span><span class="hShort">PNL</span></span><span class="right posRoi" title="Плавающий PNL позиции как процент от текущего баланса её субаккаунта">К балансу, %</span></div>`;
 }
 function futurePositionLine(p){
  const side=String(p.side||'').toLowerCase();
  const sideName=side==='buy'||side==='long'?'Long':side==='sell'||side==='short'?'Short':'—';
  const badge=`<span class="posBadges"><i class="posBadge ${sideName==='Short'?'short':'long'}">${sideName}</i>${p.leverage?`<i class="posBadge lev">${escape(String(p.leverage))}×</i>`:''}</span>`;
  const age=positionAge(p.openedAt);
- const roi=p.initialMargin>0&&p.pnl!=null?Number(p.pnl)/Number(p.initialMargin)*100:null;
- return `<div class="futurePosition"><span><span class="futureCoin"><strong>${escape(p.symbol)}</strong>${badge}</span></span><span class="posDuration" title="Время с открытия позиции">${age}</span><span class="right posSize"><strong>${dollars(p.size)}</strong></span><span class="right ${p.pnl==null?'neutral':cls(Number(p.pnl))}"><strong>${p.pnl==null?'—':signed(Number(p.pnl))}</strong></span><span class="right posRoi ${roi==null?'neutral':cls(roi)}" title="Доходность к начальной марже">${roi==null?'—':pct(roi)}</span></div>`;
+ const accountEquity=positionAccountEquity(p);
+ const share=accountEquity!=null&&p.pnl!=null?Number(p.pnl)/accountEquity*100:null;
+ return `<div class="futurePosition"><span><span class="futureCoin"><strong>${escape(p.symbol)}</strong>${badge}</span></span><span class="posDuration" title="Время с открытия позиции">${age}</span><span class="right posSize"><strong>${dollars(p.size)}</strong></span><span class="right ${p.pnl==null?'neutral':cls(Number(p.pnl))}"><strong>${p.pnl==null?'—':signed(Number(p.pnl))}</strong></span><span class="right posRoi ${share==null?'neutral':cls(share)}" title="${accountEquity==null?'Нет баланса субаккаунта':'Плавающий PNL / текущий баланс субаккаунта '+dollars(accountEquity)}">${share==null?'—':pct(share)}</span></div>`;
 }
 function futureAccountRow(ex,ac){
  const id=ex.id+':'+ac.id,pp=futuresSorted().filter(p=>p.exchangeId===ex.id&&p.accountId===ac.id);
