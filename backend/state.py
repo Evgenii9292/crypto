@@ -469,6 +469,59 @@ def merge_equity_history(points):
         return {"points": len(rows)}
 
 
+
+def read_ledger_chunk_cache(cache_token):
+    """Retrieve a verified transaction-log slice from private VPS storage.
+
+    Tokens are SHA-256 hashes of the account, exact range and credential
+    fingerprint; neither API credentials nor public paths are stored.
+    """
+    if not isinstance(cache_token, str) or len(cache_token) != 64 or any(
+            ch not in "0123456789abcdef" for ch in cache_token):
+        raise StateError("Некорректный ключ кэша истории")
+    path = DATA_DIR / ("bybit-ledger-" + cache_token + ".json")
+    with LOCK:
+        if not path.is_file():
+            return None
+        try:
+            if path.stat().st_size > 2_000_000:
+                return None
+            saved = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(saved, dict) or saved.get("version") != 1:
+                return None
+            if not isinstance(saved.get("receivedAt"), int):
+                return None
+            report = saved.get("report")
+            if not isinstance(report, dict) or not isinstance(report.get("points"), list):
+                return None
+            return saved
+        except (OSError, UnicodeError, ValueError, TypeError):
+            return None
+
+
+def write_ledger_chunk_cache(cache_token, report):
+    if not isinstance(report, dict) or not isinstance(report.get("points"), list):
+        raise StateError("Недопустимый отчёт для кэширования")
+    if not isinstance(cache_token, str) or len(cache_token) != 64 or any(
+            ch not in "0123456789abcdef" for ch in cache_token):
+        raise StateError("Некорректный ключ кэша истории")
+    # A historical graph never needs the per-transaction position fee ledger.
+    # Keeping only aggregated values limits disk usage and avoids duplicating
+    # detailed trading records beyond the existing account history.
+    summary = {k: v for k, v in report.items() if k not in
+               ("costEvents", "costEventsComplete")}
+    payload = json.dumps({"version": 1, "receivedAt": int(time.time()*1000),
+                          "report": summary}, ensure_ascii=False,
+                         allow_nan=False, separators=(",", ":")).encode("utf-8")
+    if len(payload) > 2_000_000:
+        return False
+    path = DATA_DIR / ("bybit-ledger-" + cache_token + ".json")
+    with LOCK:
+        _write_private(path, payload)
+    return True
+
+
+
 def is_ready():
     _cipher()
     return True
