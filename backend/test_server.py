@@ -158,7 +158,7 @@ class TestPositionOpenTime(TestCase):
 
 
 class TestHistorySampler(TestCase):
-    """The server must keep the PNL series alive with no browser open."""
+    """The VPS samples current BTC/ETH prices and API futures while browser is closed."""
 
     def setUp(self):
         self.saved = []
@@ -171,20 +171,23 @@ class TestHistorySampler(TestCase):
         self.profile = patch.object(server.saved_state, "read_profile",
                                     return_value={"portfolio": {
                                         "trades": [{"coin": "BTC", "spent": 100, "entry": 50}],
-                                        "quotes": {"BTC": {"price": 60}}}})
+                                        "quotes": {"BTC": {"price": 999}}}})
         self.profile.start()
         self.extras = patch.object(server.saved_state, "list_extra_accounts", return_value=[])
         self.extras.start()
+        self.quotes = patch.object(server, "public_spot_quotes",
+                                   return_value={"BTC": {"price": 60}})
+        self.quotes.start()
 
     def tearDown(self):
-        for p in (self.merge, self.creds, self.profile, self.extras):
+        for p in (self.merge, self.creds, self.profile, self.extras, self.quotes):
             p.stop()
 
     def _snapshot(self, perp_upl):
         return patch.object(server, "snapshot", return_value={
             "totals": {"perpUPL": perp_upl}})
 
-    def test_records_spot_and_futures_separately(self):
+    def test_uses_live_server_price_not_stale_browser_quote(self):
         with self._snapshot(-3.5):
             self.assertTrue(server.sample_history_once())
         point = self.saved[0]
@@ -200,31 +203,59 @@ class TestHistorySampler(TestCase):
         self.assertNotIn("futures", point)
         self.assertNotIn("total", point)
 
-    def test_no_credentials_writes_nothing(self):
+    def test_spot_keeps_collecting_when_no_api_key_is_connected(self):
         self.creds.stop()
         with patch.object(server, "credentials", return_value=(None, None, "Sub")):
-            self.assertFalse(server.sample_history_once())
-        self.assertEqual(self.saved, [])
+            self.assertTrue(server.sample_history_once())
+        self.assertIn("spot", self.saved[0])
+        self.assertNotIn("futures", self.saved[0])
         self.creds.start()
 
-    def test_bybit_failure_does_not_raise(self):
+    def test_bybit_private_failure_keeps_spot_history_without_fake_total(self):
         with patch.object(server, "snapshot", side_effect=server.BybitFailure("down")):
-            self.assertFalse(server.sample_history_once())
-        self.assertEqual(self.saved, [])
+            self.assertTrue(server.sample_history_once())
+        self.assertIn("spot", self.saved[0])
+        self.assertNotIn("total", self.saved[0])
+        self.assertNotIn("futures", self.saved[0])
 
-    def test_missing_quote_keeps_spot_unknown(self):
-        self.profile.stop()
-        with patch.object(server.saved_state, "read_profile",
-                          return_value={"portfolio": {"trades": [{"coin": "BTC", "spent": 100,
-                                                                  "entry": 50}],
-                                                      "quotes": {}}}):
+    def test_unavailable_live_quote_never_uses_stale_browser_quote(self):
+        self.quotes.stop()
+        with patch.object(server, "public_spot_quotes", side_effect=server.BybitFailure("no tickers")):
             with self._snapshot(-1.0):
                 self.assertTrue(server.sample_history_once())
         point = self.saved[0]
         self.assertNotIn("spot", point)
         self.assertNotIn("total", point)
         self.assertAlmostEqual(point["futures"], -1.0)
-        self.profile.start()
+        self.quotes.start()
+
+    def test_background_spot_uses_different_prices_at_successive_intervals(self):
+        with self._snapshot(-2):
+            with patch.object(server, "public_spot_quotes",
+                              side_effect=[{"BTC": {"price": 60}}, {"BTC": {"price": 55}}]):
+                self.assertTrue(server.sample_history_once())
+                self.assertTrue(server.sample_history_once())
+        self.assertAlmostEqual(self.saved[0]["spot"], 20)
+        self.assertAlmostEqual(self.saved[1]["spot"], 10)
+        self.assertNotEqual(self.saved[0]["total"], self.saved[1]["total"])
+
+    def test_public_bybit_spot_quotes_do_not_send_secret(self):
+        class Response:
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+            def read(self, limit):
+                return b'{"retCode":0,"result":{"list":[{"lastPrice":"76321.25"}]}}'
+        visited = []
+        def stub(request, timeout):
+            visited.append(request)
+            return Response()
+        with patch.object(server, "urlopen", side_effect=stub):
+            quotes = server.public_spot_quotes([{"coin": "BTC"}])
+        self.assertAlmostEqual(quotes["BTC"]["price"], 76321.25)
+        self.assertIn("/v5/market/tickers?", visited[0].full_url)
+        self.assertNotIn("X-BAPI-API-KEY", dict(visited[0].header_items()))
 
 
 if __name__ == "__main__":
