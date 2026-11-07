@@ -60,7 +60,7 @@ test('overview has only All Spot Futures modes and true current open PNL',()=>{
  assert.match(overview,/class="card tint overviewHero"/);
  assert.match(overview,/Баланс портфеля/);
  assert.match(overview,/Текущий PNL/);
- assert.match(overview,/Спот \+ открытые фьючерсные позиции/);
+ assert.match(overview,/Учтённые покупки Spot \+ открытые фьючерсы/);
  assert.match(overview,/data-overview-period/);
  assert.match(overview,/История PNL/);
  assert.match(overview,/data-pnl-mode="all"/);
