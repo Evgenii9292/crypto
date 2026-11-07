@@ -6,7 +6,7 @@ const vm=require('node:vm');
 const root=path.join(__dirname,'..');
 const main=fs.readFileSync(path.join(root,'index.html'),'utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
 const levels=fs.readFileSync(path.join(root,'levels.js'),'utf8');
-function mount(history=[]){
+function mount(history=[],localPortfolio=null){
  const nodes=new Map(),listeners={};
  const el=id=>{
   if(!nodes.has(id))nodes.set(id,{
@@ -21,6 +21,7 @@ function mount(history=[]){
   addEventListener:(type,fn)=>(listeners[type]??=[]).push(fn)
  };
  const data=new Map();
+ if(localPortfolio)data.set('fxmr4_portfolio_public_preview_v1',JSON.stringify(localPortfolio));
  const localStorage={getItem:k=>data.get(k)??null,setItem:(k,v)=>data.set(k,v)};
  const fetch=url=>String(url).includes('/api/pnl-history')
     ?Promise.resolve({ok:true,json:async()=>({points:history})})
@@ -61,6 +62,31 @@ test('combined chart does not mistake Spot-only history for total PNL',async()=>
  assert.ok(points);
  assert.equal(points.trim().split(' ').length,3);
  assert.doesNotMatch(markup,/\+\$49\.7/);
+});
+test('offline server PNL samples fill gaps BETWEEN existing local samples',async()=>{
+ const now=Date.now();
+ const t=h=>now-h*3600000;
+ const local={
+   capital:1000,trades:[
+     {id:1,coin:'BTC',spent:25,entry:76200,buy_date:'2026-11-06'},
+     {id:2,coin:'ETH',spent:25,entry:2247,buy_date:'2026-11-06'}
+   ],
+   snapshots:[{time:t(6),pnl:-.50},{time:t(1),pnl:-.30}],
+   portfolioSnapshots:[
+     {time:t(6),spot:-.50,futures:-2,total:-2.5},
+     {time:t(1),spot:-.30,futures:-1,total:-1.3}
+   ]
+ };
+ const offline=[
+   {t:t(4),spot:-.40,futures:-1.8,total:-2.2},
+   {t:t(2),spot:-.38,futures:-1.5,total:-1.88}
+ ];
+ const {el,listeners}=mount(offline,local);
+ for(let i=0;i<150;i++)await Promise.resolve();
+ const extract=()=>el('content').innerHTML.match(/<polyline points="([^"]+)"/)?.[1]?.trim().split(' ').length;
+ assert.equal(extract(),4,'combined chart contains both local and offline server samples');
+ for(const cb of listeners.click||[])cb({target:{closest:selector=>selector==='[data-tab]'?{dataset:{tab:'positions'}}:null}});
+ assert.equal(extract(),4,'Spot chart also uses server history during closed browser time');
 });
 test('balance mode presents actual equity as money, never as positive profit',()=>{
  const {window,el,listeners}=mount();
