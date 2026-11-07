@@ -776,7 +776,7 @@ function overview(){
     <div class="overviewHeroMetrics">
      <div class="overviewMetric"><span>Текущий PNL</span>
       <strong class="${openTotal==null?'neutral':cls(openTotal)}">${openTotal==null?'—':signed(openTotal)}</strong>
-      <small>Спот + открытые фьючерсные позиции</small></div>
+      <small>Учтённые покупки Spot + открытые фьючерсы</small></div>
      <div class="overviewMetric"><span>Фьючерсы · ${escape(periodName)}</span>
       <strong class="${futureNet==null?'neutral':cls(futureNet)}">${futureNet==null?'—':signed(futureNet)}</strong>
       <small>Реализовано · funding · комиссии</small></div>
