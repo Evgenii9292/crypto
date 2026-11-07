@@ -242,6 +242,8 @@ def monthly_futures_activity(key, secret, end_ms=None, period_ms=PERFORMANCE_MS,
     totals = {"tradingPnl": 0.0, "funding": 0.0, "fees": 0.0}
     daily = {}
     per_symbol = {}
+    cost_events = []
+    costs_complete = True
     unknown_types = set()
     left = start_ms
     while left < end_ms:
@@ -287,6 +289,14 @@ def monthly_futures_activity(key, secret, end_ms=None, period_ms=PERFORMANCE_MS,
                     pieces[name] = value
                 net_change = pieces["tradingPnl"] + pieces["funding"] - pieces["fees"]
                 symbol = str(record.get("symbol") or "").strip().upper()[:30] or "OTHER"
+                if abs(pieces["funding"]) > 1e-12 or abs(pieces["fees"]) > 1e-12:
+                    if symbol == "OTHER":
+                        costs_complete = False  # Costs cannot be attributed to a position.
+                    if len(cost_events) < 20000:
+                        cost_events.append({"t": when, "symbol": symbol,
+                                            "funding": pieces["funding"], "fees": pieces["fees"]})
+                    else:
+                        costs_complete = False
                 # Funding/fees without a symbol remain in OTHER, never assigned
                 # to an unrelated coin.
                 group = per_symbol.setdefault(symbol, {"symbol": symbol, "netPnl": 0.0,
@@ -338,6 +348,10 @@ def monthly_futures_activity(key, secret, end_ms=None, period_ms=PERFORMANCE_MS,
     result = {"from": start_ms, "to": end_ms, "days": days,
               "points": series, "bucketMs": bucket_ms,
               "symbols": symbols, "intervalType": "UTC day" if utc_today else "rolling",
+              # Used for matching exact position open time without guessing
+              # fees from the entire 30-day account trading history.
+              "costEvents": cost_events if costs_complete else [],
+              "costEventsComplete": costs_complete,
               "tradingPnl": round(totals["tradingPnl"], 8),
               "funding": round(totals["funding"], 8),
               "fees": round(totals["fees"], 8),
