@@ -85,7 +85,7 @@
   const nowLocal=()=>{const d=new Date();return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-')};
   const fmtDate=d=>{if(!d)return 'Нет даты';const a=d.slice(0,10).split('-');return a.length===3?`${a[2]}.${a[1]}.${a[0]}`:d};
   const fmtTime=d=>{if(!d)return '';const x=new Date(d);return isNaN(x)?'':x.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})};
-  const s={tab:'overview',trades:[{id:1,coin:'BTC',spent:25,entry:76200,buy_date:'2026-11-06',confirmed:false},{id:2,coin:'ETH',spent:25,entry:2247,buy_date:'2026-11-06',confirmed:false}],quotes:{BTC:{price:initial.BTC,source:'Предварительно'},ETH:{price:initial.ETH,source:'Предварительно'}},capital:C,period:'7d',chartPeriod:{overview:'all',spot:'all',futures:'30d'},chartMetric:{spot:'pnl',futures:'realized30d'},points:[],snapshots:[],sync:null,form:false,editing:null,deleteId:null,busy:false,flash:'',formError:'',showPrices:false,tradingSubtab:'futures',futureMode:'all',futureSort:'pnl',futureSortDir:-1,pnlMode:'all',capitalOpen:false,portfolioSnapshots:[],pnlHistory:[],pendingRemove:null,renameId:null,renameValue:'',renameError:'',futureForm:null,futureFormError:'',sources:[{id:'bybit',name:'Bybit',connected:false,accounts:[]}],futuresPositions:[],openedExchanges:{},openedAccounts:{},spotHistoryOpen:false,spotAccountsOpen:false,spotOpen:{},bybitSnapshot:null,bybitAccountsSnapshots:{},monthlyPerformance:{},monthlyLoading:{},monthlyAnchorMs:null,periodReports:{},periodLoading:{},periodProgress:{},periodChunkCache:{},equityHistory:[],equityHistoryAt:0,equityHistoryLoading:false,futuresView:'pnl',futuresValueMode:'usd',futuresAccountFilter:'all',bybitExpectedIds:[],backendConnection:{available:false,configured:false,connected:false,error:''}};
+  const s={tab:'overview',trades:[{id:1,coin:'BTC',spent:25,entry:76200,buy_date:'2026-11-06',confirmed:false},{id:2,coin:'ETH',spent:25,entry:2247,buy_date:'2026-11-06',confirmed:false}],quotes:{BTC:{price:initial.BTC,source:'Предварительно'},ETH:{price:initial.ETH,source:'Предварительно'}},capital:C,period:'7d',chartPeriod:{overview:'all',spot:'all',futures:'30d'},chartMetric:{spot:'pnl',futures:'realized30d'},points:[],snapshots:[],sync:null,form:false,editing:null,deleteId:null,busy:false,flash:'',formError:'',showPrices:false,tradingSubtab:'futures',futureMode:'all',futureSort:'pnl',futureSortDir:-1,pnlMode:'all',capitalOpen:false,portfolioSnapshots:[],pnlHistory:[],pendingRemove:null,renameId:null,renameValue:'',renameError:'',futureForm:null,futureFormError:'',sources:[{id:'bybit',name:'Bybit',connected:false,accounts:[]}],futuresPositions:[],openedExchanges:{},openedAccounts:{},spotHistoryOpen:false,spotAccountsOpen:false,spotOpen:{},bybitSnapshot:null,bybitAccountsSnapshots:{},monthlyPerformance:{},monthlyLoading:{},monthlyAnchorMs:null,periodReports:{},periodLoading:{},periodProgress:{},periodChunkCache:{},spotHistoricalReports:{},spotHistoryLoading:{},equityHistory:[],equityHistoryAt:0,equityHistoryLoading:false,futuresView:'pnl',futuresValueMode:'usd',futuresAccountFilter:'all',bybitExpectedIds:[],backendConnection:{available:false,configured:false,connected:false,error:''}};
   function coin(m){const trades=s.trades.filter(t=>t.coin===m);const invested=trades.reduce((t,x)=>t+Number(x.spent),0);const quantity=trades.reduce((t,x)=>t+Number(x.spent)/Number(x.entry),0);const current=Number(s.quotes[m]?.price||initial[m]);const value=quantity*current;return {invested,quantity,current,value,profit:value-invested,remaining:C/2-invested,avg:quantity?invested/quantity:0,provisional:trades.some(t=>!t.confirmed)}}
   function sums(){const btc=coin('BTC'),eth=coin('ETH'),invested=btc.invested+eth.invested,cash=C-invested,holdings=btc.value+eth.value,profit=holdings-invested;return {btc,eth,invested,cash,holdings,profit,total:cash+holdings}}
 
@@ -483,6 +483,88 @@ async function loadFuturesPeriod(period){
   delete s.periodProgress[period];
   if(s.tab==='futures'||s.tab==='overview')renderLive();
  }
+}
+
+
+async function loadSpotHistory(period){
+ if(!['30d','60d','90d','6m','1y','all'].includes(period)||
+    !s.backendConnection.available||s.spotHistoryLoading[period])return;
+ const today=Math.floor(Date.now()/86400000)*86400000;
+ const prev=s.spotHistoricalReports[period];
+ if(prev&&prev.to===today&&Date.now()-prev.receivedAt<3600000)return;
+ s.spotHistoryLoading[period]=true;
+ try{
+  const response=await fetch('./api/spot-price-history?period='+encodeURIComponent(period),
+    {cache:'no-store',credentials:'same-origin'});
+  const data=await response.json();
+  if(!response.ok)throw Error(data.error||'История цен Bybit недоступна');
+  if(!data.prices||!Array.isArray(data.prices.BTC)||!Array.isArray(data.prices.ETH))
+   throw Error('Bybit вернул неполные цены Spot');
+  s.spotHistoricalReports[period]={...data,receivedAt:Date.now()};
+ }catch(e){
+  s.spotHistoricalReports[period]={error:String(e.message||'Не удалось загрузить Spot').slice(0,145),
+   to:today,receivedAt:Date.now()};
+ }finally{
+  delete s.spotHistoryLoading[period];
+  if(s.tab==='overview')renderLive();
+ }
+}
+function overviewSpotHistory(period){
+ const record=s.spotHistoricalReports[period];
+ if(!record?.prices)return null;
+ const dates=record.prices.BTC.map(x=>Number(x.t)).filter(Number.isFinite);
+ const eth=new Map(record.prices.ETH.map(x=>[Number(x.t),Number(x.close)]));
+ const btc=new Map(record.prices.BTC.map(x=>[Number(x.t),Number(x.close)]));
+ const entries=s.trades.filter(t=>['BTC','ETH'].includes(t.coin)&&
+  Number(t.spent)>0&&Number(t.entry)>0&&/^\\d{4}-\\d{2}-\\d{2}$/.test(t.buy_date))
+  .map(t=>({...t,bought:Date.parse(t.buy_date+'T00:00:00Z')}));
+ if(!entries.length)return null;
+ const points=[];
+ for(const day of dates.sort((a,b)=>a-b)){
+  const btcPrice=btc.get(day),ethPrice=eth.get(day);
+  if(!(btcPrice>0&&ethPrice>0))continue;
+  let current=0,cost=0;
+  for(const trade of entries){
+   if(trade.bought>day)continue;
+   const close=trade.coin==='BTC'?btcPrice:ethPrice;
+   current+=Number(trade.spent)/Number(trade.entry)*close;
+   cost+=Number(trade.spent);
+  }
+  points.push({t:day+86399999,v:current-cost});
+ }
+ if(points.length<2)return null;
+ return {points,from:points[0].t,to:points.at(-1).t,
+  provisional:entries.some(t=>!t.confirmed)};
+}
+function overviewHistoryData(mode,period){
+ const spot=overviewSpotHistory(period),futures=futuresLedgerData(period);
+ if(mode==='spot'){
+  if(!spot)return null;
+  const baseline=spot.points[0].v;
+  return {points:spot.points.map(p=>({t:p.t,v:p.v-baseline})),
+   coverage:spot.from,provisional:spot.provisional,
+   description:'Изменение оценки записанных покупок BTC и ETH по историческим ценам Bybit Spot'};
+ }
+ if(mode==='futures'){
+  if(!futures)return null;
+  return {points:futures.points,coverage:futures.from,
+   description:'Реализованные сделки Bybit, funding и комиссии · без открытого PNL'};
+ }
+ if(!spot||!futures)return null;
+ const earliest=Math.max(spot.from,futures.from),latest=Math.min(spot.to,futures.to);
+ const usable=spot.points.filter(p=>p.t>=earliest&&p.t<=latest);
+ if(usable.length<2)return null;
+ const fut=futures.points,firstSpot=usable[0].v;
+ let index=0,lastValue=0;
+ const output=[];
+ for(const point of usable){
+  while(index<fut.length&&fut[index].t<=point.t){lastValue=fut[index].v;index++}
+  if(!output.length)output.push({t:point.t,v:0,baseFut:lastValue});
+  else output.push({t:point.t,v:point.v-firstSpot+lastValue-output[0].baseFut});
+ }
+ return {points:output.map(({t,v})=>({t,v})),coverage:usable[0].t,
+  provisional:spot.provisional,
+  description:'Совместный доступный период: изменение Spot + реализованный PNL фьючерсов'};
 }
 
 function pnlWindow(kind,period,metric='pnl'){
