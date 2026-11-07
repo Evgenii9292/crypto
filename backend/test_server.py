@@ -145,6 +145,40 @@ class TestReadOnlySubaccount(TestCase):
         self.assertTrue(handler._same_origin_action())
 
 
+class TestAccountLevelPnl(TestCase):
+    """Closing a position must move its loss to realised PNL, not erase it."""
+
+    def test_closing_losing_position_does_not_create_fake_profit(self):
+        before = {"totalPerpUPL": "-12",
+                  "coin": [{"coin": "USDT", "cumRealisedPnl": "-3"}]}
+        after = {"totalPerpUPL": "0",
+                 "coin": [{"coin": "USDT", "cumRealisedPnl": "-15"}]}
+        self.assertAlmostEqual(server.futures_pnl_totals(before)["accountPnl"], -15)
+        self.assertAlmostEqual(server.futures_pnl_totals(after)["accountPnl"], -15)
+        self.assertAlmostEqual(server.futures_pnl_totals(before)["realisedPnl"], -3)
+        self.assertAlmostEqual(server.futures_pnl_totals(after)["realisedPnl"], -15)
+
+    def test_wallet_cumulative_is_not_sum_of_only_open_position_pnl(self):
+        account = {"totalPerpUPL": "2.5",
+                   "coin": [{"coin": "USDT", "cumRealisedPnl": "-25.75"},
+                            {"coin": "USDC", "cumRealisedPnl": "3.25"}]}
+        result = server.futures_pnl_totals(account)
+        self.assertAlmostEqual(result["realisedPnl"], -22.5)
+        self.assertAlmostEqual(result["accountPnl"], -20.0)
+
+    def test_missing_realised_must_not_fallback_to_floating(self):
+        account = {"totalPerpUPL": "8.1"}
+        result = server.futures_pnl_totals(account)
+        self.assertIsNone(result["realisedPnl"])
+        self.assertIsNone(result["accountPnl"])
+
+    def test_inverse_non_usd_realised_must_not_be_added_as_dollars(self):
+        account = {"totalPerpUPL": "2",
+                   "coin": [{"coin": "USDT", "cumRealisedPnl": "-5"},
+                            {"coin": "BTC", "cumRealisedPnl": "0.1"}]}
+        self.assertIsNone(server.futures_pnl_totals(account)["accountPnl"])
+
+
 class TestPositionOpenTime(TestCase):
     """Sorting by open date needs the venue's own timestamp, not a guess."""
 
@@ -186,6 +220,16 @@ class TestHistorySampler(TestCase):
     def _snapshot(self, perp_upl):
         return patch.object(server, "snapshot", return_value={
             "totals": {"perpUPL": perp_upl}})
+
+    def test_server_writes_account_pnl_separately_from_floating(self):
+        with patch.object(server, "snapshot", return_value={"totals": {
+                "perpUPL": "0", "accountPnl": "-15", "realisedPnl": "-15"}}):
+            self.assertTrue(server.sample_history_once())
+        point = self.saved[0]
+        self.assertAlmostEqual(point["futures"], 0)
+        self.assertAlmostEqual(point["futuresAccount"], -15)
+        self.assertAlmostEqual(point["totalAccount"], 5)
+        self.assertAlmostEqual(point["total"], 20)
 
     def test_uses_live_server_price_not_stale_browser_quote(self):
         with self._snapshot(-3.5):
