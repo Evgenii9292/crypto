@@ -151,6 +151,45 @@ def collect_positions(key, secret, settle_coin):
     return result
 
 
+def realised_futures_pnl(account):
+    """Bybit UTA cumulative realised derivatives PNL, in USDT/USDC.
+
+    This is NOT the sum of cumRealisedPnl on currently OPEN positions.
+    Closed positions disappear from /v5/position/list, so their result must
+    come from the account wallet instead.
+    """
+    coins = account.get("coin")
+    if not isinstance(coins, list):
+        return None
+    total = 0.0
+    present = False
+    for item in coins:
+        if not isinstance(item, dict):
+            return None
+        raw = item.get("cumRealisedPnl")
+        if raw in (None, ""):
+            continue
+        value = _num(raw)
+        if value is None:
+            return None
+        denomination = str(item.get("coin") or "").upper()
+        if denomination in ("USDT", "USDC"):
+            total += value
+            present = True
+        elif abs(value) > 0.00000001:
+            # Inverse products settle in coin. Do NOT mix BTC with USD.
+            return None
+    return total if present else None
+
+
+def futures_pnl_totals(account):
+    """Do not invent realised profit when Bybit omits wallet fields."""
+    floating = _num(account.get("totalPerpUPL"))
+    realised = realised_futures_pnl(account)
+    combined = realised + floating if realised is not None and floating is not None else None
+    return {"realisedPnl": realised, "accountPnl": combined}
+
+
 def snapshot():
     key, secret, label = credentials()
     if not key or not secret:
@@ -175,6 +214,7 @@ def snapshot():
         "walletBalance": _num(account.get("totalWalletBalance")),
         "availableBalance": _num(account.get("totalAvailableBalance")),
         "perpUPL": _num(account.get("totalPerpUPL")),
+        **futures_pnl_totals(account),
         "accountInitialMargin": _num(account.get("totalInitialMargin")),
         "positionCount": len(pos),
     }
@@ -231,6 +271,7 @@ def snapshot_extra(account_id):
                          "walletBalance": _num(a.get("totalWalletBalance")),
                          "availableBalance": _num(a.get("totalAvailableBalance")),
                          "perpUPL": _num(a.get("totalPerpUPL")),
+                         **futures_pnl_totals(a),
                          "accountInitialMargin": _num(a.get("totalInitialMargin")),
                          "positionCount": len(positions)},
               "positions": positions, "updatedAt": int(time.time() * 1000)}
@@ -635,36 +676,57 @@ def sample_history_once():
                 print("Spot PNL sample skipped: " + str(exc)[:140], flush=True)
 
         futures_parts = []
+        account_parts = []
         futures_complete = True
+        account_complete = True
         if key and secret:
             try:
                 result = snapshot()
-                v = _num((result.get("totals") or {}).get("perpUPL"))
+                totals = result.get("totals") or {}
+                v = _num(totals.get("perpUPL"))
+                a = _num(totals.get("accountPnl"))
                 if v is None:
                     futures_complete = False
                 else:
                     futures_parts.append(v)
+                if a is None:
+                    account_complete = False
+                else:
+                    account_parts.append(a)
             except BybitFailure:
                 futures_complete = False
+                account_complete = False
         for item in extras:
             try:
                 result = snapshot_extra(item["id"])
-                v = _num((result.get("totals") or {}).get("perpUPL"))
+                totals = result.get("totals") or {}
+                v = _num(totals.get("perpUPL"))
+                a = _num(totals.get("accountPnl"))
                 if v is None:
                     futures_complete = False
                 else:
                     futures_parts.append(v)
+                if a is None:
+                    account_complete = False
+                else:
+                    account_parts.append(a)
             except BybitFailure:
                 futures_complete = False
+                account_complete = False
 
         futures = sum(futures_parts) if futures_complete and futures_parts else None
+        account_pnl = sum(account_parts) if account_complete and account_parts else None
         point = {"t": int(time.time() * 1000)}
         if spot is not None:
             point["spot"] = spot
         if futures is not None:
-            point["futures"] = futures
+            point["futures"] = futures  # legacy: floating PNL only
+        if account_pnl is not None:
+            point["futuresAccount"] = account_pnl
         if spot is not None and futures is not None:
-            point["total"] = spot + futures
+            point["total"] = spot + futures  # legacy: floating PNL only
+        if spot is not None and account_pnl is not None:
+            point["totalAccount"] = spot + account_pnl
         if len(point) == 1:
             return False
         saved_state.merge_history([point])
