@@ -898,6 +898,41 @@ function positionAge(time,now=Date.now()){
 function futuresTableHead(){
  return `<div class="futurePosition futureHead"><span>Монета</span><span>В сделке</span><span class="right"><span class="hLong">Объём · USD</span><span class="hShort">Объём</span></span><span class="right"><span class="hLong">Плавающий PNL</span><span class="hShort">PNL</span></span><span class="right posRoi" title="Плавающий PNL позиции как процент от текущего баланса её субаккаунта">К балансу, %</span></div>`;
 }
+function positionCostsFromBybit(p){
+ if(p.exchangeId!=='bybit')return {reason:'Нет данных Bybit'};
+ const report=s.monthlyPerformance[p.accountId];
+ if(!report||!Array.isArray(report.costEvents)||report.costEventsComplete!==true)
+  return {reason:'Детализация Bybit пока недоступна'};
+ const opened=Number(p.openedAt);
+ if(!Number.isFinite(opened)||opened<1e12)
+  return {reason:'Bybit не передал дату открытия'};
+ if(opened<Number(report.from)||opened>=Number(report.to))
+  return {reason:'Открыта до начала доступной истории или отчёт ещё не обновлён'};
+ // A single account can have two opposite hedged positions for one symbol.
+ // Transaction-log is keyed by symbol, not positionIdx. Never assign the
+ // same fees to both positions.
+ const ambiguous=s.futuresPositions.filter(x=>x.exchangeId==='bybit'&&
+  x.accountId===p.accountId&&x.symbol===p.symbol);
+ if(ambiguous.length>1)
+  return {reason:'Для этой монеты несколько позиций, расходы нельзя разделить'};
+ let funding=0,fees=0;
+ for(const event of report.costEvents){
+  if(event.symbol!==p.symbol)continue;
+  const t=Number(event.t),f=Number(event.funding),fee=Number(event.fees);
+  if(!Number.isFinite(t)||!Number.isFinite(f)||!Number.isFinite(fee))
+   return {reason:'Некорректная запись расходов Bybit'};
+  if(t>=opened&&t<report.to){funding+=f;fees+=fee}
+ }
+ return {funding,fees,opened,through:report.to};
+}
+function positionCostsHTML(p){
+ const cost=positionCostsFromBybit(p);
+ if(!cost||cost.funding==null)
+  return `<span class="posCosts posCostsMuted" title="${escape(cost?.reason||'Нет данных')}">Funding: — · Комиссии: —</span>`;
+ const label='По операциям Bybit с открытия текущей позиции до '+
+  new Date(cost.through).toLocaleString('ru-RU')+'. По бирже возможна задержка.';
+ return `<span class="posCosts" title="${escape(label)}"><span>Funding: ${signed(cost.funding)}</span><span>Комиссии: ${dollars(cost.fees)}</span></span>`;
+}
 function futurePositionLine(p){
  const side=String(p.side||'').toLowerCase();
  const sideName=side==='buy'||side==='long'?'Long':side==='sell'||side==='short'?'Short':'—';
@@ -905,7 +940,7 @@ function futurePositionLine(p){
  const age=positionAge(p.openedAt);
  const accountEquity=positionAccountEquity(p);
  const share=accountEquity!=null&&p.pnl!=null?Number(p.pnl)/accountEquity*100:null;
- return `<div class="futurePosition"><span><span class="futureCoin"><strong>${escape(p.symbol)}</strong>${badge}</span></span><span class="posDuration" title="Время с открытия позиции">${age}</span><span class="right posSize"><strong>${dollars(p.size)}</strong></span><span class="right ${p.pnl==null?'neutral':cls(Number(p.pnl))}"><strong>${p.pnl==null?'—':signed(Number(p.pnl))}</strong></span><span class="right posRoi ${share==null?'neutral':cls(share)}" title="${accountEquity==null?'Нет баланса субаккаунта':'Плавающий PNL / текущий баланс субаккаунта '+dollars(accountEquity)}">${share==null?'—':pct(share)}</span></div>`;
+ return `<div class="futurePosition"><span><span class="futureCoin"><strong>${escape(p.symbol)}</strong>${badge}</span></span><span class="posDuration" title="Время с открытия позиции">${age}</span><span class="right posSize"><strong>${dollars(p.size)}</strong></span><span class="right ${p.pnl==null?'neutral':cls(Number(p.pnl))}"><strong>${p.pnl==null?'—':signed(Number(p.pnl))}</strong></span><span class="right posRoi ${share==null?'neutral':cls(share)}" title="${accountEquity==null?'Нет баланса субаккаунта':'Плавающий PNL / текущий баланс субаккаунта '+dollars(accountEquity)}">${share==null?'—':pct(share)}</span><span class="posCostsRow">${positionCostsHTML(p)}</span></div>`;
 }
 function futureAccountRow(ex,ac){
  const id=ex.id+':'+ac.id,pp=futuresSorted().filter(p=>p.exchangeId===ex.id&&p.accountId===ac.id);
