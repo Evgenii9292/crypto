@@ -29,7 +29,7 @@ function app(){
 }
 function snapshot(id,name,equity,pnl,coin){
  const now=Date.now();
- return {account:{id,name},totals:{equity,perpUPL:pnl,availableBalance:equity/2,positionCount:1},
+ return {account:{id,name},totals:{equity,perpUPL:pnl,realisedPnl:0,accountPnl:pnl,availableBalance:equity/2,positionCount:1},
   positions:[{symbol:coin,side:'Long',size:90,pnl,openedAt:now-3600000}],updatedAt:now};
 }
 test('two Bybit subaccounts aggregate equity and PNL exactly once',()=>{
