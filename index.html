@@ -85,7 +85,7 @@
   const nowLocal=()=>{const d=new Date();return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-')};
   const fmtDate=d=>{if(!d)return 'Нет даты';const a=d.slice(0,10).split('-');return a.length===3?`${a[2]}.${a[1]}.${a[0]}`:d};
   const fmtTime=d=>{if(!d)return '';const x=new Date(d);return isNaN(x)?'':x.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})};
-  const s={tab:'overview',trades:[{id:1,coin:'BTC',spent:25,entry:76200,buy_date:'2026-11-06',confirmed:false},{id:2,coin:'ETH',spent:25,entry:2247,buy_date:'2026-11-06',confirmed:false}],quotes:{BTC:{price:initial.BTC,source:'Предварительно'},ETH:{price:initial.ETH,source:'Предварительно'}},capital:C,period:'7d',chartPeriod:{overview:'all',spot:'all',futures:'30d'},chartMetric:{spot:'pnl',futures:'realized30d'},points:[],snapshots:[],sync:null,form:false,editing:null,deleteId:null,busy:false,flash:'',formError:'',showPrices:false,tradingSubtab:'futures',futureMode:'all',futureSort:'pnl',futureSortDir:-1,pnlMode:'all',capitalOpen:false,portfolioSnapshots:[],pnlHistory:[],pendingRemove:null,renameId:null,renameValue:'',renameError:'',futureForm:null,futureFormError:'',sources:[{id:'bybit',name:'Bybit',connected:false,accounts:[]}],futuresPositions:[],openedExchanges:{},openedAccounts:{},spotHistoryOpen:false,spotAccountsOpen:false,spotOpen:{},bybitSnapshot:null,bybitAccountsSnapshots:{},monthlyPerformance:{},monthlyLoading:{},monthlyAnchorMs:null,periodReports:{},periodLoading:{},equityHistory:[],equityHistoryAt:0,equityHistoryLoading:false,futuresView:'pnl',futuresValueMode:'usd',futuresAccountFilter:'all',bybitExpectedIds:[],backendConnection:{available:false,configured:false,connected:false,error:''}};
+  const s={tab:'overview',trades:[{id:1,coin:'BTC',spent:25,entry:76200,buy_date:'2026-11-06',confirmed:false},{id:2,coin:'ETH',spent:25,entry:2247,buy_date:'2026-11-06',confirmed:false}],quotes:{BTC:{price:initial.BTC,source:'Предварительно'},ETH:{price:initial.ETH,source:'Предварительно'}},capital:C,period:'7d',chartPeriod:{overview:'all',spot:'all',futures:'30d'},chartMetric:{spot:'pnl',futures:'realized30d'},points:[],snapshots:[],sync:null,form:false,editing:null,deleteId:null,busy:false,flash:'',formError:'',showPrices:false,tradingSubtab:'futures',futureMode:'all',futureSort:'pnl',futureSortDir:-1,pnlMode:'all',capitalOpen:false,portfolioSnapshots:[],pnlHistory:[],pendingRemove:null,renameId:null,renameValue:'',renameError:'',futureForm:null,futureFormError:'',sources:[{id:'bybit',name:'Bybit',connected:false,accounts:[]}],futuresPositions:[],openedExchanges:{},openedAccounts:{},spotHistoryOpen:false,spotAccountsOpen:false,spotOpen:{},bybitSnapshot:null,bybitAccountsSnapshots:{},monthlyPerformance:{},monthlyLoading:{},monthlyAnchorMs:null,periodReports:{},periodLoading:{},periodProgress:{},periodChunkCache:{},equityHistory:[],equityHistoryAt:0,equityHistoryLoading:false,futuresView:'pnl',futuresValueMode:'usd',futuresAccountFilter:'all',bybitExpectedIds:[],backendConnection:{available:false,configured:false,connected:false,error:''}};
   function coin(m){const trades=s.trades.filter(t=>t.coin===m);const invested=trades.reduce((t,x)=>t+Number(x.spent),0);const quantity=trades.reduce((t,x)=>t+Number(x.spent)/Number(x.entry),0);const current=Number(s.quotes[m]?.price||initial[m]);const value=quantity*current;return {invested,quantity,current,value,profit:value-invested,remaining:C/2-invested,avg:quantity?invested/quantity:0,provisional:trades.some(t=>!t.confirmed)}}
   function sums(){const btc=coin('BTC'),eth=coin('ETH'),invested=btc.invested+eth.invested,cash=C-invested,holdings=btc.value+eth.value,profit=holdings-invested;return {btc,eth,invested,cash,holdings,profit,total:cash+holdings}}
 
@@ -352,35 +352,135 @@ function pnlBarSections(data,period,accountId='all'){
    <div class="pnlCoinList">${coins}</div></section></div>`;
 }
 
+function combineBybitChunks(chunks,from,to,period){
+ if(!chunks.length)return null;
+ const sorted=[...chunks].sort((a,b)=>a.from-b.from);
+ let current=from;
+ const totals={netPnl:0,tradingPnl:0,funding:0,fees:0};
+ const points=new Map(),days=new Map(),symbols=new Map();
+ for(const part of sorted){
+  if(part.from!==current||part.to<=current||part.to>to||
+     !Number.isFinite(part.netPnl)||!Array.isArray(part.points)){
+   throw Error('В истории Bybit есть пропущенный период');
+  }
+  current=part.to;
+  for(const key of Object.keys(totals))totals[key]+=Number(part[key])||0;
+  for(const x of part.points){
+   if(!Number.isFinite(x.t)||!Number.isFinite(x.netPnl)||
+      x.t<part.from||x.t>=part.to)throw Error('Повреждён фрагмент истории Bybit');
+   points.set(x.t,(points.get(x.t)||0)+x.netPnl);
+  }
+  for(const d of part.days||[]){
+   if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(String(d.date)))continue;
+   const value=days.get(d.date)||{date:d.date,netPnl:0,funding:0,fees:0};
+   for(const key of ['netPnl','funding','fees'])value[key]+=Number(d[key])||0;
+   days.set(d.date,value);
+  }
+  for(const record of part.symbols||[]){
+   const name=String(record.symbol||'OTHER');
+   const value=symbols.get(name)||{symbol:name,netPnl:0,operations:0};
+   value.netPnl+=Number(record.netPnl)||0;
+   value.operations+=Number(record.operations)||0;
+   symbols.set(name,value);
+  }
+ }
+ if(current!==to)throw Error('Bybit вернул неполную историю');
+ return {...totals,from,to,period,
+  points:[...points].sort((a,b)=>a[0]-b[0]).map(([t,netPnl])=>({t,netPnl})),
+  days:[...days.values()].sort((a,b)=>a.date.localeCompare(b.date)),
+  symbols:[...symbols.values()].sort((a,b)=>Math.abs(b.netPnl)-Math.abs(a.netPnl))};
+}
+async function fetchLongBybitPeriod(accountId,period,anchor){
+ const duration=period==='all'?729*86400000:PERIODS[period];
+ if(!Number.isFinite(duration)||duration<=0)throw Error('Неизвестный период');
+ const from=anchor-duration,interval=6*86400000,windows=[];
+ for(let t=from;t<anchor;t+=interval)windows.push([t,Math.min(t+interval,anchor)]);
+ const results=new Array(windows.length);
+ const progress=s.periodProgress[period]||{done:0,total:windows.length};
+ s.periodProgress[period]=progress;
+ // Keep each HTTP request below the reverse proxy timeout, use only two
+ // concurrent transactions per account to respect Bybit's rate limits.
+ let next=0;
+ async function worker(){
+  while(next<windows.length){
+   const i=next++, [start,stop]=windows[i];
+   const cacheKey=accountId+':'+start+':'+stop;
+   const cached=s.periodChunkCache[cacheKey];
+   if(cached&&Date.now()-cached.receivedAt<3600000){
+    results[i]=cached.data;
+   }else{
+    const u='./api/period-chunk?id='+encodeURIComponent(accountId)+
+      '&startAt='+start+'&endAt='+stop;
+    let data=null;
+    for(let attempt=0;attempt<3;attempt++){
+     try{
+      const response=await fetch(u,{cache:'no-store',credentials:'same-origin'});
+      const value=await response.json();
+      if(!response.ok)throw Error(value.error||'Bybit API недоступен');
+      if(value.from!==start||value.to!==stop)throw Error('Период ответа Bybit не совпал с запросом');
+      data=value;break;
+     }catch(e){
+      if(attempt===2)throw e;
+      await new Promise(resolve=>setTimeout(resolve,750*(attempt+1)));
+     }
+    }
+    results[i]=data;
+    s.periodChunkCache[cacheKey]={data,receivedAt:Date.now()};
+    const keys=Object.keys(s.periodChunkCache);
+    if(keys.length>1500){
+     for(const key of keys.slice(0,300))delete s.periodChunkCache[key];
+    }
+   }
+   progress.done++;
+   if((progress.done%3===0||progress.done===progress.total)&&
+       (s.tab==='futures'||s.tab==='overview'))renderLive();
+  }
+ }
+ await Promise.all([worker(),worker()]);
+ return combineBybitChunks(results,from,anchor,period);
+}
 async function loadFuturesPeriod(period){
  if(period==='30d'||!s.bybitExpectedIds?.length||!s.backendConnection.available)return;
  if(s.periodLoading[period])return;
- const anchor=s.monthlyAnchorMs||Math.floor(Date.now()/300000)*300000;
+ const long=period==='60d'||period==='90d'||period==='6m'||period==='1y'||period==='all';
+ // Long-range analysis is day-aligned so it can reuse downloaded 6-day
+ // slices. The current UTC day's operations are shown separately.
+ const anchor=long?Math.floor(Date.now()/86400000)*86400000:
+   (s.monthlyAnchorMs||Math.floor(Date.now()/300000)*300000);
  const ids=[...s.bybitExpectedIds];
  const already=ids.every(id=>{
   const v=s.periodReports[period]?.[id];
-  return v&&v.to===anchor&&Date.now()-v.receivedAt<600000;
+  return v&&v.to===anchor&&Date.now()-v.receivedAt<(long?3600000:600000);
  });
  if(already)return;
  s.periodLoading[period]=true;
  s.periodReports[period] ||= {};
+ if(long)s.periodProgress[period]={done:0,total:Math.ceil((period==='all'?729*86400000:PERIODS[period])/(6*86400000))*ids.length};
  try{
   await Promise.all(ids.map(async id=>{
    const prev=s.periodReports[period][id];
-   if(prev&&prev.to===anchor&&Date.now()-prev.receivedAt<600000)return;
+   if(prev&&prev.to===anchor&&Date.now()-prev.receivedAt<(long?3600000:600000))return;
    try{
-    const url='./api/period-performance?id='+encodeURIComponent(id)+'&period='+encodeURIComponent(period)+'&endAt='+anchor;
-    const response=await fetch(url,{cache:'no-store',credentials:'same-origin'});
-    const data=await response.json();
-    s.periodReports[period][id]=response.ok&&data.to===anchor&&Number.isFinite(data.netPnl)&&Array.isArray(data.points)
-     ? {...data,receivedAt:Date.now()}
-     : {error:data.error||'Не удалось получить историю Bybit',to:anchor,receivedAt:Date.now()};
+    let data;
+    if(long)data=await fetchLongBybitPeriod(id,period,anchor);
+    else{
+     const url='./api/period-performance?id='+encodeURIComponent(id)+
+       '&period='+encodeURIComponent(period)+'&endAt='+anchor;
+     const response=await fetch(url,{cache:'no-store',credentials:'same-origin'});
+     data=await response.json();
+     if(!response.ok)throw Error(data.error||'Не удалось получить историю Bybit');
+    }
+    s.periodReports[period][id]=data&&data.to===anchor&&Number.isFinite(data.netPnl)&&Array.isArray(data.points)
+     ?{...data,receivedAt:Date.now()}
+     :{error:'История Bybit неполная',to:anchor,receivedAt:Date.now()};
    }catch(error){
-    s.periodReports[period][id]={error:'История Bybit недоступна',to:anchor,receivedAt:Date.now()};
+    s.periodReports[period][id]={error:String(error.message||'История Bybit недоступна').slice(0,150),
+      to:anchor,receivedAt:Date.now()};
    }
   }));
  }finally{
   delete s.periodLoading[period];
+  delete s.periodProgress[period];
   if(s.tab==='futures'||s.tab==='overview')renderLive();
  }
 }
