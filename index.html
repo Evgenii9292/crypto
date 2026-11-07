@@ -331,7 +331,8 @@ function pnlBarSections(data,period,accountId='all'){
  if(!data)return '';
  const equity=accountId==='all'?Number(s.bybitSnapshot?.totals?.equity):Number(s.bybitAccountsSnapshots[accountId]?.totals?.equity);
  const unit=s.futuresValueMode==='pct'&&equity>0?'pct':'usd';
- const format=n=>futuresValue(n,unit,accountId);
+ const percent=n=>equity>0?futuresValue(n,'pct',accountId):'—';
+ const amount=n=>(n<0?'−':'+')+Math.abs(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+' USDT';
  const buckets=new Map();
  if(period==='24h'){
   for(const p of data.buckets||[]){
@@ -352,11 +353,36 @@ function pnlBarSections(data,period,accountId='all'){
  }
  const bars=[...buckets].sort((a,b)=>a[0].localeCompare(b[0])).slice(-35);
  const max=Math.max(0.0000001,...bars.map(x=>Math.abs(x[1])));
- const histogram=bars.length?bars.map(([key,val])=>{
+ const byBar=new Map(),hasBreakdown=Array.isArray(data.symbolBuckets);
+ if(hasBreakdown)for(const record of data.symbolBuckets){
+  const t=Number(record.t),value=Number(record.netPnl),symbol=String(record.symbol||'OTHER');
+  if(!Number.isFinite(t)||!Number.isFinite(value))continue;
+  let label;
+  if(period==='24h')label=new Date(t).toISOString().slice(11,16);
+  else{
+   const date=new Date(t).toISOString().slice(0,10);
+   if(['60d','90d','6m'].includes(period)){
+    const monday=t-((new Date(t).getUTCDay()+6)%7)*86400000;
+    label=new Date(monday).toISOString().slice(0,10);
+   }else label=['1y','all'].includes(period)?date.slice(0,7):date;
+  }
+  if(!byBar.has(label))byBar.set(label,new Map());
+  const coins=byBar.get(label);
+  coins.set(symbol,(coins.get(symbol)||0)+value);
+ }
+ const histogram=bars.length?bars.map(([key,val],index)=>{
   const height=Math.max(1,Math.abs(val)/max*46);
-  return `<div class="pnlBarItem" title="${escape(key)} · ${escape(format(val))}">
+  const records=hasBreakdown?[...(byBar.get(key)||new Map())].sort((a,b)=>Math.abs(b[1])-Math.abs(a[1])):null;
+  const top=records?.slice(0,7)||[];
+  if(records?.length>7)top.push(['Остальные монеты',records.slice(7).reduce((sum,p)=>sum+p[1],0)]);
+  const details=!hasBreakdown?'<div class="pnlTooltipEmpty">Детализация монет пока недоступна</div>':
+   !top.length?'<div class="pnlTooltipEmpty">Нет операций за интервал</div>':
+   top.map(([symbol,value])=>`<div class="pnlTooltipRow"><span>${escape(symbol==='OTHER'?'Без монеты':symbol)}</span><strong class="${cls(value)}">${escape(amount(value))}</strong></div>`).join('');
+  const edge=index<Math.ceil(bars.length/5)?'start':index>=bars.length-Math.ceil(bars.length/5)?'end':'center';
+  return `<div class="pnlBarItem" data-tooltip-edge="${edge}" tabindex="0" aria-label="${escape(key+': '+amount(val))}">
    <div class="pnlBarSlot"><span class="pnlBarPositive" style="height:${val>0?height:0}%"></span>
     <span class="pnlBarNegative" style="height:${val<0?height:0}%"></span></div>
+   <div class="pnlBarTooltip" role="tooltip"><div class="pnlTooltipHeader"><strong>${escape(key)}</strong><span class="${cls(val)}">${escape(amount(val))}</span></div>${details}</div>
    </div>`;
  }).join(''):'<span class="tiny">В выбранном периоде закрытых операций нет.</span>';
  const axisLabel=key=>{
@@ -376,9 +402,9 @@ function pnlBarSections(data,period,accountId='all'){
  const maxSymbol=Math.max(0.0000001,...symbols.map(x=>Math.abs(x.netPnl)));
  const coins=symbols.length?symbols.map(x=>{
   const width=Math.max(.7,Math.abs(x.netPnl)/maxSymbol*100);
-  return `<div class="pnlCoinRow"><span class="pnlCoinName">${escape(x.symbol==='OTHER'?'Без монеты':x.symbol)}</span>
+  return `<div class="pnlCoinRow"><span class="pnlCoinName" title="${escape(x.symbol==='OTHER'?'Без монеты':x.symbol)}">${escape(x.symbol==='OTHER'?'Без монеты':x.symbol)}</span>
    <span class="pnlCoinTrack"><i class="${x.netPnl>=0?'positive':'negative'}" style="width:${width}%"></i></span>
-   <strong class="${cls(x.netPnl)}">${escape(format(x.netPnl))}</strong></div>`;
+   <span class="pnlCoinValues"><strong class="${cls(x.netPnl)}">${escape(percent(x.netPnl))}</strong><strong class="${cls(x.netPnl)}">${escape(amount(x.netPnl))}</strong></span></div>`;
  }).join(''):'<span class="tiny">Нет операций с определённой монетой.</span>';
  return `<div class="pnlAnalytics">
   <section class="pnlAnalyticsPanel"><div class="sectitle">Результат по периодам</div><div class="tiny">Только закрытые операции · UTC</div>
