@@ -983,3 +983,72 @@ test('overview monthly PNL does not substitute Futures-only or guessed Spot hist
  assert.match(markup,/\+\$40\.00/,'Futures month remains available in its own card');
  assert.doesNotMatch(hero,/\+\$40\.00/,'the combined month must not pretend Futures equals total portfolio');
 });
+
+test('Futures table headers replace sort pills and toggle all five sorting fields',()=>{
+ const {element,window,clickSort,store}=mount([{id:'bybit',name:'Bybit',accounts:[]}]);
+ const v=window.fxmr4Inspect,now=Date.now();
+ v.onAccounts([{id:'a',label:'Alpha'},{id:'b',label:'Beta'}]);
+ v.onSnapshot({account:{id:'a',name:'Alpha'},updatedAt:now,
+  totals:{equity:1000,perpUPL:2,positionCount:3},
+  positions:[
+   {symbol:'ADAUSDT',side:'Long',size:91.43,pnl:1,openedAt:now-37*3600000,leverage:10},
+   {symbol:'BTCUSDT',side:'Long',size:250,pnl:-2,openedAt:now-4*3600000,leverage:5},
+   {symbol:'NEARUSDT',side:'Long',size:30,pnl:3,openedAt:null,leverage:10}
+  ]});
+ v.onSnapshot({account:{id:'b',name:'Beta'},updatedAt:now,
+  totals:{equity:100,perpUPL:2,positionCount:1},
+  positions:[{symbol:'XMRUSDT',side:'Long',size:80,pnl:2,openedAt:now-13*3600000,leverage:4}]});
+ v.s.tab='futures';v.s.futureMode='all';v.render();
+ const order=()=>Array.from(v.futuresSorted(),p=>p.symbol).join(',');
+ const heads=element('content').innerHTML;
+ assert.equal((heads.match(/class="futureSortButton /g)||[]).length,5);
+ for(const key of ['symbol','duration','size','pnl','share']){
+  assert.match(heads,new RegExp('data-sort="'+key+'"'));
+ }
+ assert.match(heads,/aria-sort="descending"/);
+ assert.doesNotMatch(heads,/futureSortBar|sortChip|data-sort="leverage"/);
+ assert.ok(heads.includes('1д 13ч'));
+ assert.ok(heads.includes('$91.43'));
+ assert.equal(v.positionAge(now-37*3600000,now),'1д 13ч');
+ assert.equal(v.positionAge(now-63*60000,now),'1ч 3мин');
+ assert.equal(v.positionAge(now-6*60000,now),'6мин');
+ clickSort('duration');
+ assert.equal(v.s.futureSort,'duration');
+ assert.equal(v.s.futureSortDir,-1);
+ assert.equal(order(),'ADAUSDT,XMRUSDT,BTCUSDT,NEARUSDT');
+ clickSort('duration');
+ assert.equal(v.s.futureSortDir,1);
+ assert.equal(order(),'BTCUSDT,XMRUSDT,ADAUSDT,NEARUSDT');
+ clickSort('symbol');
+ assert.equal(v.s.futureSortDir,1);
+ assert.equal(order(),'ADAUSDT,BTCUSDT,NEARUSDT,XMRUSDT');
+ clickSort('symbol');
+ assert.equal(order(),'XMRUSDT,NEARUSDT,BTCUSDT,ADAUSDT');
+ clickSort('size');
+ assert.equal(order(),'BTCUSDT,ADAUSDT,XMRUSDT,NEARUSDT');
+ clickSort('share');
+ assert.equal(order(),'XMRUSDT,NEARUSDT,ADAUSDT,BTCUSDT');
+ clickSort('pnl');
+ assert.equal(order(),'NEARUSDT,XMRUSDT,ADAUSDT,BTCUSDT');
+ clickSort('pnl');
+ assert.equal(order(),'BTCUSDT,ADAUSDT,XMRUSDT,NEARUSDT');
+ const persisted=JSON.parse(store.get('fxmr4_portfolio_public_preview_v1'));
+ assert.equal(persisted.futureSort,'pnl');
+ assert.equal(persisted.futureSortDir,1);
+ assert.match(element('content').innerHTML,/aria-sort="ascending"/);
+ assert.match(css,/\.futureSortButton\{/);
+ assert.match(css,/\.futurePosition:not\(\.futureHead\) \.posSize strong\{[\s\S]*?font-size:12px/);
+ assert.match(css,/\.futurePosition:not\(\.futureHead\) \.posRoi\{font-size:10px/);
+});
+
+test('legacy saved opened-date sorting maps to duration header',()=>{
+ const shared=new Map();
+ shared.set('fxmr4_portfolio_public_preview_v1',JSON.stringify({
+  sources:[{id:'bybit',name:'Bybit',accounts:[]}],
+  futureSort:'opened',futureSortDir:-1
+ }));
+ const {window}=mount([{id:'bybit',name:'Bybit',accounts:[]}],null,shared);
+ assert.equal(window.fxmr4Inspect.s.futureSort,'duration');
+ assert.equal(window.fxmr4Inspect.s.futureSortDir,-1);
+ assert.match(window.fxmr4Inspect.futuresTableHead(),/data-sort="duration"/);
+});
