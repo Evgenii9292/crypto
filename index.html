@@ -517,6 +517,7 @@ function futuresChartBlock(){
     'История стоимости сохраняется автоматически на VPS. Добавление нового счёта не считается прибылью. Архивные даты требуют отдельной выписки Bybit.':
     unit==='pct'?'Проценты рассчитаны относительно текущего баланса, не равны официальной доходности Bybit за период.':
     'Это результат закрытых операций. Плавающий PNL открытых позиций показан отдельно.'}</div>
+  ${isEquity?'<div class="pnlExportHint"><a href="https://www.bybit.com/en/help-center/article/How-to-Self-Export-Account-Data" target="_blank" rel="noopener noreferrer">Где взять архивную выписку Bybit</a></div>':''}
   ${!isEquity?pnlBarSections(data,period,accountId):''}
  </section>`;
 }
