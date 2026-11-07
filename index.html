@@ -4,14 +4,17 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#fafbfc" />
-  <meta name="fxmr4-ui-release" content="accounts-v3" />
+  <meta name="fxmr4-ui-release" content="spot-budget-theme-v1" />
   <title>Мой портфель · fxmr4</title>
+  <script data-theme-init>try{const theme=localStorage.getItem('fxmr4_theme_v1');if(theme==='light'||theme==='dark')document.documentElement.dataset.theme=theme}catch(e){}</script>
   <link rel="stylesheet" href="./styles.css" />
   <link rel="stylesheet" href="./levels.css" />
 </head>
 <body>
   <svg aria-hidden="true" width="0" height="0" style="position:absolute;overflow:hidden">
     <symbol id="wallet" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="16" rx="2"/><path d="M16 14h4M2 9h20M5 5V3h14"/></symbol>
+    <symbol id="sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42"/></symbol>
+    <symbol id="moon" viewBox="0 0 24 24"><path d="M20.5 14.3A8.5 8.5 0 0 1 9.7 3.5 8.5 8.5 0 1 0 20.5 14.3Z"/></symbol>
     <symbol id="sync" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.7-4.4L3 9m0-6v6h6M4 13a8 8 0 0 0 14.7 4.4L21 15m0 6v-6h-6"/></symbol>
     <symbol id="plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
     <symbol id="edit" viewBox="0 0 24 24"><path d="m16 4 4 4M3 21l4.5-1 12.6-12.6a2.7 2.7 0 0 0-3.8-3.8L3.8 16.3 3 21Z"/></symbol>
@@ -29,14 +32,14 @@
   </svg>
   <main class="page"><div class="shell">
     <aside class="sidebar">
-      <header class="header"><div class="logoArea"><div class="appicon"><svg class="icon"><use href="#wallet"/></svg></div><div class="accountTotalBlock"><div class="accountTotalLabel">Общий баланс</div><strong class="accountTotalValue" id="sidebarTotal">—</strong></div></div><button class="mobileSettings" type="button" data-action="goConnections" aria-label="Настройки"><svg class="icon"><use href="#settings"></use></svg></button></header>
+      <header class="header"><div class="logoArea"><div class="appicon"><svg class="icon"><use href="#wallet"/></svg></div><div class="accountTotalBlock"><div class="accountTotalLabel">Общий баланс</div><strong class="accountTotalValue" id="sidebarTotal">—</strong></div></div><div class="mobileControls"><button class="mobileTheme themeSwitch" type="button" data-action="toggleTheme" aria-label="Сменить тему" title="Сменить тему"><svg class="icon" aria-hidden="true"><use href="#moon"></use></svg></button><button class="mobileSettings" type="button" data-action="goConnections" aria-label="Настройки"><svg class="icon"><use href="#settings"></use></svg></button></div></header>
       <div class="navLabel">РАЗДЕЛЫ</div>
       <nav class="tabs" data-active="overview" role="tablist" aria-label="Разделы портфеля">
         <button class="tab active" type="button" role="tab" aria-selected="true" data-tab="overview"><svg class="icon"><use href="#activity"/></svg><span>Обзор</span></button>
         <button class="tab" type="button" role="tab" aria-selected="false" data-tab="positions"><svg class="icon"><use href="#wallet"/></svg><span>Спот</span></button>
         <button class="tab" type="button" role="tab" aria-selected="false" data-tab="futures"><svg class="icon"><use href="#trend"/></svg><span>Фьючерсы</span></button>
       </nav>
-      <div class="sideFooter"><div id="cloudStatus" class="cloudSyncStatus" aria-live="polite"></div><div class="connectionStatus"><span class="status-dot" id="connectionDot"></span><span id="connectionStatusText">Биржи не подключены</span></div><button class="btn navConfig" type="button" data-action="goConnections"><svg class="icon" aria-hidden="true"><use href="#settings"></use></svg> Настройки</button></div>
+      <div class="sideFooter"><div id="cloudStatus" class="cloudSyncStatus" aria-live="polite"></div><div class="connectionStatus"><span class="status-dot" id="connectionDot"></span><span id="connectionStatusText">Биржи не подключены</span></div><div class="sideFooterActions"><button class="btn navConfig" type="button" data-action="goConnections"><svg class="icon" aria-hidden="true"><use href="#settings"></use></svg> Настройки</button><button class="btn themeSwitch" type="button" data-action="toggleTheme" aria-label="Сменить тему" title="Сменить тему"><svg class="icon" aria-hidden="true"><use href="#moon"></use></svg></button></div></div>
     </aside>
     <section class="workspace">
       <div class="workspaceHead"><div class="workspaceTitleLine"><h1 id="pageTitle">Обзор</h1></div></div>
@@ -50,6 +53,28 @@
   let C=1000;
   const initial={BTC:76200,ETH:2247};
   const $=id=>document.getElementById(id);
+ const themeKey='fxmr4_theme_v1';
+ function currentTheme(){
+  const choice=document.documentElement?.dataset?.theme;
+  return choice==='light'||choice==='dark'?choice:(window.matchMedia?.('(prefers-color-scheme: dark)')?.matches?'dark':'light');
+ }
+ function syncThemeButtons(){
+  const dark=currentTheme()==='dark';
+  for(const b of document.querySelectorAll('[data-action="toggleTheme"]')){
+   b.setAttribute('aria-label',dark?'Включить светлую тему':'Включить тёмную тему');
+   b.setAttribute('title',dark?'Светлая тема':'Тёмная тема');
+   b.setAttribute('aria-pressed',dark?'true':'false');
+   const use=b.querySelector?.('use');
+   if(use)use.setAttribute('href',dark?'#sun':'#moon');
+  }
+ }
+ function setTheme(choice){
+  if(choice!=='light'&&choice!=='dark')return;
+  if(document.documentElement?.dataset)document.documentElement.dataset.theme=choice;
+  try{localStorage.setItem(themeKey,choice)}catch(e){}
+  syncThemeButtons();
+ }
+
   const el=(tag,attrs={},children=[])=>{const n=document.createElement(tag);for(const [k,v] of Object.entries(attrs))n.setAttribute(k,String(v));for(const c of children)n.append(c);return n};
   const icon=(name,cls='')=>`<svg class="icon ${cls}" aria-hidden="true"><use href="#${name}"></use></svg>`;
   const escape=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -60,7 +85,7 @@
   const nowLocal=()=>{const d=new Date();return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-')};
   const fmtDate=d=>{if(!d)return 'Нет даты';const a=d.slice(0,10).split('-');return a.length===3?`${a[2]}.${a[1]}.${a[0]}`:d};
   const fmtTime=d=>{if(!d)return '';const x=new Date(d);return isNaN(x)?'':x.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})};
-  const s={tab:'overview',trades:[{id:1,coin:'BTC',spent:25,entry:76200,buy_date:'2026-11-06',confirmed:false},{id:2,coin:'ETH',spent:25,entry:2247,buy_date:'2026-11-06',confirmed:false}],quotes:{BTC:{price:initial.BTC,source:'Предварительно'},ETH:{price:initial.ETH,source:'Предварительно'}},capital:C,period:'7d',chartPeriod:{overview:'7d',spot:'7d',futures:'7d'},chartMetric:{spot:'pnl',futures:'pnl'},points:[],snapshots:[],sync:null,form:false,editing:null,deleteId:null,busy:false,flash:'',formError:'',showPrices:false,tradingSubtab:'futures',futureMode:'all',futureSort:'pnl',futureSortDir:-1,pnlMode:'all',settingsPane:'connections',portfolioSnapshots:[],pnlHistory:[],pendingRemove:null,renameId:null,renameValue:'',renameError:'',futureForm:null,futureFormError:'',sources:[{id:'bybit',name:'Bybit',connected:false,accounts:[]}],futuresPositions:[],openedExchanges:{},openedAccounts:{},spotHistoryOpen:false,spotAccountsOpen:false,spotOpen:{},bybitSnapshot:null,bybitAccountsSnapshots:{},bybitExpectedIds:[],backendConnection:{available:false,configured:false,connected:false,error:''}};
+  const s={tab:'overview',trades:[{id:1,coin:'BTC',spent:25,entry:76200,buy_date:'2026-11-06',confirmed:false},{id:2,coin:'ETH',spent:25,entry:2247,buy_date:'2026-11-06',confirmed:false}],quotes:{BTC:{price:initial.BTC,source:'Предварительно'},ETH:{price:initial.ETH,source:'Предварительно'}},capital:C,period:'7d',chartPeriod:{overview:'7d',spot:'7d',futures:'7d'},chartMetric:{spot:'pnl',futures:'pnl'},points:[],snapshots:[],sync:null,form:false,editing:null,deleteId:null,busy:false,flash:'',formError:'',showPrices:false,tradingSubtab:'futures',futureMode:'all',futureSort:'pnl',futureSortDir:-1,pnlMode:'all',capitalOpen:false,portfolioSnapshots:[],pnlHistory:[],pendingRemove:null,renameId:null,renameValue:'',renameError:'',futureForm:null,futureFormError:'',sources:[{id:'bybit',name:'Bybit',connected:false,accounts:[]}],futuresPositions:[],openedExchanges:{},openedAccounts:{},spotHistoryOpen:false,spotAccountsOpen:false,spotOpen:{},bybitSnapshot:null,bybitAccountsSnapshots:{},bybitExpectedIds:[],backendConnection:{available:false,configured:false,connected:false,error:''}};
   function coin(m){const trades=s.trades.filter(t=>t.coin===m);const invested=trades.reduce((t,x)=>t+Number(x.spent),0);const quantity=trades.reduce((t,x)=>t+Number(x.spent)/Number(x.entry),0);const current=Number(s.quotes[m]?.price||initial[m]);const value=quantity*current;return {invested,quantity,current,value,profit:value-invested,remaining:C/2-invested,avg:quantity?invested/quantity:0,provisional:trades.some(t=>!t.confirmed)}}
   function sums(){const btc=coin('BTC'),eth=coin('ETH'),invested=btc.invested+eth.invested,cash=C-invested,holdings=btc.value+eth.value,profit=holdings-invested;return {btc,eth,invested,cash,holdings,profit,total:cash+holdings}}
 
@@ -293,7 +318,7 @@ function positions(){
  </div>
  ${spotChartBlock()}
  <section class="section"><div class="hrow"><div><div class="sectitle">Монеты</div></div><button type="button" class="btn primary" data-action="new">${icon('plus')} Покупка</button></div><div class="spotList">${['BTC','ETH'].map(spotRow).join('')}</div></section>
- <section class="section spotAllocation"><div class="hrow"><div><div class="sectitle">Распределение спота</div></div><button class="btn" type="button" data-action="gotoCapital">Капитал</button></div>${spotDistribution()}</section>
+ <section class="section spotAllocation"><div class="hrow"><div class="sectitle">Распределение спота</div><button class="btn spotBudgetToggle" type="button" data-action="toggleCapital" aria-controls="spotBudgetEditor" aria-expanded="${s.capitalOpen?'true':'false'}">${icon('edit')} План ${dollars(C)}</button></div>${spotDistribution()}<div id="spotBudgetEditor">${s.capitalOpen?spotBudgetEditor():''}</div></section>
  ${quoteStrip()}
  <div id="strategyMount" aria-label="Графики уровней покупок BTC и ETH"></div>
  <div class="spotHistoryToggle"><button class="historyToggle" type="button" data-action="toggleHistory"><span>${icon('calendar')} История покупок <span class="historyCount">${s.trades.length}</span></span><span class="chev ${s.spotHistoryOpen?'rotated':''}">⌄</span></button>${s.spotHistoryOpen||s.form?history():''}</div>`;
@@ -380,13 +405,11 @@ function futures(){
  ${futuresChartBlock()}
  <section class="section"><div class="futureToolbar"><div><div class="sectitle">Позиции и аккаунты</div><div class="tiny">Раскрывай биржи и выбирай группировку</div></div><button class="btn" type="button" data-action="goConnections">${icon('settings')} Настройки</button></div><div class="futureFilters"><div class="tradeSwitch" role="tablist" aria-label="Группировка фьючерсов">${[['all','Все позиции'],['exchange','По биржам'],['account','По субаккаунтам']].map(([id,name])=>`<button type="button" data-future-mode="${id}" class="${s.futureMode===id?'active':''}">${name}</button>`).join('')}</div></div>${s.futureMode==='all'?futuresSortBar():''}<div class="sourceList futureResults">${body}</div></section>`;
 }
-function capitalSettings(){
- const a=sums();
- return `<section class="section settingsCard"><div class="hrow"><div><div class="sectitle">Плановый капитал</div><div class="tiny">Бюджет для покупок BTC и ETH</div></div><span class="pill">Спот</span></div><div class="capitalSummary"><div><small>План</small><strong>${dollars(C)}</strong></div><div><small>Вложено</small><strong>${dollars(a.invested)}</strong></div><div><small>Резерв</small><strong>${dollars(a.cash)}</strong></div><div><small>Лимит на монету</small><strong>${dollars(C/2)}</strong></div></div><form id="capitalForm" class="capitalForm"><div class="field"><label for="plannedCapital">Запланированный капитал, USD</label><input id="plannedCapital" name="capital" type="number" min="100" max="1000000" step="1" value="${C}" required /></div><button class="btn primary" type="submit">Сохранить капитал</button></form><p class="tiny settingsHint">Лимит одной монеты равен половине плана. Изменение плана не создаёт сделки и не меняет уже записанные покупки.</p></section>`;
+function spotBudgetEditor(){
+ return `<div class="spotBudgetEditor"><form id="capitalForm" class="spotBudgetForm"><label for="plannedCapital">План, USD</label><input id="plannedCapital" name="capital" type="number" min="100" max="1000000" step="1" value="${C}" required/><button class="btn primary" type="submit">Сохранить</button></form><div class="spotBudgetHint">Лимит на BTC и ETH: ${dollars(C/2)} каждому</div></div>`;
 }
 function connections(){
- return `<div class="settingsTabs" role="tablist" aria-label="Настройки">${[['connections','Подключения'],['capital','Капитал']].map(([key,name])=>`<button type="button" role="tab" aria-selected="${s.settingsPane===key}" class="${s.settingsPane===key?'active':''}" data-settings-pane="${key}">${name}</button>`).join('')}</div>
- ${s.settingsPane==='capital'?capitalSettings():`<div class="card connectorCard"><div class="hrow connectorTop"><div><div class="sectitle">Субаккаунты</div></div></div><div id="bybitConnectionPanel"></div></div>`}`;
+ return `<div class="card connectorCard"><div class="hrow connectorTop"><div><div class="sectitle">Субаккаунты</div></div></div><div id="bybitConnectionPanel"></div></div>`;
 }
 function exchangeFooterStatus(){
  const all=Array.isArray(s.sources)?s.sources:[];
@@ -402,6 +425,7 @@ function exchangeFooterStatus(){
 }
 function render(){
  // Incoming quotes/PNL must not erase half-entered API credentials.
+ if(s.tab==='positions'&&s.capitalOpen&&document.activeElement?.closest?.('#capitalForm'))return;
  if(s.tab==='connections'&&window.fxmr4Bybit?.isEditing?.()&&
    (document.querySelector('#bybitConnectForm')||document.querySelector('.bybitRenameForm')))return;
  const views={overview,positions,futures,connections};
@@ -410,6 +434,7 @@ function render(){
  const titles={overview:'Обзор',positions:'Спот',futures:'Фьючерсы',connections:'Настройки'};
  $('pageTitle').textContent=titles[s.tab];
  $('sidebarTotal').textContent=dollars(accountTotal());
+ syncThemeButtons();
  const status=exchangeFooterStatus();
  $('connectionStatusText').textContent=status.text;
  $('connectionStatusText').title=status.details;
@@ -427,7 +452,7 @@ function render(){
 function saveCapital(fd){
  const v=Number(fd.get('capital'));
  if(!Number.isFinite(v)||v<100||v>1000000||v/2+0.00001<Math.max(coin('BTC').invested,coin('ETH').invested)){s.flash='Бюджет некорректен. Лимит на монету не может быть меньше уже вложенной суммы.';render();return}
- C=v;s.flash='Плановый капитал сохранён.';saveLocal();render();
+ C=v;s.capitalOpen=false;s.flash='Плановый капитал сохранён.';saveLocal();render();
 }
 function saveRenameAccount(id){
  const idx=id.indexOf(':'),exid=id.slice(0,idx),acid=id.slice(idx+1);
@@ -760,8 +785,6 @@ function handleClick(e){
  if(tab){s.tab=tab.dataset.tab;s.flash='';s.form=false;s.deleteId=null;render();return}
  const pnl=e.target.closest('[data-pnl-mode]');
  if(pnl){s.pnlMode=pnl.dataset.pnlMode;render();return}
- const settings=e.target.closest('[data-settings-pane]');
- if(settings){s.settingsPane=settings.dataset.settingsPane;s.pendingRemove=null;render();return}
  const per=e.target.closest('[data-period]');
  if(per){const key=per.dataset.chart||'overview';s.chartPeriod[key]=per.dataset.period;if(key==='overview')s.period=per.dataset.period;chart();render();return}
  const met=e.target.closest('[data-metric]');
@@ -775,10 +798,11 @@ function handleClick(e){
  if(act==='sync'){sync();return}
  if(act==='gotoSpot'){s.tab='positions';render();return}
  if(act==='gotoFutures'||act==='backToFutures'){s.tab='futures';s.futureMode='exchange';render();return}
- if(act==='goConnections'){s.tab='connections';s.settingsPane='connections';render();return}
- if(act==='gotoCapital'){s.tab='connections';s.settingsPane='capital';render();return}
+ if(act==='goConnections'){s.tab='connections';render();return}
+ if(act==='toggleCapital'){s.capitalOpen=!s.capitalOpen;render();return}
+ if(act==='toggleTheme'){const mode=currentTheme()==='dark'?'light':'dark';setTheme(mode);return}
  if(act==='gotoOverview'){s.tab='overview';render();return}
- if(act==='manageAccount'){s.tab='connections';s.settingsPane='connections';s.pendingRemove=null;render();return}
+ if(act==='manageAccount'){s.tab='connections';s.pendingRemove=null;render();return}
  if(act==='removeAccount'){s.pendingRemove=id;s.renameId=null;render();return}
  if(act==='cancelRemoveAccount'){s.pendingRemove=null;render();return}
  if(act==='confirmRemoveAccount'){removeAccount(id);return}
