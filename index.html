@@ -958,7 +958,7 @@ function coinStack(symbols){
   return t.slice(0,4);};
  return `<span class="coinStack">${list.map(sym=>`<i class="coinChip" title="${escape(String(sym))}">${escape(label(sym))}</i>`).join('')}${extra?`<i class="coinChip more">+${extra}</i>`:''}</span>`;
 }
-const FUTURE_SORTS=[['share','К балансу · %'],['pnl','Плавающий PNL'],['size','Объём'],['symbol','Монета'],['leverage','Плечо'],['opened','Дата открытия'],['side','Направление']];
+const FUTURE_SORTS=[['symbol','Монета'],['duration','В сделке'],['size','Объём'],['pnl','PNL'],['share','К балансу, %']];
 function positionAccountEquity(p){
  if(p.exchangeId!=='bybit')return null;
  const snap=s.bybitAccountsSnapshots[p.accountId],raw=snap?.totals?.equity;
@@ -968,37 +968,52 @@ function positionAccountEquity(p){
 function futureSortValue(p,key){
  if(key==='share'){
   const equity=positionAccountEquity(p);
-  return equity>0&&p.pnl!=null?Number(p.pnl)/equity:-Infinity;
+  return equity>0&&p.pnl!=null?Number(p.pnl)/equity:null;
+ }
+ if(key==='duration'){
+  const opened=Number(p.openedAt);
+  return Number.isFinite(opened)&&opened>=1e12?-opened:null;
  }
  if(key==='size')return Number(p.size)||0;
  if(key==='symbol')return String(p.symbol||'').toLowerCase();
- if(key==='leverage')return Number(p.leverage)||0;
- if(key==='opened')return p.openedAt==null?-Infinity:Number(p.openedAt);
- if(key==='side')return String(p.side||'').toLowerCase();
  return Number(p.pnl||0);
 }
 function futuresSorted(){
  const key=s.futureSort,dir=s.futureSortDir<0?-1:1;
  return [...s.futuresPositions].filter(p=>p&&p.symbol&&Number.isFinite(Number(p.size)))
-  .sort((a,b)=>{const x=futureSortValue(a,key),y=futureSortValue(b,key);
-   if(typeof x==='string'||typeof y==='string')return String(x).localeCompare(String(y))*dir;
-   return (x-y)*dir});
-}
-function futuresSortBar(){
- const arrow=s.futureSortDir<0?'↓':'↑';
- return `<div class="futureSortBar">${FUTURE_SORTS.map(([key,name])=>`<button type="button" class="sortChip ${s.futureSort===key?'active':''}" data-sort="${key}" title="Сортировать по «${name}»">${name}${s.futureSort===key?`<span class="sortDir">${arrow}</span>`:''}</button>`).join('')}</div>`;
+  .sort((a,b)=>{
+   const x=futureSortValue(a,key),y=futureSortValue(b,key);
+   // Missing dates/balances always go last in both directions.
+   if(x==null&&y!=null)return 1;
+   if(y==null&&x!=null)return -1;
+   const cmp=typeof x==='string'||typeof y==='string'?
+    String(x??'').localeCompare(String(y??''),'ru',{numeric:true})*dir:
+    (x-y)*dir;
+   return cmp||String(a.symbol||'').localeCompare(String(b.symbol||''),'ru',{numeric:true})||
+    String(a.accountId||'').localeCompare(String(b.accountId||''));
+  });
 }
 function positionAge(time,now=Date.now()){
  const opened=Number(time);
  if(!Number.isFinite(opened)||opened<1e12||opened>now)return '—';
  const minutes=Math.max(0,Math.floor((now-opened)/60000));
  const days=Math.floor(minutes/1440),hours=Math.floor(minutes%1440/60);
- if(days>=1)return days+' д '+hours+' ч';
- if(hours>=1)return hours+' ч '+(minutes%60)+' мин';
- return minutes+' мин';
+ if(days>=1)return days+'д '+hours+'ч';
+ if(hours>=1)return hours+'ч '+(minutes%60)+'мин';
+ return minutes+'мин';
 }
 function futuresTableHead(){
- return `<div class="futurePosition futureHead"><span>Монета</span><span>В сделке</span><span class="right"><span class="hLong">Объём</span><span class="hShort">Объём</span></span><span class="right"><span class="hLong">PNL</span><span class="hShort">PNL</span></span><span class="right posRoi" title="Плавающий PNL позиции как процент от текущего баланса её субаккаунта">К балансу, %</span></div>`;
+ const cell=(key,label,extra='')=>{
+  const active=s.futureSort===key,dir=s.futureSortDir<0?'descending':'ascending';
+  const arrow=active?(s.futureSortDir<0?'↓':'↑'):'↕';
+  const action=active?(s.futureSortDir<0?'по возрастанию':'по убыванию'):(key==='symbol'?'по алфавиту':'по убыванию');
+  return `<span class="futureSortCell ${extra}" role="columnheader" aria-sort="${active?dir:'none'}">
+   <button type="button" class="futureSortButton ${active?'isActive':''}" data-sort="${key}"
+    aria-label="Сортировать ${label} ${action}" title="Сортировать ${label} ${action}">
+    <span>${label}</span><span class="futureSortArrow" aria-hidden="true">${arrow}</span>
+   </button></span>`;
+ };
+ return `<div class="futurePosition futureHead" role="row">${cell('symbol','Монета')}${cell('duration','В сделке')}${cell('size','Объём','right')}${cell('pnl','PNL','right')}${cell('share','К балансу, %','right posRoi')}</div>`;
 }
 function positionCostsFromBybit(p){
  if(p.exchangeId!=='bybit')return {reason:'Нет данных Bybit'};
@@ -1094,7 +1109,7 @@ function futures(){
    <div class="pnlParts">${escape(footer)}</div>
   </div>`).join('')}</div>
  ${futuresChartBlock()}
- <section class="section"><div class="futureToolbar"><div><div class="sectitle">Позиции и аккаунты</div><div class="tiny">Раскрывай биржи и выбирай группировку</div></div><button class="btn" type="button" data-action="goConnections">${icon('settings')} Настройки</button></div><div class="futureFilters"><div class="tradeSwitch" role="tablist" aria-label="Группировка фьючерсов">${[['all','Все позиции'],['exchange','По биржам'],['account','По субаккаунтам']].map(([id,name])=>`<button type="button" data-future-mode="${id}" class="${s.futureMode===id?'active':''}">${name}</button>`).join('')}</div></div>${s.futureMode==='all'?futuresSortBar():''}<div class="sourceList futureResults">${body}</div></section>`;
+ <section class="section"><div class="futureToolbar"><div><div class="sectitle">Позиции и аккаунты</div><div class="tiny">Раскрывай биржи и выбирай группировку</div></div><button class="btn" type="button" data-action="goConnections">${icon('settings')} Настройки</button></div><div class="futureFilters"><div class="tradeSwitch" role="tablist" aria-label="Группировка фьючерсов">${[['all','Все позиции'],['exchange','По биржам'],['account','По субаккаунтам']].map(([id,name])=>`<button type="button" data-future-mode="${id}" class="${s.futureMode===id?'active':''}">${name}</button>`).join('')}</div></div><div class="sourceList futureResults">${body}</div></section>`;
 }
 function spotBudgetEditor(){
  return `<div class="spotBudgetEditor"><form id="capitalForm" class="spotBudgetForm"><label for="plannedCapital">План, USD</label><input id="plannedCapital" name="capital" type="number" min="100" max="1000000" step="1" value="${C}" required/><button class="btn primary" type="submit">Сохранить</button></form><div class="spotBudgetHint">Лимит на BTC и ETH: ${dollars(C/2)} каждому</div></div>`;
@@ -1494,7 +1509,7 @@ window.fxmr4App={onBackendStatus,onSnapshot,onAccounts,onDisconnected,applyCloud
       if(['all','spot','futures'].includes(saved.pnlMode))s.pnlMode=saved.pnlMode;
        if(['usd','pct'].includes(saved.futuresValueMode))s.futuresValueMode=saved.futuresValueMode;
        if(['pnl','equity'].includes(saved.futuresView))s.futuresView=saved.futuresView;
-       if(saved.futureSort&&FUTURE_SORTS.some(([k])=>k===saved.futureSort))s.futureSort=saved.futureSort;else if(saved.futureSort==='roi')s.futureSort='share';
+       if(saved.futureSort&&FUTURE_SORTS.some(([k])=>k===saved.futureSort))s.futureSort=saved.futureSort;else if(saved.futureSort==='roi')s.futureSort='share';else if(saved.futureSort==='opened')s.futureSort='duration';
       if(saved.futureSortDir===-1||saved.futureSortDir===1)s.futureSortDir=saved.futureSortDir;
       if(Array.isArray(saved.sources)){const sources=saved.sources.filter(x=>x&&typeof x.id==='string'&&typeof x.name==='string').slice(0,25).map(x=>({id:x.id.slice(0,60),name:x.name.slice(0,60),connected:false,accounts:Array.isArray(x.accounts)?x.accounts.filter(y=>y&&typeof y.id==='string'&&typeof y.name==='string').slice(0,60).map(y=>({id:y.id.slice(0,60),name:y.name.slice(0,40),balance:null})):[]}));if(!sources.some(x=>x.id==='bybit'))sources.unshift({id:'bybit',name:'Bybit',connected:false,accounts:[]});s.sources=sources;}
     }catch(e){console.warn('Локальное сохранение:',e)}
@@ -1689,7 +1704,7 @@ function handleClick(e){
  const met=e.target.closest('[data-metric]');
  if(met){s.chartMetric[met.dataset.chart]=met.dataset.metric;if(met.dataset.metric==='realized30d')s.chartPeriod[met.dataset.chart]='30d';render();return}
  const sort=e.target.closest('[data-sort]');
- if(sort){const key=sort.dataset.sort;if(s.futureSort===key)s.futureSortDir*=-1;else{s.futureSort=key;s.futureSortDir=(key==='symbol'||key==='side')?1:-1}render();return}
+ if(sort){const key=sort.dataset.sort;if(!FUTURE_SORTS.some(([name])=>name===key))return;if(s.futureSort===key)s.futureSortDir*=-1;else{s.futureSort=key;s.futureSortDir=key==='symbol'?1:-1}saveLocal(false);render();return}
  const mode=e.target.closest('[data-future-mode]');
  if(mode){
   s.futureMode=mode.dataset.futureMode;
