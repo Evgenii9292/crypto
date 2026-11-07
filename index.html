@@ -102,16 +102,17 @@ function pnlSeries(kind){
   if(fullRequired)return null;
   return n(p.total)??spot??n(p.pnl);
  }
- let live;
- if(kind==='spot')live=s.snapshots.map(p=>({t:Number(p.time),v:Number(p.pnl)}));
- else live=s.portfolioSnapshots.map(p=>({t:Number(p.time),v:value(p)}));
- live=live.filter(p=>Number.isFinite(p.t)&&p.v!==null&&Number.isFinite(p.v)).sort((a,b)=>a.t-b.t);
- const oldestLive=live.length?live[0].t:Infinity;
- const older=(s.pnlHistory||[]).map(p=>({t:Number(p.t),v:value(p)}))
-  .filter(p=>Number.isFinite(p.t)&&p.v!==null&&Number.isFinite(p.v)&&p.t<oldestLive)
-  .sort((a,b)=>a.t-b.t);
- const seen=new Set();
- const points=older.concat(live).filter(p=>{if(seen.has(p.t))return false;seen.add(p.t);return true});
+ const live=kind==='spot'
+  ?s.snapshots.map(p=>({t:Number(p.time),v:Number(p.pnl)}))
+  :s.portfolioSnapshots.map(p=>({t:Number(p.time),v:value(p)}));
+ const server=(s.pnlHistory||[]).map(p=>({t:Number(p.t),v:value(p)}));
+ // The browser does not sample while closed. Server samples must be merged
+ // throughout the timeline, not just before the oldest local timestamp.
+ const byTime=new Map();
+ for(const p of server.concat(live)){
+  if(Number.isFinite(p.t)&&p.v!==null&&Number.isFinite(p.v))byTime.set(p.t,p);
+ }
+ const points=Array.from(byTime.values()).sort((a,b)=>a.t-b.t);
  return {kind,field,points};
 }
 function pnlWindow(kind,period){
@@ -621,7 +622,7 @@ window.fxmr4App={onBackendStatus,onSnapshot,onAccounts,onDisconnected,applyCloud
       const r=await fetch('./api/pnl-history',{cache:'no-store',credentials:'same-origin',headers:{'Accept':'application/json'}});
       if(!r.ok)return;
       const data=await r.json();
-      if(Array.isArray(data.points)){s.pnlHistory=data.points;if(s.tab==='overview')render()}
+      if(Array.isArray(data.points)){s.pnlHistory=data.points;if(!s.form&&['overview','positions','futures'].includes(s.tab))render()}
     }catch(e){/* offline: the local series still renders */}
   }
   let historyPushAt=0;
@@ -806,7 +807,13 @@ function handleChange(e){
   // Standalone web preview. Every edit is saved only in this browser, never to a public repository.
   loadLocal();render();chart();sync({quiet:true});loadPnlHistory();
   setInterval(()=>{if(!document.hidden&&!s.busy)sync({quiet:true})},60000);
-  document.addEventListener('visibilitychange',()=>{if(!document.hidden&&Date.now()-lastSyncAttempt>60000)sync({quiet:true})});
+  document.addEventListener('visibilitychange',()=>{
+    if(!document.hidden){
+     loadPnlHistory();
+     if(Date.now()-lastSyncAttempt>60000)sync({quiet:true});
+    }
+   });
+   setInterval(()=>{if(!document.hidden)loadPnlHistory()},300000);
 })();
 </script>
 <script src="./levels-chart.js"></script>
