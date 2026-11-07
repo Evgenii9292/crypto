@@ -950,3 +950,24 @@
  .pnlCoinRow{grid-template-columns:minmax(75px,1fr) minmax(20px,.6fr) minmax(122px,auto)}
  .pnlCoinValues{gap:5px}
 }
+
+/* Overview period selector uses the same compact control as Futures accounts. */
+.overviewHistoryPeriod .overviewPeriodSelect{
+ flex:0 0 auto;min-width:126px;max-width:170px;
+ height:34px;border-radius:9px;background:var(--surface);
+}
+.overviewHistoryPeriod .overviewPeriodSelect select{
+ -webkit-appearance:none;appearance:none;display:block;
+ width:100%;max-width:none;height:100%;margin:0;
+ padding:0 32px 0 11px;border:0;border-radius:inherit;
+ background:transparent;color:var(--text);font:inherit;
+ font-size:12px;font-weight:600;line-height:1.3;
+ cursor:pointer;outline:0;text-overflow:ellipsis;
+}
+.overviewHistoryPeriod .overviewPeriodSelect:focus-within{
+ outline:2px solid #a4beff;outline-offset:1px;
+}
+@media(max-width:600px){
+ .overviewHistoryPeriod .overviewPeriodSelect{min-width:115px;max-width:150px}
+ .overviewHistoryPeriod .overviewPeriodSelect select{padding-right:30px;font-size:11px}
+}
