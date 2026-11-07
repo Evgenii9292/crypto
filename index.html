@@ -199,7 +199,7 @@ function futuresLedgerData(period){
  let running=0;
  for(const [t,v] of [...bins].sort((a,b)=>a[0]-b[0])){
   running+=v;
-  if(t===first)series[0].v=running;
+  if(t===first)series.push({t:first+1,v:running});
   else series.push({t,v:running});
  }
  // The summary is authoritative; make the last point agree with the displayed
@@ -276,7 +276,7 @@ function chartHTML(kind,period,metric='pnl',externalPoints=null){
  const axis=n=>balance?dollars(n):axisMoney(n);
  let guide='';
  for(let k=0;k<=4;k++){let value=high-(high-low)*k/4,cy=y(value);guide+='<line x1="'+L+'" x2="'+(W-R)+'" y1="'+cy.toFixed(1)+'" y2="'+cy.toFixed(1)+'" class="chartGrid"/><text x="'+(L-9)+'" y="'+(cy+4).toFixed(1)+'" text-anchor="end" class="chartAxis">'+axis(value)+'</text>'}
- const f=t=>end-start<86400000?new Date(t).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}):new Date(t).toLocaleDateString('ru-RU',{month:'short',day:'numeric',year:period==='all'||period==='1y'?'2-digit':undefined});
+ const f=t=>period==='24h'||end-start<86400000?new Date(t).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}):new Date(t).toLocaleDateString('ru-RU',{month:'short',day:'numeric',year:period==='all'||period==='1y'?'2-digit':undefined});
  for(const fraction of [0,.5,1]){const tick=L+fraction*(W-L-R);guide+='<text x="'+tick+'" y="'+(H-10)+'" text-anchor="'+(fraction===0?'start':fraction===1?'end':'middle')+'" class="chartAxis">'+escape(f(start+(end-start)*fraction))+'</text>'}
  const pts=data.map(p=>x(p.t).toFixed(1)+','+y(p.v).toFixed(1)).join(' '),last=data[data.length-1],color=balance?'var(--text)':last.v<0?'var(--red)':'var(--green)';
  return '<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="xMidYMid meet" role="img" aria-label="График '+(balance?'баланса':'PNL')+' с датами и значениями"><g>'+guide+'</g>'+(balance?'':'<line x1="'+L+'" x2="'+(W-R)+'" y1="'+y(0).toFixed(1)+'" y2="'+y(0).toFixed(1)+'" class="chartZero"/>')+'<polyline points="'+pts+'" fill="none" stroke="'+color+'" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="'+x(last.t).toFixed(1)+'" cy="'+y(last.v).toFixed(1)+'" r="4" fill="'+color+'"><title>'+escape(axis(last.v)+' · '+new Date(last.t).toLocaleString('ru-RU'))+'</title></circle></svg>';
