@@ -682,3 +682,8 @@
  .bybitRenameForm{padding-left:0}
  .bybitAccountsPanel .bybitConnectActions .btn{flex:1;justify-content:center}
 }
+
+/* Compact provenance for account PNL: realised from closed trades vs floating. */
+.pnlParts{display:flex;gap:6px 12px;flex-wrap:wrap;margin-top:9px;color:var(--sub);font-size:10px;font-weight:540;font-variant-numeric:tabular-nums}
+.pnlParts span{white-space:nowrap}
+@media(max-width:600px){.pnlParts{gap:5px 9px;font-size:10px}}
