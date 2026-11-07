@@ -48,7 +48,15 @@
 @media(min-width:961px){
   body{background:var(--bg)}
   .page{width:100%;max-width:none;padding:0 24px;margin:26px auto 50px}
-  .shell{display:grid;grid-template-columns:238px minmax(0,1fr);padding:0;min-height:calc(100vh - 54px);overflow:hidden;border-radius:20px}
+  .shell{display:grid;grid-template-columns:238px minmax(0,1fr);padding:0;min-height:calc(100vh - 52px);overflow:visible;border-radius:20px}
+  /* A clipping/scrolling shell defeats sticky positioning. Keep the document
+     as the scroll container and let the sidebar follow the viewport. */
+  .sidebar{
+    position:sticky;top:26px;align-self:start;z-index:2;
+    box-sizing:border-box;height:calc(100vh - 52px);height:calc(100dvh - 52px);
+    min-height:0;overflow-y:auto;overscroll-behavior:contain;
+    border-radius:19px 0 0 19px;
+  }
   .sidebar{padding:25px 17px;border-right:1px solid var(--border);display:flex;flex-direction:column;background:var(--surface)}
   .header{align-items:flex-start;flex-direction:column;gap:16px}
   .header .pill{margin-left:49px}
@@ -61,7 +69,7 @@
   .tab:not(.active):hover{background:var(--surface2)}
   .sideFooter{display:block;margin-top:auto;padding:22px 11px 4px;font-size:11px;color:var(--sub);line-height:1.6}
   .sideFooter .tiny{font-size:10px;margin-top:6px}
-  .workspace{padding:34px clamp(24px,3vw,54px) 32px;background:var(--surface)}
+  .workspace{padding:34px clamp(24px,3vw,54px) 32px;background:var(--surface);border-radius:0 19px 19px 0}
   .workspaceHead{display:flex;align-items:center;justify-content:space-between;margin:0 0 23px}
   .workspaceEyebrow{font-size:11px;font-weight:650;color:var(--muted);letter-spacing:.3px}
   .workspaceHead h1{font-size:28px;font-weight:700;letter-spacing:-.7px;margin:3px 0 0;line-height:1.15}
