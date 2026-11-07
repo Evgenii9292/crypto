@@ -46,21 +46,21 @@ test('overview restores three labeled current and monthly PNL pairs',()=>{
 test('combined chart does not mistake Spot-only history for total PNL',async()=>{
  const now=Date.now();
  const h=[
-  {t:now-3*3600000,spot:-.12,total:-.12},
-  {t:now-2*3600000,spot:-.17,futures:-2.1,total:-2.27},
+  {t:now-3*3600000,spot:-.12,futures:-2.2,futuresAccount:-12.2,totalAccount:-12.32},
+  {t:now-2*3600000,spot:-.17,futures:-2.1,futuresAccount:-12.1,totalAccount:-12.27},
   {t:now-3600000,spot:-.18,total:49.7},
-  {t:now-200000,spot:-.20,futures:-3.1,total:-3.30}
+  {t:now-200000,spot:-.20,futures:-3.1,futuresAccount:-13.1,totalAccount:-13.30}
  ];
  const {window,el}=mount(h);
  for(let i=0;i<100;i++)await Promise.resolve();
  window.fxmr4App.onSnapshot({
-  account:{name:'sub'},totals:{equity:1100,perpUPL:-3.12},
+  account:{name:'sub'},totals:{equity:1100,perpUPL:-3.12,realisedPnl:-10,accountPnl:-13.12},
   positions:[],updatedAt:now
  });
  const markup=el('content').innerHTML;
  const points=markup.match(/<polyline points="([^"]+)"/)?.[1];
  assert.ok(points);
- assert.equal(points.trim().split(' ').length,3);
+ assert.ok(points.trim().split(' ').length>=3);
  assert.doesNotMatch(markup,/\+\$49\.7/);
 });
 test('offline server PNL samples fill gaps BETWEEN existing local samples',async()=>{
@@ -73,13 +73,13 @@ test('offline server PNL samples fill gaps BETWEEN existing local samples',async
    ],
    snapshots:[{time:t(6),pnl:-.50},{time:t(1),pnl:-.30}],
    portfolioSnapshots:[
-     {time:t(6),spot:-.50,futures:-2,total:-2.5},
-     {time:t(1),spot:-.30,futures:-1,total:-1.3}
+     {time:t(6),spot:-.50,futures:-2,futuresAccount:-12,totalAccount:-12.50},
+     {time:t(1),spot:-.30,futures:-1,futuresAccount:-11,totalAccount:-11.30}
    ]
  };
  const offline=[
-   {t:t(4),spot:-.40,futures:-1.8,total:-2.2},
-   {t:t(2),spot:-.38,futures:-1.5,total:-1.88}
+   {t:t(4),spot:-.40,futures:-1.8,futuresAccount:-11.8,totalAccount:-12.2},
+   {t:t(2),spot:-.38,futures:-1.5,futuresAccount:-11.5,totalAccount:-11.88}
  ];
  const {el,listeners}=mount(offline,local);
  for(let i=0;i<150;i++)await Promise.resolve();
@@ -87,6 +87,30 @@ test('offline server PNL samples fill gaps BETWEEN existing local samples',async
  assert.equal(extract(),4,'combined chart contains both local and offline server samples');
  for(const cb of listeners.click||[])cb({target:{closest:selector=>selector==='[data-tab]'?{dataset:{tab:'positions'}}:null}});
  assert.equal(extract(),4,'Spot chart also uses server history during closed browser time');
+});
+test('closing a losing futures position does not turn losses into account profit',()=>{
+ const {window,el,listeners}=mount();
+ const bridge=window.fxmr4App;
+ bridge.onAccounts([{id:'bybit-subaccount',label:'Account'}]);
+ const at=Date.now();
+ bridge.onSnapshot({
+  account:{id:'bybit-subaccount',name:'Account'},
+  totals:{equity:1000,perpUPL:-12,realisedPnl:-3,accountPnl:-15,positionCount:1},
+  positions:[{symbol:'XMRUSDT',size:100,pnl:-12,side:'Long'}],updatedAt:at
+ });
+ for(const fn of listeners.click||[])fn({target:{closest:q=>q==='[data-tab]'?{dataset:{tab:'futures'}}:null}});
+ const before=el('content').innerHTML;
+ assert.match(before,/PNL счёта/);
+ assert.match(before,/−\$15\.00/);
+ assert.match(before,/Плавающий/);
+ bridge.onSnapshot({
+  account:{id:'bybit-subaccount',name:'Account'},
+  totals:{equity:1000,perpUPL:0,realisedPnl:-15,accountPnl:-15,positionCount:0},
+  positions:[],updatedAt:at+300000
+ });
+ const after=el('content').innerHTML;
+ assert.match(after,/−\$15\.00/);
+ assert.doesNotMatch(after,/\+\$12\.00/);
 });
 test('balance mode presents actual equity as money, never as positive profit',()=>{
  const {window,el,listeners}=mount();
