@@ -44,14 +44,18 @@ function mount(sources,fetchImpl=null){
   window:{},FormData:class{constructor(form){this.form=form}get(key){return this.form.fields?.[key]??null}}
  };
  vm.runInNewContext(script.replace('window.fxmr4GetState=()=>', 'window.fxmr4Inspect={s,onAccounts,onSnapshot,render,renderLive,reconcileLive,pnlWindow,monthlyFutures,monthlyFuturesSeries,positionAge,futuresLedgerData,activeFuturesReports,positionAccountEquity,loadFuturesPeriod,observedEquitySeries,futuresCSVText,futuresValue,pnlBarSections,positionCostsFromBybit,overviewSpotHistory,overviewHistoryData,combineBybitChunks,fetchLongBybitPeriod,loadSpotHistory};window.fxmr4GetState=()=>'),context,{filename:'index.html',timeout:3000});
- const click=action=>{
-  const target={dataset:{action},closest(selector){return selector==='[data-action]'?this:null}};
+ const click=(action,id='')=>{
+  const target={dataset:{action,id},closest(selector){return selector==='[data-action]'?this:null}};
+  for(const listener of listeners.click||[])listener({target});
+ };
+ const chooseFutureMode=futureMode=>{
+  const target={dataset:{futureMode},closest(selector){return selector==='[data-future-mode]'?this:null}};
   for(const listener of listeners.click||[])listener({target});
  };
  const submit=(id,fields)=>{
   for(const listener of listeners.submit||[])listener({target:{id,fields},preventDefault(){}});
  };
- return {elements,window:context.window,element,store,document,themeControls,click,submit};
+ return {elements,window:context.window,element,store,document,themeControls,click,chooseFutureMode,submit};
 }
 
 test('overview has only All Spot Futures modes and true current open PNL',()=>{
@@ -424,7 +428,7 @@ test('overview current PNL excludes historic realised loss while Futures shows t
  assert.match(markup,/\+\$16\.00/);
  assert.doesNotMatch(markup,/−\$200\.00/);
  v.s.tab='futures';v.render();
- assert.match(element('content').innerHTML,/Операции за сегодня · UTC/);
+ assert.match(element('content').innerHTML,/PNL за сегодня/);
 });
 
 test('daily result and symbol bars use the same Bybit ledger and can export CSV',()=>{
@@ -650,4 +654,89 @@ test('fees remain unknown for old positions, missing opening time and incomplete
  assert.ok(v.positionCostsFromBybit({...base,openedAt:end+1}).reason);
  v.s.monthlyPerformance.a.costEventsComplete=false;
  assert.ok(v.positionCostsFromBybit({...base,openedAt:from+1}).reason);
+});
+
+test('Futures cards keep equal layout, short today label, and four bottom descriptions',()=>{
+ const {element,window}=mount([{id:'bybit',name:'Bybit',accounts:[]}]);
+ const v=window.fxmr4Inspect;
+ v.onAccounts([{id:'sub-one',label:'Alpha'}]);
+ v.onSnapshot({account:{id:'sub-one',name:'Alpha'},updatedAt:Date.now(),
+  totals:{equity:3000,availableBalance:2900,perpUPL:5,positionCount:1},
+  positions:[{symbol:'ADAUSDT',side:'Long',size:90,pnl:5}]});
+ v.s.tab='futures';v.render();
+ const content=element('content').innerHTML;
+ assert.equal(content.split('class="card tint futureMetricCard"').length-1,4);
+ assert.equal(content.split('class="pnlParts"').length-1,4);
+ assert.ok(content.includes('PNL за сегодня'));
+ assert.ok(content.includes('1 позиций'));
+ assert.ok(!content.includes('не закрыты'));
+ assert.ok(!content.includes('Операции за сегодня · UTC'));
+ assert.ok(css.includes('.futureMetricCard .pnlParts'));
+ assert.ok(css.includes('margin-top:auto'));
+});
+
+test('Futures subaccounts and exchanges open by default and still close on click',()=>{
+ const {window,element,click,chooseFutureMode}=mount([{id:'bybit',name:'Bybit',accounts:[]}]);
+ const v=window.fxmr4Inspect;
+ v.onAccounts([{id:'sub-one',label:'Alpha'}]);
+ v.onSnapshot({account:{id:'sub-one',name:'Alpha'},updatedAt:Date.now(),
+  totals:{equity:3000,perpUPL:1,positionCount:1},
+  positions:[{symbol:'ADAUSDT',side:'Long',size:91,pnl:1}]});
+ v.s.tab='futures';v.s.openedAccounts['bybit:sub-one']=false;
+ chooseFutureMode('account');
+ assert.equal(v.s.openedAccounts['bybit:sub-one'],true);
+ assert.ok(element('content').innerHTML.includes('ADAUSDT'));
+ click('toggleAccount','bybit:sub-one');
+ assert.equal(v.s.openedAccounts['bybit:sub-one'],false);
+ v.s.openedExchanges.bybit=false;
+ chooseFutureMode('exchange');
+ assert.equal(v.s.openedExchanges.bybit,true);
+ assert.equal(v.s.openedAccounts['bybit:sub-one'],true);
+ assert.ok(element('content').innerHTML.includes('sourceChildren'));
+ click('toggleExchange','bybit');
+ assert.equal(v.s.openedExchanges.bybit,false);
+ delete v.s.openedExchanges.bybit;delete v.s.openedAccounts['bybit:sub-one'];
+ v.render();
+ assert.ok(element('content').innerHTML.includes('ADAUSDT'));
+});
+
+test('Sidebar icon and labels, Futures headings, native selector match UI feedback',()=>{
+ assert.ok(!html.includes('<div class="navLabel">'));
+ assert.ok(!html.includes('<div class="accountTotalLabel">Общий баланс</div>'));
+ const overviewIcon=html.split('<symbol id="activity"')[1]?.split('</symbol>')[0];
+ const futuresIcon=html.split('<symbol id="trend"')[1]?.split('</symbol>')[0];
+ assert.ok(overviewIcon&&futuresIcon&&overviewIcon!==futuresIcon);
+ assert.ok(html.includes('<span class="hLong">Объём</span>'));
+ assert.ok(html.includes('<span class="hLong">PNL</span>'));
+ assert.ok(!html.includes('<span class="hLong">Плавающий PNL</span>'));
+ assert.ok(!html.includes('<span class="hLong">Объём · USD</span>'));
+ const {element,window}=mount([{id:'bybit',name:'Bybit',accounts:[]}]);
+ const v=window.fxmr4Inspect;v.s.tab='futures';v.render();
+ assert.ok(element('content').innerHTML.includes('pnlAccountSelect'));
+ assert.ok(element('content').innerHTML.includes('data-futures-account'));
+ assert.ok(css.includes('.pnlAccountLabel .pnlAccountSelect select'));
+ assert.ok(css.includes('appearance:none'));
+});
+
+test('Bar chart includes all daily values but only 3 non-overlapping axis ticks',()=>{
+ const {element,window}=mount([{id:'bybit',name:'Bybit',accounts:[]}]);
+ const v=window.fxmr4Inspect;v.onAccounts([{id:'a',label:'Alpha'}]);
+ const end=v.s.monthlyAnchorMs;
+ const start=Math.floor(end/86400000)*86400000-29*86400000;
+ const days=Array.from({length:30},(_,i)=>({
+  date:new Date(start+i*86400000).toISOString().slice(0,10),netPnl:i%2?1:-0.4
+ }));
+ const netPnl=days.reduce((sum,d)=>sum+d.netPnl,0);
+ v.s.monthlyPerformance.a={from:start,to:end,netPnl,days,fees:0,funding:0,
+  points:days.map((d,i)=>({t:start+i*86400000,netPnl:d.netPnl})),
+  symbols:[{symbol:'ADAUSDT',netPnl,operations:30}]};
+ v.s.tab='futures';v.s.chartPeriod.futures='30d';v.render();
+ const content=element('content').innerHTML;
+ const axis=content.split('class="pnlBarAxis"')[1]?.split('</div>')[0]||'';
+ assert.ok(axis,'date axis must be visible');
+ assert.equal(axis.split('<span>').length-1,3);
+ assert.equal(content.split('class="pnlBarItem"').length-1,30);
+ assert.ok(content.includes('ADAUSDT'));
+ assert.ok(css.includes('.pnlBarList{gap:3px'));
+ assert.ok(!content.includes('class="pnlBarItem"><small>'));
 });
