@@ -43,7 +43,7 @@ function mount(sources,fetchImpl=null){
   setTimeout:()=>1,clearTimeout(){},setInterval:()=>{},
   window:{},FormData:class{constructor(form){this.form=form}get(key){return this.form.fields?.[key]??null}}
  };
- vm.runInNewContext(script.replace('window.fxmr4GetState=()=>', 'window.fxmr4Inspect={s,onAccounts,onSnapshot,render,renderLive,reconcileLive,pnlWindow,monthlyFutures,monthlyFuturesSeries,positionAge,futuresLedgerData,activeFuturesReports,positionAccountEquity,loadFuturesPeriod,observedEquitySeries,futuresCSVText,futuresValue,pnlBarSections,overviewSpotHistory,overviewHistoryData,combineBybitChunks,fetchLongBybitPeriod,loadSpotHistory};window.fxmr4GetState=()=>'),context,{filename:'index.html',timeout:3000});
+ vm.runInNewContext(script.replace('window.fxmr4GetState=()=>', 'window.fxmr4Inspect={s,onAccounts,onSnapshot,render,renderLive,reconcileLive,pnlWindow,monthlyFutures,monthlyFuturesSeries,positionAge,futuresLedgerData,activeFuturesReports,positionAccountEquity,loadFuturesPeriod,observedEquitySeries,futuresCSVText,futuresValue,pnlBarSections,positionCostsFromBybit,overviewSpotHistory,overviewHistoryData,combineBybitChunks,fetchLongBybitPeriod,loadSpotHistory};window.fxmr4GetState=()=>'),context,{filename:'index.html',timeout:3000});
  const click=action=>{
   const target={dataset:{action},closest(selector){return selector==='[data-action]'?this:null}};
   for(const listener of listeners.click||[])listener({target});
@@ -132,18 +132,23 @@ test('futures shows real 30-day ledger, muted size and percentage of subaccount 
  view.onAccounts([{id:'sub-one',label:'Main subaccount'}]);
  view.onSnapshot({account:{id:'sub-one',name:'Main subaccount'},
   totals:{equity:3213.49,availableBalance:3000,perpUPL:-10,realisedPnl:-30,accountPnl:-40},
-  positions:[{symbol:'XMRUSDT',side:'Long',size:91.72,initialMargin:20,pnl:4,openedAt:null}]});
+  positions:[{symbol:'XMRUSDT',side:'Long',size:91.72,initialMargin:20,pnl:4,openedAt:Date.now()-2*86400000}]});
  const now=Date.now();
  view.s.monthlyPerformance['sub-one']={
   from:now-30*86400000,to:now,netPnl:-5,tradingPnl:-2,funding:-1,fees:2,
   days:[{date:new Date(now-5*86400000).toISOString().slice(0,10),netPnl:-5}],
-  points:[{t:now-5*86400000,netPnl:-5}]
+  points:[{t:now-5*86400000,netPnl:-5}],
+  costEventsComplete:true,
+  costEvents:[{t:now-86400000,symbol:'XMRUSDT',funding:-1,fees:2}]
  };
  view.s.tab='futures';view.render();
  const rendered=element('content').innerHTML;
  assert.match(rendered,/Результат за 30 дней/);
  assert.match(rendered,/Funding: −\$1\.00/);
  assert.match(rendered,/Комиссии: \$2\.00/);
+ const top=rendered.split('class="section pnlChart')[0];
+ assert.doesNotMatch(top,/Funding:/,'funding must not appear in summary');
+ assert.doesNotMatch(top,/Комиссии:/,'commission must not appear in summary');
  assert.match(rendered,/К балансу, %/);
  assert.match(rendered,/0\.12%/);
  assert.doesNotMatch(rendered,/ROI · %/);
@@ -593,4 +598,56 @@ test('six-day Bybit chunks merge into 180-day report without gaps, duplicates or
  let threw=false;
  try{v.combineBybitChunks(parts,0,2000,'6m')}catch(e){threw=true}
  assert.ok(threw,'a missing history interval must never be labelled as zero PNL');
+});
+
+test('funding and fees appear only on the matching open position after its actual open time',()=>{
+ const {element,window}=mount([{id:'bybit',name:'Bybit',accounts:[]}]);
+ const v=window.fxmr4Inspect;
+ v.onAccounts([{id:'a',label:'Alpha'},{id:'b',label:'Beta'}]);
+ const opened=Date.now()-2*86400000;
+ for(const accountId of ['a','b']){
+  v.onSnapshot({account:{id:accountId,name:accountId},updatedAt:Date.now(),
+   totals:{equity:1000,perpUPL:1,accountPnl:-20,positionCount:1},
+   positions:[{symbol:'ADAUSDT',side:'Long',pnl:1,size:50,openedAt:opened}]});
+ }
+ const end=v.s.monthlyAnchorMs,from=end-30*86400000;
+ const report={from,to:end,netPnl:1,funding:0,fees:0,points:[],days:[],
+  costEventsComplete:true,costEvents:[
+   {t:opened-60000,symbol:'ADAUSDT',funding:999,fees:999},
+   {t:opened+60000,symbol:'ADAUSDT',funding:-0.6,fees:0.12},
+   {t:opened+120000,symbol:'BTCUSDT',funding:100,fees:100}]};
+ v.s.monthlyPerformance.a=report;
+ v.s.monthlyPerformance.b={...report,costEvents:[
+  {t:opened+100000,symbol:'ADAUSDT',funding:0.2,fees:0.02}]};
+ const a=v.s.futuresPositions.find(p=>p.accountId==='a'),
+       b=v.s.futuresPositions.find(p=>p.accountId==='b');
+ const costsA=v.positionCostsFromBybit(a),costsB=v.positionCostsFromBybit(b);
+ assert.ok(Math.abs(costsA.funding+0.6)<1e-8);
+ assert.ok(Math.abs(costsA.fees-0.12)<1e-8);
+ assert.ok(Math.abs(costsB.funding-0.2)<1e-8);
+ assert.ok(Math.abs(costsB.fees-0.02)<1e-8);
+ v.s.tab='futures';v.s.futureMode='all';v.render();
+ const markup=element('content').innerHTML;
+ assert.match(markup,/Funding: −\$0\.60/);
+ assert.match(markup,/Комиссии: \$0\.12/);
+ assert.match(markup,/Funding: \+\$0\.20/);
+ assert.match(markup,/Комиссии: \$0\.02/);
+ assert.doesNotMatch(markup,/\$999\.00/);
+ const top=markup.split('class="section pnlChart')[0];
+ assert.doesNotMatch(top,/Funding:/);
+ assert.doesNotMatch(top,/Комиссии:/);
+});
+test('fees remain unknown for old positions, missing opening time and incomplete exchange reports',()=>{
+ const {window}=mount([{id:'bybit',name:'Bybit',accounts:[]}]);
+ const v=window.fxmr4Inspect;
+ v.onAccounts([{id:'a',label:'Alpha'}]);
+ const end=v.s.monthlyAnchorMs,from=end-30*86400000;
+ v.s.monthlyPerformance.a={from,to:end,netPnl:10,costEventsComplete:true,
+  costEvents:[{t:end-1000,symbol:'XMRUSDT',funding:-1,fees:1}]};
+ const base={exchangeId:'bybit',accountId:'a',symbol:'XMRUSDT'};
+ assert.ok(v.positionCostsFromBybit({...base,openedAt:null}).reason);
+ assert.ok(v.positionCostsFromBybit({...base,openedAt:from-1}).reason);
+ assert.ok(v.positionCostsFromBybit({...base,openedAt:end+1}).reason);
+ v.s.monthlyPerformance.a.costEventsComplete=false;
+ assert.ok(v.positionCostsFromBybit({...base,openedAt:from+1}).reason);
 });
