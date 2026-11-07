@@ -268,6 +268,43 @@ function futuresValue(n,unit='usd',accountId='all'){
  const equity=accountId==='all'?Number(s.bybitSnapshot?.totals?.equity):Number(s.bybitAccountsSnapshots[accountId]?.totals?.equity);
  return Number.isFinite(equity)&&equity>0?signed(Number(n)/equity*100,'pct'):'—';
 }
+
+function futuresCSVText(period=s.chartPeriod.futures||'30d',accountId=s.futuresAccountFilter||'all',view=s.futuresView){
+ const quote=value=>{
+  if(typeof value==='number')return Number.isFinite(value)?String(value):'';
+  let x=String(value??'');
+  if(/^[=+@\t\r]/.test(x))x="'"+x;
+  return '"'+x.replace(/"/g,'""')+'"';
+ };
+ const rows=[];
+ if(view==='equity'){
+  rows.push(['type','time_utc','subaccount','equity_usd']);
+  for(const point of observedEquitySeries(period,accountId)){
+   rows.push(['observed_equity',new Date(point.t).toISOString(),accountId,Number(point.v)]);
+  }
+ }else{
+  const report=futuresLedgerData(period,accountId);
+  if(!report)return '';
+  rows.push(['type','period','date_or_symbol','net_pnl_usd']);
+  for(const day of report.days)rows.push(['daily',period,day.date,day.netPnl]);
+  for(const symbol of report.symbols)rows.push(['symbol',period,symbol.symbol,symbol.netPnl]);
+  rows.push(['total',period,'',report.netPnl]);
+ }
+ return '\ufeff'+rows.map(row=>row.map(quote).join(',')).join('\r\n')+'\r\n';
+}
+function exportFuturesCSV(){
+ const csv=futuresCSVText();
+ if(!csv)return;
+ const file=new Blob([csv],{type:'text/csv;charset=utf-8'});
+ const url=URL.createObjectURL(file),a=document.createElement('a');
+ a.href=url;a.download='fxmr4-'+s.futuresView+'-'+(s.chartPeriod.futures||'30d')+'-'+
+  (s.futuresAccountFilter||'all').replace(/[^a-z0-9_-]/ig,'')+'.csv';
+ document.body.appendChild(a);
+ a.click();
+ a.remove();
+ setTimeout(()=>URL.revokeObjectURL(url),10000);
+}
+
 function pnlBarSections(data,period,accountId='all'){
  if(!data)return '';
  const equity=accountId==='all'?Number(s.bybitSnapshot?.totals?.equity):Number(s.bybitAccountsSnapshots[accountId]?.totals?.equity);
@@ -477,7 +514,7 @@ function futuresChartBlock(){
   <div class="chartlegend"><span>${escape(rangeName)} · ${points?.length>=2?'с '+new Date(points[0].t).toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric'}):'нет полной истории'}</span>
    <strong class="${total==null?'neutral':isEquity?'':cls(total)}">${total==null?'—':isEquity?dollars(total):futuresValue(total,unit,accountId)}</strong></div>
   <div class="overviewLedgerDetail">${isEquity?
-    'История стоимости сохраняется автоматически на VPS. Добавление нового счёта не считается прибылью. Архивные даты пока доступны только через выписку Bybit.':
+    'История стоимости сохраняется автоматически на VPS. Добавление нового счёта не считается прибылью. Архивные даты требуют отдельной выписки Bybit.':
     unit==='pct'?'Проценты рассчитаны относительно текущего баланса, не равны официальной доходности Bybit за период.':
     'Это результат закрытых операций. Плавающий PNL открытых позиций показан отдельно.'}</div>
   ${!isEquity?pnlBarSections(data,period,accountId):''}
@@ -1201,6 +1238,7 @@ function handleClick(e){
  const btn=e.target.closest('[data-action]');if(!btn)return;
  const act=btn.dataset.action,id=btn.dataset.id||'';
  if(act==='sync'){sync();return}
+ if(act==='exportFuturesCsv'){exportFuturesCSV();return}
  if(act==='gotoSpot'){s.tab='positions';render();return}
  if(act==='gotoFutures'||act==='backToFutures'){s.tab='futures';s.futureMode='exchange';render();return}
  if(act==='goConnections'){s.tab='connections';render();return}
