@@ -44,6 +44,7 @@ CACHE = {"at": 0.0, "data": None}
 EXTRA_CACHE = {}
 MONTH_CACHE = {}  # Cached per API key, never contains API credentials.
 CHUNK_CACHE = {}  # Bounded cache of independently fetched 6-day transaction windows.
+SPOT_HISTORY_CACHE = {}  # Daily public Bybit Spot candles, never contains account keys.
 MIME = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
         ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml"}
 
@@ -603,6 +604,13 @@ class Handler(BaseHTTPRequestHandler):
             except saved_state.StateError as exc:
                 self._json({"error": str(exc)}, 500)
             return
+        if path == "/api/spot-price-history":
+            try:
+                period = parse_qs(urlsplit(self.path).query).get("period", ["6m"])[0]
+                self._json(public_spot_history(period))
+            except BybitFailure as exc:
+                self._json({"error": str(exc)}, 503)
+            return
         if path == "/api/equity-history":
             try:
                 allowed = {a["id"] for a in linked_accounts()}
@@ -863,6 +871,71 @@ class Handler(BaseHTTPRequestHandler):
 
 
 HISTORY_SAMPLE_SECONDS = 300
+
+
+
+def public_spot_history(period):
+    """Real BTC/ETH daily Bybit Spot prices for reconstructing *recorded* buys.
+
+    This is not a complete Bybit Spot account statement. The UI combines
+    market closes with the user's saved purchase ledger and labels coverage.
+    """
+    if period not in ("30d", "60d", "90d", "6m", "1y", "all"):
+        raise BybitFailure("Неподдерживаемый период Spot")
+    now_ms = int(time.time()*1000)
+    end_ms = now_ms // 86400000 * 86400000
+    duration = (729*86400000 if period == "all" else PERFORMANCE_PERIODS[period])
+    start_ms = end_ms - duration
+    key = (start_ms, end_ms)
+    with LOCK:
+        cached = SPOT_HISTORY_CACHE.get(key)
+        if cached and time.monotonic()-cached["at"] < 3600:
+            return cached["data"]
+    prices = {}
+    for coin in ("BTC", "ETH"):
+        last_error = "unavailable"
+        for host in dict.fromkeys((API_HOST, "https://api.bybit.id", "https://api.bybit.com")):
+            if host not in ALLOWED_HOSTS:
+                continue
+            try:
+                query = urlencode({"category": "spot", "symbol": coin+"USDT",
+                                   "interval": "D", "start": start_ms,
+                                   "end": end_ms-1, "limit": 1000})
+                request = Request(host+"/v5/market/kline?"+query, headers={
+                    "Accept": "application/json", "User-Agent": "fxmr4-readonly/1.0"
+                }, method="GET")
+                with urlopen(request, timeout=12) as reply:
+                    data = json.loads(reply.read(1_000_000))
+                if data.get("retCode") != 0:
+                    raise BybitFailure(str(data.get("retMsg") or "Kline unavailable")[:100])
+                rows = data.get("result", {}).get("list") or []
+                result = []
+                for row in rows:
+                    if not isinstance(row, list) or len(row) < 5:
+                        raise BybitFailure("Некорректная свеча Spot")
+                    moment = _int_ms(row[0])
+                    close = _num(row[4])
+                    if moment is None or close is None or close <= 0:
+                        raise BybitFailure("Некорректная цена в истории Spot")
+                    if start_ms <= moment < end_ms:
+                        result.append({"t": moment, "close": close})
+                result.sort(key=lambda x:x["t"])
+                if not result:
+                    raise BybitFailure("Bybit не вернул свечи "+coin)
+                prices[coin] = result
+                break
+            except (URLError, HTTPError, TimeoutError, ValueError, OSError,
+                    BybitFailure) as exc:
+                last_error = type(exc).__name__
+        else:
+            raise BybitFailure("Нет истории Spot "+coin+": "+last_error)
+    payload = {"from": start_ms, "to": end_ms, "prices": prices,
+               "source": "Bybit Spot USDT daily candles · recorded purchases only"}
+    with LOCK:
+        if len(SPOT_HISTORY_CACHE) > 12:
+            SPOT_HISTORY_CACHE.clear()
+        SPOT_HISTORY_CACHE[key] = {"at": time.monotonic(), "data": payload}
+    return payload
 
 
 def public_spot_quotes(trades):
