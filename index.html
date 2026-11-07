@@ -158,9 +158,10 @@ function pnlChartBlock(opts){
  const metric=opts.metricSwitch?(s.chartMetric[key]||'pnl'):'pnl';
  const subtitle=opts.subtitle===undefined?'Динамика результатов по позициям':opts.subtitle;
  const showModes=!!opts.modes;
- const metricSwitch=opts.metricSwitch?`<div class="pnlMode"><button class="${metric==='pnl'?'active':''}" data-metric="pnl" data-chart="${key}" type="button">PNL</button><button class="${metric==='balance'?'active':''}" data-metric="balance" data-chart="${key}" type="button">Баланс</button></div>`:'';
+ const metricSwitch=opts.metricSwitch?`<div class="pnlMode"><button class="${metric==='pnl'?'active':''}" data-metric="pnl" data-chart="${key}" type="button">${kind==='futures'?'PNL счёта':'PNL'}</button>${kind==='futures'?`<button class="${metric==='floating'?'active':''}" data-metric="floating" data-chart="${key}" type="button">Плавающий</button>`:''}<button class="${metric==='balance'?'active':''}" data-metric="balance" data-chart="${key}" type="button">Баланс</button></div>`:'';
  const balanceValue=metric==='balance'?(kind==='spot'?sums().holdings:s.bybitSnapshot?.totals?.equity):null;
- const current=metric==='balance'?(balanceValue!=null&&Number.isFinite(Number(balanceValue))?Number(balanceValue):null):opts.current==null?null:Number(opts.current);
+ const rawCurrent=metric==='floating'?opts.summary?.futuresFloatingPnl:opts.current;
+  const current=metric==='balance'?(balanceValue!=null&&Number.isFinite(Number(balanceValue))?Number(balanceValue):null):rawCurrent==null?null:Number(rawCurrent);
  return `<section class="section pnlChart card"><div class="hrow pnlChartHead"><div><div class="sectitle">${opts.title||'Портфель'}</div>${subtitle?`<div class="tiny">${escape(subtitle)}</div>`:''}</div>${periodButtons(period,key)}</div>${showModes?`<div class="pnlMode">${[['all','Все'],['spot','Спот'],['futures','Фьючерсы']].map(([k,name])=>`<button class="${kind===k?'active':''}" data-pnl-mode="${k}" type="button">${name}</button>`).join('')}</div>`:''}${metricSwitch}<div class="chartbox">${chartHTML(kind,period,metric)}</div><div class="chartlegend"><span>${chartCaption(kind,period,opts.summary,metric)}</span><strong class="${current==null||metric==='balance'?'neutral':cls(current)}">${current==null?'—':metric==='balance'?dollars(current):signed(current)}</strong></div></section>`;
 }
 function spotPnlChart(){
@@ -175,7 +176,7 @@ function spotChartBlock(){
 }
 function futuresChartBlock(){
  const p=portfolioSummary();
- return pnlChartBlock({key:'futures',kind:'futures',title:'PNL · Фьючерсы',subtitle:'Плавающий результат открытых позиций',
+ return pnlChartBlock({key:'futures',kind:'futures',title:'PNL · Фьючерсы',subtitle:'',
   metricSwitch:true,current:p.futuresPnl,summary:p,invested:p.margin});
 }
 function spotDistribution(){
@@ -215,7 +216,7 @@ function pnlThirtyDayDelta(kind='all'){
  return latest.v-baseline.v;
 }
 function monthlyMarkup(value){
- const note='Изменение наблюдаемого плавающего PNL за последние 30 дней. Закрытые сделки и движения средств не учтены.';
+ const note='Изменение PNL счёта за последние 30 дней, если достаточно накопленной истории.';
  return `<span class="${value==null?'neutral':cls(value)}" title="${note}">${value==null?'—':signed(value)}</span>`;
 }
 function overview(){
@@ -369,10 +370,11 @@ function futures(){
  const snap=s.bybitSnapshot?.totals,ready=!!s.backendConnection.connected&&!!snap;
  const upl=ready&&snap.perpUPL!=null?Number(snap.perpUPL):null;
  const open=s.futuresPositions.filter(p=>p.exchangeId==='bybit');
- const metrics=[['Баланс субаккаунта',ready&&snap.equity!=null?dollars(snap.equity):'—',''],
- ['Плавающий PNL',upl!=null?signed(upl):'—',upl==null?'neutral':cls(upl)],
- ['Доступно',ready&&snap.availableBalance!=null?dollars(snap.availableBalance):'—',''],
- ['Открытых позиций',ready?String(open.length):'—','']];
+ const accountPnl=ready&&snap.accountPnl!=null?Number(snap.accountPnl):null;
+  const metrics=[['Баланс субаккаунта',ready&&snap.equity!=null?dollars(snap.equity):'—',''],
+  ['PNL счёта',accountPnl!=null?signed(accountPnl):'—',accountPnl==null?'neutral':cls(accountPnl)],
+  ['Доступно',ready&&snap.availableBalance!=null?dollars(snap.availableBalance):'—',''],
+  ['Открытых позиций',ready?String(open.length):'—','']];
  const coins=coinStack(open.map(p=>p.symbol));
  return `<div class="futureMetrics">${metrics.map(([name,value,tone])=>`<div class="card tint"><div class="eyebrow">${name}</div><div class="num ${tone}">${value}</div>${name==='Открытых позиций'&&coins?`<div class="metricCoins">${coins}</div>`:''}</div>`).join('')}</div>
  ${futuresChartBlock()}
@@ -499,7 +501,7 @@ function rebuildBybitTotals(){
   s.bybitSnapshot=null;
   return;
  }
- const keys=['equity','walletBalance','availableBalance','perpUPL','accountInitialMargin'];
+ const keys=['equity','walletBalance','availableBalance','perpUPL','realisedPnl','accountPnl','accountInitialMargin'];
  const totals={positionCount:snapshots.reduce((v,ss)=>v+Number(ss.totals?.positionCount||0),0)};
  for(const key of keys){
   const values=snapshots.map(ss=>ss.totals?.[key]);
@@ -631,7 +633,7 @@ window.fxmr4App={onBackendStatus,onSnapshot,onAccounts,onDisconnected,applyCloud
     if(!force&&now-historyPushAt<300000)return;
     historyPushAt=now;
     // Send only what the server cannot already have: the recent live readings.
-    const points=s.portfolioSnapshots.slice(-400).map(p=>({t:p.time,spot:p.spot,futures:p.futures,total:p.total}))
+    const points=s.portfolioSnapshots.slice(-400).map(p=>({t:p.time,spot:p.spot,futures:p.futures,total:p.total,futuresAccount:p.futuresAccount,totalAccount:p.totalAccount}))
       .filter(p=>Number.isFinite(p.t)&&(Number.isFinite(p.total)||Number.isFinite(p.spot)));
     if(!points.length)return;
     try{
@@ -645,16 +647,22 @@ window.fxmr4App={onBackendStatus,onSnapshot,onAccounts,onDisconnected,applyCloud
     // Spot PNL exists even with no futures account, so it is recorded on its
     // own. Futures and total stay absent, never zero, while they are unknown.
     const p={time:Date.now(),spot:summary.spot.profit,spotBalance:summary.spot.holdings};
-    if(summary.hasFutures&&summary.futuresPnl!==null){
-      p.futures=summary.futuresPnl;
-      p.total=summary.spot.profit+summary.futuresPnl;
+    if(summary.hasFutures){
+      if(summary.futuresFloatingPnl!==null){
+        p.futures=summary.futuresFloatingPnl;
+        p.total=summary.spot.profit+summary.futuresFloatingPnl;
+      }
+      if(summary.futuresPnl!==null){
+        p.futuresAccount=summary.futuresPnl;
+        p.totalAccount=summary.spot.profit+summary.futuresPnl;
+      }
       const equity=s.bybitSnapshot?.totals?.equity;
       if(equity!=null&&Number.isFinite(Number(equity)))p.futuresBalance=Number(equity);
     }else if(!hasTrackedFutures()&&!s.backendConnection.configured){
       p.total=summary.spot.profit;
     }
     const last=s.portfolioSnapshots[s.portfolioSnapshots.length-1];
-    if(last&&p.time-last.time<1500&&Math.abs((last.total??last.spot)-(p.total??p.spot))<0.000001)return;
+    if(last&&p.time-last.time<1500&&Math.abs((last.totalAccount??last.total??last.spot)-(p.totalAccount??p.total??p.spot))<0.000001)return;
     s.portfolioSnapshots.push(p);s.portfolioSnapshots=s.portfolioSnapshots.slice(-1500);
     pushPnlHistory();
   }
