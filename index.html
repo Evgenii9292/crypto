@@ -624,6 +624,7 @@ function render(){
  updateChrome();
  window.fxmr4Levels?.render?.();
  window.fxmr4Bybit?.renderPanel?.();
+ if(s.tab==='futures'&&s.chartPeriod.futures!=='30d')void loadFuturesPeriod(s.chartPeriod.futures);
 }
 function reconcileLive(current,next){
  if(next.nodeType===11){
@@ -673,6 +674,7 @@ function renderLive(){
  }
  updateChrome();
  window.fxmr4Levels?.refreshQuotes?.();
+ if(s.tab==='futures'&&s.chartPeriod.futures!=='30d')void loadFuturesPeriod(s.chartPeriod.futures);
 }
 
 function saveCapital(fd){
@@ -856,7 +858,7 @@ window.fxmr4App={onBackendStatus,onSnapshot,onAccounts,onDisconnected,applyCloud
       if(saved.chartMetric&&typeof saved.chartMetric==='object'){
         for(const k of ['spot','futures'])if(['pnl','balance','floating','realized30d'].includes(saved.chartMetric[k]))s.chartMetric[k]=saved.chartMetric[k];
       }
-      if(saved.futureSort&&FUTURE_SORTS.some(([k])=>k===saved.futureSort))s.futureSort=saved.futureSort;
+      if(saved.futureSort&&FUTURE_SORTS.some(([k])=>k===saved.futureSort))s.futureSort=saved.futureSort;else if(saved.futureSort==='roi')s.futureSort='share';
       if(saved.futureSortDir===-1||saved.futureSortDir===1)s.futureSortDir=saved.futureSortDir;
       if(Array.isArray(saved.sources)){const sources=saved.sources.filter(x=>x&&typeof x.id==='string'&&typeof x.name==='string').slice(0,25).map(x=>({id:x.id.slice(0,60),name:x.name.slice(0,60),connected:false,accounts:Array.isArray(x.accounts)?x.accounts.filter(y=>y&&typeof y.id==='string'&&typeof y.name==='string').slice(0,60).map(y=>({id:y.id.slice(0,60),name:y.name.slice(0,40),balance:null})):[]}));if(!sources.some(x=>x.id==='bybit'))sources.unshift({id:'bybit',name:'Bybit',connected:false,accounts:[]});s.sources=sources;}
     }catch(e){console.warn('Локальное сохранение:',e)}
@@ -1040,7 +1042,7 @@ function handleClick(e){
  const pnl=e.target.closest('[data-pnl-mode]');
  if(pnl){s.pnlMode=pnl.dataset.pnlMode;render();return}
  const per=e.target.closest('[data-period]');
- if(per){const key=per.dataset.chart||'overview';s.chartPeriod[key]=per.dataset.period;if(key==='futures'&&per.dataset.period!=='30d'&&s.chartMetric.futures==='realized30d')s.chartMetric.futures='pnl';if(key==='overview')s.period=per.dataset.period;chart();render();return}
+ if(per){const key=per.dataset.chart||'overview';s.chartPeriod[key]=per.dataset.period;if(key==='overview')s.period=per.dataset.period;chart();render();return}
  const met=e.target.closest('[data-metric]');
  if(met){s.chartMetric[met.dataset.chart]=met.dataset.metric;if(met.dataset.metric==='realized30d')s.chartPeriod[met.dataset.chart]='30d';render();return}
  const sort=e.target.closest('[data-sort]');
