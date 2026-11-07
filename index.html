@@ -489,7 +489,7 @@ async function fetchLongBybitPeriod(accountId,period,anchor){
    const cached=s.periodChunkCache[cacheKey];
    const immutable=stop<=Date.now()-2*86400000;
    const fresh=immutable||cached&&Date.now()-cached.receivedAt<600000;
-   if(cached&&fresh){
+   if(cached&&fresh&&Array.isArray(cached.data?.symbolBuckets)){
     results[i]=cached.data;
    }else{
     const u='./api/period-chunk?id='+encodeURIComponent(accountId)+
@@ -535,7 +535,7 @@ async function loadFuturesPeriod(period){
  const ids=[...s.bybitExpectedIds];
  const already=ids.every(id=>{
   const v=s.periodReports[period]?.[id];
-  return v&&Number.isFinite(v.netPnl)&&v.to===anchor&&
+  return v&&Number.isFinite(v.netPnl)&&v.to===anchor&&Array.isArray(v.symbolBuckets)&&
    (long||Date.now()-v.receivedAt<600000);
  });
  if(already)return;
@@ -551,7 +551,7 @@ async function loadFuturesPeriod(period){
  try{
   await Promise.all(ids.map(async id=>{
    const prev=s.periodReports[period][id];
-   if(prev&&Number.isFinite(prev.netPnl)&&prev.to===anchor&&
+   if(prev&&Number.isFinite(prev.netPnl)&&prev.to===anchor&&Array.isArray(prev.symbolBuckets)&&
       (long||Date.now()-prev.receivedAt<600000))return;
    try{
     let data;
@@ -1305,7 +1305,7 @@ async function loadMonthlyPerformance(id){
  if(!id||s.monthlyLoading[id]||!s.backendConnection.available)return;
  const prev=s.monthlyPerformance[id];
  const anchored=s.monthlyAnchorMs||Math.floor(Date.now()/300000)*300000;
- if(prev&&prev.endAt===anchored&&Date.now()-prev.receivedAt<600000)return;
+ if(prev&&prev.endAt===anchored&&Array.isArray(prev.symbolBuckets)&&Date.now()-prev.receivedAt<600000)return;
  s.monthlyLoading[id]=true;
  try{
   const r=await fetch('./api/monthly-pnl?id='+encodeURIComponent(id)+'&endAt='+anchored,{cache:'no-store',credentials:'same-origin'});
@@ -1387,7 +1387,7 @@ window.fxmr4App={onBackendStatus,onSnapshot,onAccounts,onDisconnected,applyCloud
     funding:v.funding||0,fees:v.fees||0,period:v.period||'',
     points:v.points.slice(-10000),days:(v.days||[]).slice(-750),
     symbols:(v.symbols||[]).slice(0,100),
-    symbolBuckets:Array.isArray(v.symbolBuckets)?v.symbolBuckets.slice(0,25000):null,
+    symbolBuckets:Array.isArray(v.symbolBuckets)&&v.symbolBuckets.length<=25000?v.symbolBuckets:null,
     receivedAt:Number(v.receivedAt)||Date.now(),
     costEvents:[],costEventsComplete:false};
   }
