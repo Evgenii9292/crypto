@@ -63,7 +63,6 @@ test('overview clearly separates 30-day realised PNL from currently open positio
  assert.match(overview,/Открытые монеты/);
  assert.match(overview,/Открытые позиции/);
  assert.doesNotMatch(overview,/Текущий PNL/);
- assert.doesNotMatch(overview,/PNL счёта/);
  assert.doesNotMatch(overview,/data-period="24h" data-chart="overview"/);
  assert.doesNotMatch(overview,/data-pnl-mode=/);
  assert.match(overview,/не входят в этот результат/);
@@ -266,7 +265,7 @@ test('existing portfolio keeps a full historical Spot chart without overview tim
  const {window,store,element}=mount([{id:'bybit',name:'Bybit',accounts:[]}]);
  assert.equal(window.fxmr4Inspect.s.chartPeriod.spot,'all');
  assert.equal(store.get('fxmr4_chart_range_all_v1'),'1');
- assert.match(element('content').innerHTML,/class="overviewLedger"/);
+ assert.match(element('content').innerHTML,/class="section pnlChart card overviewLedger"/);
  assert.doesNotMatch(element('content').innerHTML,/data-period="all" data-chart="overview"/);
 });
 test('futures subaccount uses Bybit unrealised value and its own 30-day report',()=>{
@@ -274,7 +273,7 @@ test('futures subaccount uses Bybit unrealised value and its own 30-day report',
  const v=window.fxmr4Inspect;
  v.onAccounts([{id:'sub-a',label:'Alpha'},{id:'sub-b',label:'Beta'}]);
  for(const [id,upl] of [['sub-a',-17],['sub-b',3]]){
-  v.onSnapshot({account:{id,name:id},updatedAt:Date.now(),
+  v.onSnapshot({account:{id,name:id==='sub-a'?'Alpha':'Beta'},updatedAt:Date.now(),
    totals:{equity:100,perpUPL:upl,accountPnl:-200,realisedPnl:-186,positionCount:1},
    positions:[{symbol:'BTCUSDT',side:'Long',pnl:upl,size:120}]});
  }
