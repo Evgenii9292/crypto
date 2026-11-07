@@ -211,7 +211,7 @@ function chartHTML(kind,period,metric='pnl'){
 function chartCaption(kind,period,p,metric='pnl'){
  const balance=metric==='balance',win=balance?balanceSeries(kind,period):pnlWindow(kind,period,metric);
  const scope=kind==='spot'?'Спот':kind==='futures'?'Фьючерсы':'Портфель';
- const label=balance?'баланс':metric==='floating'?'плавающий PNL':metric==='realized30d'?'закрытые сделки, funding и комиссии':'изменение PNL';
+ const label=balance?'баланс':metric==='floating'?'плавающий PNL':metric==='realized30d'?'закрытые сделки, funding и комиссии':'изменение PNL по наблюдениям';
  const periodName=PERIOD_NAMES[period]||PERIOD_NAMES['7d'];
  if(!win.points.length)return scope+' · '+label+' · '+periodName+' · история пока не накоплена';
  const first=new Date(win.first).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
@@ -225,7 +225,7 @@ function pnlChartBlock(opts){
  const metric=opts.metricOverride||(opts.metricSwitch?(s.chartMetric[key]||'pnl'):'pnl');
  const subtitle=opts.subtitle===undefined?'Динамика результатов по позициям':opts.subtitle;
  const showModes=!!opts.modes;
- const metricSwitch=opts.metricSwitch?`<div class="pnlMode"><button class="${metric==='pnl'?'active':''}" data-metric="pnl" data-chart="${key}" type="button">${kind==='futures'?'PNL счёта':'PNL'}</button>${kind==='futures'?`<button class="${metric==='realized30d'?'active':''}" data-metric="realized30d" data-chart="${key}" type="button">За 30 дней</button><button class="${metric==='floating'?'active':''}" data-metric="floating" data-chart="${key}" type="button">Плавающий</button>`:''}<button class="${metric==='balance'?'active':''}" data-metric="balance" data-chart="${key}" type="button">Баланс</button></div>`:'';
+ const metricSwitch=opts.metricSwitch?`<div class="pnlMode"><button class="${metric==='pnl'?'active':''}" data-metric="pnl" data-chart="${key}" type="button">${kind==='futures'?'Динамика счёта':'Динамика PNL'}</button>${kind==='futures'?`<button class="${metric==='realized30d'?'active':''}" data-metric="realized30d" data-chart="${key}" type="button">За 30 дней</button><button class="${metric==='floating'?'active':''}" data-metric="floating" data-chart="${key}" type="button">Плавающий</button>`:''}<button class="${metric==='balance'?'active':''}" data-metric="balance" data-chart="${key}" type="button">Баланс</button></div>`:'';
  const balanceValue=metric==='balance'?(kind==='spot'?sums().holdings:s.bybitSnapshot?.totals?.equity):null;
  const rawCurrent=metric==='pnl'?pnlWindow(kind,period,metric).points.at(-1)?.v:metric==='floating'?opts.summary?.futuresFloatingPnl:metric==='realized30d'?monthlyFutures()?.netPnl:opts.current;
   const current=metric==='balance'?(balanceValue!=null&&Number.isFinite(Number(balanceValue))?Number(balanceValue):null):rawCurrent==null?null:Number(rawCurrent);
@@ -260,7 +260,7 @@ function spotChartBlock(){
 }
 function futuresChartBlock(){
  const p=portfolioSummary();
- return pnlChartBlock({key:'futures',kind:'futures',title:'PNL · Фьючерсы',subtitle:'',
+ return pnlChartBlock({key:'futures',kind:'futures',title:'Фьючерсы · статистика',subtitle:'30 дней: операции Bybit. Динамика счёта: история наблюдений после подключения.',
   metricSwitch:true,current:p.futuresPnl,summary:p,invested:p.margin});
 }
 function spotDistribution(){
@@ -438,9 +438,17 @@ function futurePositionLine(p){
 function futureAccountRow(ex,ac){
  const id=ex.id+':'+ac.id,pp=futuresSorted().filter(p=>p.exchangeId===ex.id&&p.accountId===ac.id);
  const linked=ex.id==='bybit'&&!!s.bybitAccountsSnapshots?.[ac.id]&&s.backendConnection.connected;
- const current=linked&&pp.every(p=>p.pnl!=null)?pp.reduce((v,p)=>v+Number(p.pnl),0):null;
- const pnl=`<span class="accountMetrics"><span><small>Сейчас</small><b class="${current==null?'neutral':cls(current)}">${current==null?'—':signed(current)}</b></span><span><small>Всё время</small><b class="neutral" title="Для точного расчёта нужна история закрытых позиций">—</b></span></span>`;
- return `<div class="sourceSub"><div class="accountRow"><button type="button" class="sourceSubHeader" data-action="toggleAccount" data-id="${escape(id)}"><span class="accountIdentity"><strong>${escape(ac.name)}</strong><span class="accountTag">Фьючерсы</span></span><span class="sourceSubRight">${pnl}<span class="chev ${s.openedAccounts[id]?'rotated':''}">⌄</span></span></button><button class="accountManage" type="button" data-action="manageAccount" data-id="${escape(id)}" aria-label="Настройки ${escape(ac.name)}">${icon('settings')}</button></div>${s.openedAccounts[id]?(pp.length?pp.map(futurePositionLine).join(''):'<div class="sourceEmpty">Нет открытых позиций или API не подключён.</div>'):''}</div>`;
+ const snapshot=linked?s.bybitAccountsSnapshots[ac.id]:null;
+ const openRaw=snapshot?.totals?.perpUPL;
+ const open=openRaw==null||!Number.isFinite(Number(openRaw))?null:Number(openRaw);
+ const report=linked?s.monthlyPerformance[ac.id]:null;
+ const monthly=report&&Number.isFinite(report.netPnl)?report.netPnl:null;
+ const reportHint=report?.error||'Результат закрытых операций Bybit за последние 30 дней';
+ const metrics=`<span class="accountMetrics">
+  <span><small>Открытые позиции</small><b class="${open==null?'neutral':cls(open)}">${open==null?'—':signed(open)}</b></span>
+  <span><small>За 30 дней</small><b class="${monthly==null?'neutral':cls(monthly)}" title="${escape(reportHint)}">${monthly==null?'—':signed(monthly)}</b></span>
+ </span>`;
+ return `<div class="sourceSub"><div class="accountRow"><button type="button" class="sourceSubHeader" data-action="toggleAccount" data-id="${escape(id)}"><span class="accountIdentity"><strong>${escape(ac.name)}</strong><span class="accountTag">Фьючерсы</span></span><span class="sourceSubRight">${metrics}<span class="chev ${s.openedAccounts[id]?'rotated':''}">⌄</span></span></button><button class="accountManage" type="button" data-action="manageAccount" data-id="${escape(id)}" aria-label="Настройки ${escape(ac.name)}">${icon('settings')}</button></div>${s.openedAccounts[id]?(pp.length?pp.map(futurePositionLine).join(''):'<div class="sourceEmpty">Нет открытых позиций или API не подключён.</div>'):''}</div>`;
 }
 function futureExchangeCard(ex){
  const opened=!!s.openedExchanges[ex.id],balance=ex.id==='bybit'&&s.backendConnection.connected&&s.bybitSnapshot?.totals?.equity!=null?dollars(s.bybitSnapshot.totals.equity):'—';
@@ -457,7 +465,6 @@ function futures(){
  const snap=s.bybitSnapshot?.totals,ready=!!s.backendConnection.connected&&!!snap;
  const upl=ready&&snap.perpUPL!=null?Number(snap.perpUPL):null;
  const open=s.futuresPositions.filter(p=>p.exchangeId==='bybit');
- const accountPnl=ready&&snap.accountPnl!=null?Number(snap.accountPnl):null;
  const monthly=monthlyFutures();
  const monthlyError=(s.bybitExpectedIds||[]).map(id=>s.monthlyPerformance[id]?.error).find(Boolean);
   const metrics=[['Баланс субаккаунта',ready&&snap.equity!=null?dollars(snap.equity):'—',''],
