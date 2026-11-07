@@ -11,7 +11,9 @@
   let active=false,ready=false,rev=0,waiting=false,writing=false,pending=false,remoteApplying=false;
   let lastWritten={};
   const $=id=>document.getElementById(id);
-  const pause=()=>document.hidden||!!document.querySelector('#tradeForm,#slForm,#capitalForm,#bybitConnectForm');
+  const pause=()=>document.hidden||
+    !!document.querySelector('#tradeForm,#priceForm,#slForm,#capitalForm,#bybitConnectForm,.bybitRenameForm,.settingsRenameForm')||
+    !!document.activeElement?.matches?.('input:not([type="hidden"]),textarea,select,[contenteditable="true"]');
   const canSend=location.protocol==="https:"||["localhost","127.0.0.1"].includes(location.hostname);
 
   async function api(url,body=null){
