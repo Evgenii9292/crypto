@@ -165,7 +165,7 @@ test('no historical ledger never invents a monthly profit',()=>{
  view.s.tab='futures';view.render();
  const rendered=element('content').innerHTML;
  assert.match(rendered,/Результат за 30 дней/);
- assert.match(rendered,/Нет истории за этот период/);
+ assert.match(rendered,/Нет подтверждённой истории за этот период/);
  assert.equal(view.monthlyFutures(),null);
 });
 
@@ -364,6 +364,7 @@ test('clicking history period fetches both Bybit subaccounts and reuses cached r
  const urls=[];
  const stub=async url=>{
   if(!String(url).includes('/api/period-performance?'))return new Promise(()=>{});
+  if(!String(url).includes('period=24h'))return {ok:false,json:async()=>({error:'Данные за сегодня не загружены'})};
   urls.push(String(url));
   const key=url.includes('id=sub-a')?'sub-a':'sub-b';
   const end=Number(url.match(/endAt=(\d+)/)[1]);
