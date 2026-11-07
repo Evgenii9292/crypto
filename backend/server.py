@@ -43,6 +43,7 @@ EPHEMERAL = {"key": None, "secret": None, "label": "Subaccount"}
 CACHE = {"at": 0.0, "data": None}
 EXTRA_CACHE = {}
 MONTH_CACHE = {}  # Cached per API key, never contains API credentials.
+CHUNK_CACHE = {}  # Bounded cache of independently fetched 6-day transaction windows.
 MIME = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
         ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml"}
 
@@ -231,7 +232,7 @@ def monthly_futures_activity(key, secret, end_ms=None, period_ms=PERFORMANCE_MS,
     a partial total when pagination or a monetary field is unknown.
     """
     end_ms = int(time.time() * 1000) if end_ms is None else int(end_ms)
-    if period_ms not in PERFORMANCE_PERIODS.values():
+    if period_ms not in PERFORMANCE_PERIODS.values() and not 0 < period_ms <= LEDGER_WINDOW_MS:
         raise BybitFailure("Неподдерживаемый период истории Bybit")
     start_ms = (end_ms // 86400000) * 86400000 if utc_today else end_ms - period_ms
     # Cumulative net PNL points are aggregated from actual exchange records.
@@ -388,6 +389,49 @@ def monthly_account_performance(account_id, end_ms=None, period='30d'):
             MONTH_CACHE.clear()
         MONTH_CACHE[cache_key] = {"at": time.monotonic(), "end_ms": end_ms, "fingerprint": fingerprint, "data": result}
     return result
+
+
+
+def chunk_account_performance(account_id, start_ms, end_ms):
+    """Load one bounded slice of exchange history.
+
+    The browser combines six-day slices for 90/180/365-day views, avoiding one
+    very long HTTP response that can time out behind the reverse proxy.
+    Cached responses are keyed by both UTC bounds and API key fingerprint.
+    """
+    try:
+        start_ms, end_ms = int(start_ms), int(end_ms)
+    except (TypeError, ValueError) as exc:
+        raise BybitFailure("Неверные границы периода") from exc
+    now_ms = int(time.time() * 1000)
+    if (end_ms <= start_ms or end_ms-start_ms > LEDGER_WINDOW_MS or
+        start_ms < now_ms-730*86400000 or end_ms > now_ms+60000):
+        raise BybitFailure("Период должен быть не длиннее шести дней и не старше двух лет")
+    if account_id == "bybit-subaccount":
+        key, secret, _ = credentials()
+    else:
+        account = next((a for a in saved_state.list_extra_accounts() if a["id"] == account_id), None)
+        if account is None:
+            raise BybitFailure("Субаккаунт не найден")
+        key, secret = account["key"], account["secret"]
+    if not key or not secret:
+        raise BybitFailure("API-ключ субаккаунта не настроен")
+    fingerprint = hashlib.sha256((key+":"+secret).encode("utf-8")).digest()
+    cache_key = (account_id, start_ms, end_ms)
+    with LOCK:
+        cached = CHUNK_CACHE.get(cache_key)
+        if (cached and cached["fingerprint"] == fingerprint and
+            time.monotonic()-cached["at"] < 3600):
+            return cached["data"]
+    report = monthly_futures_activity(key, secret, end_ms=end_ms,
+                                      period_ms=end_ms-start_ms)
+    report["source"] = "Bybit transaction-log · verified 6-day slice · UTC"
+    with LOCK:
+        if len(CHUNK_CACHE) > 1800:
+            CHUNK_CACHE.clear()
+        CHUNK_CACHE[cache_key] = {"at": time.monotonic(),
+                                  "fingerprint": fingerprint, "data": report}
+    return report
 
 
 def snapshot():
@@ -566,6 +610,18 @@ class Handler(BaseHTTPRequestHandler):
                         if r.get("accountId") in allowed]
                 self._json({"points": rows, "source": "FXMR4 authenticated Bybit equity snapshots",
                             "historicalBackfill": False})
+            except saved_state.StateError as exc:
+                self._json({"error": str(exc)}, 500)
+            return
+        if path == "/api/period-chunk":
+            try:
+                query = parse_qs(urlsplit(self.path).query)
+                account_id = query.get("id", [""])[0]
+                start_at = query.get("startAt", [None])[0]
+                end_at = query.get("endAt", [None])[0]
+                self._json(chunk_account_performance(account_id, start_at, end_at))
+            except BybitFailure as exc:
+                self._json({"error": str(exc)}, 503)
             except saved_state.StateError as exc:
                 self._json({"error": str(exc)}, 500)
             return
