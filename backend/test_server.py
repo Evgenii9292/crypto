@@ -485,6 +485,44 @@ class TestLongTermBybitHistory(TestCase):
         self.assertEqual(a["symbols"][0]["symbol"], "ADAUSDT")
         self.assertEqual(a["days"][0]["netPnl"], 2.8)
 
+    def test_completed_history_survives_server_restart_on_private_disk(self):
+        import tempfile
+        from pathlib import Path
+        now = int(server.time.time() * 1000)
+        end = now // 86400000 * 86400000 - 3 * 86400000
+        start = end - 6 * 86400000
+        requests = []
+        def bybit(path, params, key, secret):
+            requests.append(dict(params))
+            return {"list": [
+                {"type": "TRADE", "category": "linear", "currency": "USDT",
+                 "symbol": "ADAUSDT", "transactionTime": str(start + 3600000),
+                 "cashFlow": "8", "fee": "0.5", "funding": "0"}],
+                "nextPageCursor": ""}
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.object(server.saved_state, "DATA_DIR", Path(directory)):
+                with patch.object(server, "credentials", return_value=("k", "s", "A")):
+                    with patch.object(server, "request_bybit", side_effect=bybit):
+                        first = server.chunk_account_performance(
+                            "bybit-subaccount", start, end)
+                        server.CHUNK_CACHE.clear()  # Simulate a full Python restart.
+                        second = server.chunk_account_performance(
+                            "bybit-subaccount", start, end)
+                self.assertEqual(len(requests), 1)
+                self.assertEqual(first["netPnl"], 7.5)
+                self.assertEqual(second["netPnl"], 7.5)
+                saved_files = list(Path(directory).glob("bybit-ledger-*.json"))
+                self.assertEqual(len(saved_files), 1)
+                self.assertEqual(saved_files[0].stat().st_mode & 0o777, 0o600)
+                self.assertNotIn("api", saved_files[0].name)
+                # Replacing the API credentials invalidates this cache.
+                with patch.object(server, "credentials", return_value=("new-k", "s", "A")):
+                    with patch.object(server, "request_bybit", side_effect=bybit):
+                        server.chunk_account_performance(
+                            "bybit-subaccount", start, end)
+                self.assertEqual(len(requests), 2)
+        server.CHUNK_CACHE.clear()
+
     def test_slice_rejects_gaps_over_six_days_and_outdated_history(self):
         now = int(server.time.time() * 1000)
         with patch.object(server, "credentials") as credential:
