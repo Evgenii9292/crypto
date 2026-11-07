@@ -42,6 +42,7 @@ LOCK = threading.RLock()
 EPHEMERAL = {"key": None, "secret": None, "label": "Subaccount"}
 CACHE = {"at": 0.0, "data": None}
 EXTRA_CACHE = {}
+MONTH_CACHE = {}  # Cached per API key, never contains API credentials.
 MIME = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
         ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml"}
 
@@ -137,7 +138,9 @@ def collect_positions(key, secret, settle_coin):
                 "stopLoss": _num(p.get("stopLoss")),
                 # Bybit reports the position's first open time; sorting by it is
                 # the only way to read "oldest position first" from the venue.
-                "openedAt": _int_ms(p.get("createdTime")),
+                # createdTime is the first-ever position on this symbol, often months old.
+                # openTime is the current position start; 0 means Bybit does not know.
+                "openedAt": _int_ms(p.get("openTime")),
                 "accountId": "bybit-subaccount",
                 "exchangeId": "bybit",
                 "settleCoin": settle_coin,
@@ -188,6 +191,115 @@ def futures_pnl_totals(account):
     realised = realised_futures_pnl(account)
     combined = realised + floating if realised is not None and floating is not None else None
     return {"realisedPnl": realised, "accountPnl": combined}
+
+
+
+# The exchange ledger covers a real 30-day result even when this VPS has not
+# accumulated 30 days of snapshot samples. Bybit limits each query to 7 days.
+PERFORMANCE_MS = 30 * 24 * 3600 * 1000
+LEDGER_WINDOW_MS = 6 * 24 * 3600 * 1000
+LEDGER_TYPES = {"TRADE", "SETTLEMENT", "DELIVERY", "LIQUIDATION", "ADL"}
+
+
+def monthly_futures_activity(key, secret, end_ms=None):
+    """Closed/settled derivatives cash flows + funding - trading fees, UTC.
+
+    Excludes transfers and open-position unrealised PNL. Do not silently return
+    a partial total when pagination or a monetary field is unknown.
+    """
+    end_ms = int(time.time() * 1000) if end_ms is None else int(end_ms)
+    start_ms = end_ms - PERFORMANCE_MS
+    totals = {"tradingPnl": 0.0, "funding": 0.0, "fees": 0.0}
+    daily = {}
+    unknown_types = set()
+    left = start_ms
+    while left <= end_ms:
+        right = min(end_ms, left + LEDGER_WINDOW_MS - 1)
+        cursor = ""
+        for page_number in range(100):
+            params = {"accountType": "UNIFIED", "category": "linear",
+                      "startTime": str(left), "endTime": str(right), "limit": "50"}
+            if cursor:
+                params["cursor"] = cursor
+            page = request_bybit("/v5/account/transaction-log", params, key, secret)
+            for record in page.get("list") or []:
+                if not isinstance(record, dict):
+                    raise BybitFailure("Bybit вернул некорректную запись операций")
+                if str(record.get("category") or "linear").lower() != "linear":
+                    continue
+                when = _int_ms(record.get("transactionTime"))
+                if when is None:
+                    raise BybitFailure("В операции Bybit отсутствует дата")
+                if not start_ms <= when <= end_ms:
+                    continue
+                currency = str(record.get("currency") or "").upper()
+                if currency not in ("USDT", "USDC"):
+                    continue  # Never mix BTC-denominated results with dollars.
+                kind = str(record.get("type") or "").upper()
+                if kind not in LEDGER_TYPES:
+                    # Transfers, bonuses and other balance adjustments are not PNL.
+                    # Raise on unfamiliar nonzero derivative cash flow instead of
+                    # mislabelling it as profit or silently ignoring actual trades.
+                    if kind not in {"TRANSFER", "BONUS", "DEPOSIT", "WITHDRAW", "INTEREST"}:
+                        unknown_types.add(kind or "UNKNOWN")
+                    continue
+                pieces = {}
+                for source, name in (("cashFlow", "tradingPnl"),
+                                     ("funding", "funding"), ("fee", "fees")):
+                    raw = record.get(source)
+                    value = _num("0" if raw in (None, "") else raw)
+                    if value is None:
+                        raise BybitFailure("Bybit вернул некорректную сумму операции")
+                    pieces[name] = value
+                date = time.strftime("%Y-%m-%d", time.gmtime(when / 1000))
+                bucket = daily.setdefault(date, {"tradingPnl": 0.0, "funding": 0.0, "fees": 0.0})
+                for name, value in pieces.items():
+                    bucket[name] += value
+                    totals[name] += value
+            following = page.get("nextPageCursor") or ""
+            if not following:
+                break
+            if following == cursor:
+                raise BybitFailure("Повторяется курсор истории Bybit")
+            cursor = following
+        else:
+            raise BybitFailure("История операций слишком большая для точного расчёта")
+        left = right + 1
+    if unknown_types:
+        raise BybitFailure("Неизвестный тип операции Bybit: " + ", ".join(sorted(unknown_types))[:90])
+    days = []
+    for date, values in sorted(daily.items()):
+        days.append({"date": date, "netPnl": round(values["tradingPnl"] + values["funding"] - values["fees"], 8),
+                     "funding": round(values["funding"], 8), "fees": round(values["fees"], 8)})
+    result = {"from": start_ms, "to": end_ms, "days": days,
+              "tradingPnl": round(totals["tradingPnl"], 8),
+              "funding": round(totals["funding"], 8),
+              "fees": round(totals["fees"], 8),
+              "netPnl": round(totals["tradingPnl"] + totals["funding"] - totals["fees"], 8),
+              "source": "Bybit transaction-log · linear · UTC",
+              "includesUnrealised": False}
+    return result
+
+
+def monthly_account_performance(account_id):
+    if account_id == "bybit-subaccount":
+        key, secret, _ = credentials()
+    else:
+        account = next((a for a in saved_state.list_extra_accounts() if a["id"] == account_id), None)
+        if not account:
+            raise BybitFailure("Субаккаунт не найден")
+        key, secret = account["key"], account["secret"]
+    if not key or not secret:
+        raise BybitFailure("API-ключ субаккаунта не настроен")
+    fingerprint = hashlib.sha256((key + ":" + secret).encode("utf-8")).digest()
+    with LOCK:
+        cached = MONTH_CACHE.get(account_id)
+        if cached and cached["fingerprint"] == fingerprint and time.monotonic() - cached["at"] < 900:
+            return cached["data"]
+    result = monthly_futures_activity(key, secret)
+    with LOCK:
+        MONTH_CACHE[account_id] = {"at": time.monotonic(), "fingerprint": fingerprint, "data": result}
+    return result
 
 
 def snapshot():
@@ -356,6 +468,15 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/accounts":
             try:
                 self._json({"accounts": linked_accounts()})
+            except saved_state.StateError as exc:
+                self._json({"error": str(exc)}, 500)
+            return
+        if path == "/api/monthly-pnl":
+            try:
+                account_id = parse_qs(urlsplit(self.path).query).get("id", [""])[0]
+                self._json(monthly_account_performance(account_id))
+            except BybitFailure as exc:
+                self._json({"error": str(exc)}, 503)
             except saved_state.StateError as exc:
                 self._json({"error": str(exc)}, 500)
             return
