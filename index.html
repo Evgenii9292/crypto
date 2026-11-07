@@ -85,7 +85,7 @@
   const nowLocal=()=>{const d=new Date();return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-')};
   const fmtDate=d=>{if(!d)return 'Нет даты';const a=d.slice(0,10).split('-');return a.length===3?`${a[2]}.${a[1]}.${a[0]}`:d};
   const fmtTime=d=>{if(!d)return '';const x=new Date(d);return isNaN(x)?'':x.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})};
-  const s={tab:'overview',trades:[{id:1,coin:'BTC',spent:25,entry:76200,buy_date:'2026-11-06',confirmed:false},{id:2,coin:'ETH',spent:25,entry:2247,buy_date:'2026-11-06',confirmed:false}],quotes:{BTC:{price:initial.BTC,source:'Предварительно'},ETH:{price:initial.ETH,source:'Предварительно'}},capital:C,period:'7d',chartPeriod:{overview:'7d',spot:'7d',futures:'7d'},chartMetric:{spot:'pnl',futures:'pnl'},points:[],snapshots:[],sync:null,form:false,editing:null,deleteId:null,busy:false,flash:'',formError:'',showPrices:false,tradingSubtab:'futures',futureMode:'all',futureSort:'pnl',futureSortDir:-1,pnlMode:'all',capitalOpen:false,portfolioSnapshots:[],pnlHistory:[],pendingRemove:null,renameId:null,renameValue:'',renameError:'',futureForm:null,futureFormError:'',sources:[{id:'bybit',name:'Bybit',connected:false,accounts:[]}],futuresPositions:[],openedExchanges:{},openedAccounts:{},spotHistoryOpen:false,spotAccountsOpen:false,spotOpen:{},bybitSnapshot:null,bybitAccountsSnapshots:{},bybitExpectedIds:[],backendConnection:{available:false,configured:false,connected:false,error:''}};
+  const s={tab:'overview',trades:[{id:1,coin:'BTC',spent:25,entry:76200,buy_date:'2026-11-06',confirmed:false},{id:2,coin:'ETH',spent:25,entry:2247,buy_date:'2026-11-06',confirmed:false}],quotes:{BTC:{price:initial.BTC,source:'Предварительно'},ETH:{price:initial.ETH,source:'Предварительно'}},capital:C,period:'7d',chartPeriod:{overview:'7d',spot:'7d',futures:'30d'},chartMetric:{spot:'pnl',futures:'realized30d'},points:[],snapshots:[],sync:null,form:false,editing:null,deleteId:null,busy:false,flash:'',formError:'',showPrices:false,tradingSubtab:'futures',futureMode:'all',futureSort:'pnl',futureSortDir:-1,pnlMode:'all',capitalOpen:false,portfolioSnapshots:[],pnlHistory:[],pendingRemove:null,renameId:null,renameValue:'',renameError:'',futureForm:null,futureFormError:'',sources:[{id:'bybit',name:'Bybit',connected:false,accounts:[]}],futuresPositions:[],openedExchanges:{},openedAccounts:{},spotHistoryOpen:false,spotAccountsOpen:false,spotOpen:{},bybitSnapshot:null,bybitAccountsSnapshots:{},monthlyPerformance:{},monthlyLoading:{},bybitExpectedIds:[],backendConnection:{available:false,configured:false,connected:false,error:''}};
   function coin(m){const trades=s.trades.filter(t=>t.coin===m);const invested=trades.reduce((t,x)=>t+Number(x.spent),0);const quantity=trades.reduce((t,x)=>t+Number(x.spent)/Number(x.entry),0);const current=Number(s.quotes[m]?.price||initial[m]);const value=quantity*current;return {invested,quantity,current,value,profit:value-invested,remaining:C/2-invested,avg:quantity?invested/quantity:0,provisional:trades.some(t=>!t.confirmed)}}
   function sums(){const btc=coin('BTC'),eth=coin('ETH'),invested=btc.invested+eth.invested,cash=C-invested,holdings=btc.value+eth.value,profit=holdings-invested;return {btc,eth,invested,cash,holdings,profit,total:cash+holdings}}
 
@@ -139,9 +139,41 @@ function pnlSeries(kind,metric='pnl'){
  }
  return {kind,field,points:Array.from(byTime.values()).sort((a,b)=>a.t-b.t)};
 }
+
+function monthlyFutures(){
+ const ids=s.bybitExpectedIds||[];
+ if(!ids.length)return null;
+ const parts=ids.map(id=>s.monthlyPerformance[id]);
+ if(parts.some(p=>!p||!Number.isFinite(p.netPnl)))return null;
+ const totals={netPnl:0,tradingPnl:0,funding:0,fees:0,from:Infinity,to:0,days:[]};
+ const days=new Map();
+ for(const p of parts){
+  for(const k of ['netPnl','tradingPnl','funding','fees'])totals[k]+=p[k]||0;
+  totals.from=Math.min(totals.from,p.from);totals.to=Math.max(totals.to,p.to);
+  for(const d of p.days||[])days.set(d.date,(days.get(d.date)||0)+Number(d.netPnl||0));
+ }
+ totals.days=Array.from(days,([date,netPnl])=>({date,netPnl})).sort((a,b)=>a.date.localeCompare(b.date));
+ return totals;
+}
+function monthlyFuturesSeries(){
+ const p=monthlyFutures();
+ if(!p)return [];
+ let running=0;
+ const points=[{t:p.from,v:0}];
+ for(const d of p.days){
+  const t=Math.min(p.to,Date.parse(d.date+'T23:59:59.999Z'));
+  if(!Number.isFinite(t)||t<=p.from)continue;
+  running+=d.netPnl;
+  points.push({t,v:running});
+ }
+ points.push({t:p.to,v:p.netPnl});
+ return points.sort((a,b)=>a.t-b.t);
+}
+
 function pnlWindow(kind,period,metric='pnl'){
  const from=Date.now()-(PERIODS[period]||PERIODS['7d']);
- const all=pnlSeries(kind,metric).points,points=all.filter(p=>p.t>=from).slice(-1500);
+ const all=kind==='futures'&&metric==='realized30d'?monthlyFuturesSeries():pnlSeries(kind,metric).points;
+ const points=all.filter(p=>p.t>=from).slice(-1500);
  return {all,points,from,first:points.length?points[0].t:null,last:points.length?points[points.length-1].t:null};
 }
 function balanceSeries(kind,period){
@@ -487,6 +519,7 @@ function onDisconnected(){
  const bybit=s.sources.find(x=>x.id==='bybit');
  if(bybit){bybit.connected=false;bybit.accounts=bybit.accounts.filter(x=>x.id!=='bybit-subaccount')}
  s.futuresPositions=s.futuresPositions.filter(x=>x.accountId!=='bybit-subaccount');
+ delete s.monthlyPerformance['bybit-subaccount'];
  s.bybitSnapshot=null;s.backendConnection={available:true,configured:false,connected:false,error:''};s.pendingRemove=null;saveLocal();render();
 }
 function onBackendStatus(status){
@@ -512,6 +545,7 @@ function onAccounts(accounts){
   else bybit.accounts.push({id:a.id,name:String(a.label||'Субаккаунт').slice(0,40),balance:null,apiLinked:true});
  }
  const removed=Object.keys(s.bybitAccountsSnapshots||{}).filter(id=>!ids.includes(id));
+ for(const key of Object.keys(s.monthlyPerformance))if(!ids.includes(key))delete s.monthlyPerformance[key];
  for(const id of removed){
   delete s.bybitAccountsSnapshots[id];
   s.futuresPositions=s.futuresPositions.filter(p=>p.accountId!==id);
@@ -535,6 +569,23 @@ function rebuildBybitTotals(){
  }
  s.bybitSnapshot={totals,account:{id:'all',name:'Все субаккаунты'},updatedAt:Math.min(...snapshots.map(ss=>Number(ss.updatedAt)||Date.now()))};
 }
+
+async function loadMonthlyPerformance(id){
+ if(!id||s.monthlyLoading[id]||!s.backendConnection.available)return;
+ const prev=s.monthlyPerformance[id];
+ if(prev&&Date.now()-prev.receivedAt<600000)return;
+ s.monthlyLoading[id]=true;
+ try{
+  const r=await fetch('./api/monthly-pnl?id='+encodeURIComponent(id),{cache:'no-store',credentials:'same-origin'});
+  const data=await r.json();
+  if(r.ok&&Number.isFinite(data.netPnl))s.monthlyPerformance[id]={...data,receivedAt:Date.now()};
+  else s.monthlyPerformance[id]={error:data.error||'Нет журнала операций',receivedAt:Date.now()};
+  if(s.tab==='overview'||s.tab==='futures')render();
+ }catch(e){
+  s.monthlyPerformance[id]={error:'Нет доступа к месячной статистике',receivedAt:Date.now()};
+ }finally{delete s.monthlyLoading[id]}
+}
+
 function onSnapshot(data){
  if(!data||!data.account||!data.totals||!Array.isArray(data.positions))return;
  const accountId=String(data.account.id||'bybit-subaccount');
@@ -562,6 +613,7 @@ function onSnapshot(data){
  );
  s.bybitAccountsSnapshots[accountId]=data;
  rebuildBybitTotals();
+ loadMonthlyPerformance(accountId);
  s.backendConnection={available:true,configured:true,connected:!!s.bybitSnapshot,error:''};
  recordPortfolioSnapshot();saveLocal(false);render();
 }
@@ -601,7 +653,7 @@ window.fxmr4App={onBackendStatus,onSnapshot,onAccounts,onDisconnected,applyCloud
         s.period=s.chartPeriod.overview;
       }
       if(saved.chartMetric&&typeof saved.chartMetric==='object'){
-        for(const k of ['spot','futures'])if(['pnl','balance'].includes(saved.chartMetric[k]))s.chartMetric[k]=saved.chartMetric[k];
+        for(const k of ['spot','futures'])if(['pnl','balance','floating','realized30d'].includes(saved.chartMetric[k]))s.chartMetric[k]=saved.chartMetric[k];
       }
       if(saved.futureSort&&FUTURE_SORTS.some(([k])=>k===saved.futureSort))s.futureSort=saved.futureSort;
       if(saved.futureSortDir===-1||saved.futureSortDir===1)s.futureSortDir=saved.futureSortDir;
@@ -786,9 +838,9 @@ function handleClick(e){
  const pnl=e.target.closest('[data-pnl-mode]');
  if(pnl){s.pnlMode=pnl.dataset.pnlMode;render();return}
  const per=e.target.closest('[data-period]');
- if(per){const key=per.dataset.chart||'overview';s.chartPeriod[key]=per.dataset.period;if(key==='overview')s.period=per.dataset.period;chart();render();return}
+ if(per){const key=per.dataset.chart||'overview';s.chartPeriod[key]=per.dataset.period;if(key==='futures'&&per.dataset.period!=='30d'&&s.chartMetric.futures==='realized30d')s.chartMetric.futures='pnl';if(key==='overview')s.period=per.dataset.period;chart();render();return}
  const met=e.target.closest('[data-metric]');
- if(met){s.chartMetric[met.dataset.chart]=met.dataset.metric;render();return}
+ if(met){s.chartMetric[met.dataset.chart]=met.dataset.metric;if(met.dataset.metric==='realized30d')s.chartPeriod[met.dataset.chart]='30d';render();return}
  const sort=e.target.closest('[data-sort]');
  if(sort){const key=sort.dataset.sort;if(s.futureSort===key)s.futureSortDir*=-1;else{s.futureSort=key;s.futureSortDir=(key==='symbol'||key==='side')?1:-1}render();return}
  const mode=e.target.closest('[data-future-mode]');
