@@ -43,7 +43,7 @@ function mount(sources){
   setTimeout:()=>1,clearTimeout(){},setInterval:()=>{},
   window:{},FormData:class{constructor(form){this.form=form}get(key){return this.form.fields?.[key]??null}}
  };
- vm.runInNewContext(script.replace('window.fxmr4GetState=()=>', 'window.fxmr4Inspect={s,onAccounts,onSnapshot,render,monthlyFutures,monthlyFuturesSeries,positionAge};window.fxmr4GetState=()=>'),context,{filename:'index.html',timeout:3000});
+ vm.runInNewContext(script.replace('window.fxmr4GetState=()=>', 'window.fxmr4Inspect={s,onAccounts,onSnapshot,render,renderLive,reconcileLive,pnlWindow,monthlyFutures,monthlyFuturesSeries,positionAge};window.fxmr4GetState=()=>'),context,{filename:'index.html',timeout:3000});
  const click=action=>{
   const target={dataset:{action},closest(selector){return selector==='[data-action]'?this:null}};
   for(const listener of listeners.click||[])listener({target});
@@ -196,4 +196,73 @@ test('multiaccount monthly summary requires one identical 30-day reporting windo
  assert.equal(v.monthlyFutures(),null,'cannot mix unmatched reporting intervals');
  v.s.monthlyPerformance.b=second;
  assert.equal(v.monthlyFutures().netPnl,5);
+});
+
+test('each chart can show one year or all observed history with explicit dates',()=>{
+ const {window,element}=mount([{id:'bybit',name:'Bybit',accounts:[]}]);
+ const view=window.fxmr4Inspect,now=Date.now();
+ view.s.backendConnection.configured=true;
+ view.s.pnlHistory=[
+  {t:now-600000,spot:0.7,futuresAccount:-288.18},
+  {t:now-300000,spot:1.2,futuresAccount:-275.18}
+ ];
+ const total=view.pnlWindow('all','all').points;
+ assert.equal(total.length,2);
+ assert.equal(total[0].v,0,'the first observed reading is the period baseline');
+ assert.ok(Math.abs(total[1].v-13.5)<0.000001);
+ assert.ok(Math.abs(view.pnlWindow('spot','1y').points[1].v-0.5)<0.000001);
+ assert.equal(view.pnlWindow('futures','24h').points[1].v,13);
+ view.s.tab='overview';view.s.chartPeriod.overview='all';view.render();
+ const overview=element('content').innerHTML;
+ assert.match(overview,/data-period="1y"/);
+ assert.match(overview,/data-period="all"/);
+ assert.match(overview,/данные с/);
+ assert.match(overview,/изменение PNL/);
+ assert.match(overview,/Всё/);
+ view.s.tab='positions';view.render();
+ assert.match(element('content').innerHTML,/data-period="1y" data-chart="spot"/);
+ assert.match(element('content').innerHTML,/data-period="all" data-chart="spot"/);
+ view.s.tab='futures';view.s.chartMetric.futures='pnl';view.render();
+ assert.match(element('content').innerHTML,/data-period="1y" data-chart="futures"/);
+ assert.match(element('content').innerHTML,/data-period="all" data-chart="futures"/);
+});
+
+test('passive DOM reconciler retains active form, focus and unchanged nodes',()=>{
+ const {window,document}=mount([{id:'bybit',name:'Bybit',accounts:[]}]);
+ const view=window.fxmr4Inspect;
+ const textNode=value=>({nodeType:3,nodeValue:value,cloneNode(){return textNode(this.nodeValue)}});
+ const el=(tag,children=[])=>{
+  const node={nodeType:1,tagName:tag,id:'',isContentEditable:false,childNodes:children,
+   attributes:[],hasAttribute(){return false},getAttribute(){return null},
+   contains(x){return this.childNodes.includes(x)},
+   cloneNode(){return el(this.tagName,this.childNodes.map(n=>n.cloneNode()))},
+   appendChild(n){this.childNodes.push(n)},
+   removeAttribute(){},setAttribute(){}};
+  return node;
+ };
+ const typed=el('INPUT'),form=el('FORM',[typed]);
+ typed.value='Мой незаконченный текст';
+ const price=el('SPAN',[textNode('$100')]);
+ const root=el('DIV',[form,price]);
+ const incoming=el('DIV',[el('FORM',[el('INPUT')]),el('SPAN',[textNode('$101')])]);
+ document.activeElement=typed;
+ view.reconcileLive(root,incoming);
+ assert.equal(root.childNodes[0],form,'must not replace focused form');
+ assert.equal(form.childNodes[0],typed,'focused input remains same object');
+ assert.equal(typed.value,'Мой незаконченный текст');
+ assert.equal(root.childNodes[1],price,'stable metric container is not recreated');
+ assert.equal(price.childNodes[0].nodeValue,'$101','only metric text changed');
+ const fragment={nodeType:11,childNodes:[el('FORM',[el('INPUT')]),el('SPAN',[textNode('$102')])]};
+ view.reconcileLive(root,fragment);
+ assert.equal(root.childNodes[0],form,'template fragment must not replace the workspace');
+ assert.equal(price.childNodes[0].nodeValue,'$102');
+});
+
+test('automatic updates do not restart pane animation or remount buying strategy',()=>{
+ assert.match(html,/function renderLive\(\)/);
+ assert.match(html,/reconcileLive\(content,template\.content\)/);
+ assert.match(html,/current\.id==='strategyMount'/);
+ assert.match(html,/current\.tagName==='FORM'&&active&&current\.contains\(active\)/);
+ assert.doesNotMatch(html,/classList\.remove\('pane'\)/);
+ assert.doesNotMatch(html,/classList\.add\('pane'\)/);
 });
