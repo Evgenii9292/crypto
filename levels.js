@@ -57,7 +57,7 @@ function chart(sym,st){
 }
 function levelRow(sym,l,st,index){
  const info=priceInfo(sym,st),status=statusFor(l,info),drop=changePercent(l.price,info.price),pctDisplay=Number.isFinite(drop)?fmtPct(drop):'—';
- return '<div class="sl-level '+status.kind+'"><div class="sl-level-left"><span class="sl-indicator"></span><div><strong>'+fmtPrice(l.price)+'</strong><small>'+escape(status.label)+'</small></div></div><div class="sl-level-middle"><strong>'+(l.amount?money(l.amount):'Сумма не задана')+'</strong><small>'+pctDisplay+' от текущей цены</small></div><button type="button" class="sl-edit-btn" data-level-action="edit" data-coin="'+sym+'" data-index="'+index+'" aria-label="Изменить уровень '+sym+'">Изменить</button></div>';
+ return '<div class="sl-level '+status.kind+'" data-live-level="'+sym+'" data-level-index="'+index+'"><div class="sl-level-left"><span class="sl-indicator"></span><div><strong>'+fmtPrice(l.price)+'</strong><small data-live-status>'+escape(status.label)+'</small></div></div><div class="sl-level-middle"><strong>'+(l.amount?money(l.amount):'Сумма не задана')+'</strong><small data-live-distance>'+pctDisplay+' от текущей цены</small></div><button type="button" class="sl-edit-btn" data-level-action="edit" data-coin="'+sym+'" data-index="'+index+'" aria-label="Изменить уровень '+sym+'">Изменить</button></div>';
 }
 function editor(){
  if(!edit)return '';
@@ -67,7 +67,27 @@ function card(sym,st){
  const info=priceInfo(sym,st),spent=Number(st?.holdings?.[sym]?.invested)||0,reserve=Math.max(0,(Number(st?.capital)||1000)/2-spent),targets=config.levels[sym].slice().sort((a,b)=>b.price-a.price),planned=targets.reduce((sum,x)=>sum+(x.amount||0),0),source=cache[sym+'-'+period];
  const hit=targets.filter(l=>info.reliable&&info.price<=l.price);
  const periodButtons=Object.keys(periods).map(p=>'<button type="button" class="'+(p===period?'selected':'')+'" data-level-action="period" data-period="'+p+'">'+(p==='all'?'Вся':p==='1y'?'1г':p)+'</button>').join('');
- return '<section class="sl-card"><div class="sl-header"><div class="sl-heading"><span class="sl-coin '+sym.toLowerCase()+'">'+(sym==='BTC'?'₿':'◆')+'</span><div><strong>'+sym+' · уровни докупок</strong><span>Текущая цена <b>'+ (info.price?fmtPrice(info.price):'—')+'</b></span></div></div><button class="sl-button" type="button" data-level-action="add" data-coin="'+sym+'">+ Уровень</button></div><div class="sl-meta"><span>Лимит <b>'+money((Number(st?.capital)||1000)/2)+'</b></span><span>Свободно <b>'+money(reserve)+'</b></span><span>Запланировано <b>'+money(planned)+'</b></span></div>'+chart(sym,st)+'<div class="sl-caption"><span class="sl-legend"><i></i> Цель покупки <em></em> Текущая цена</span></div>'+(hit.length?'<div class="sl-alert">Достигнуты уровни: '+hit.map(l=>fmtPrice(l.price)).join(', ')+'. Проверь стратегию перед покупкой.</div>':'')+'<div class="sl-level-list">'+(targets.length?targets.map(l=>levelRow(sym,l,st,config.levels[sym].findIndex(a=>a.id===l.id))).join(''):'<div class="sl-empty-level">Уровни ещё не указаны. Добавь цену и сумму своей следующей покупки.</div>')+'</div>'+(planned>reserve+.0001?'<div class="sl-warning">Запланированные покупки превышают свободный лимит '+sym+'.</div>':'')+(edit?.coin===sym?editor():'')+'</section>';
+ return '<section class="sl-card"><div class="sl-header"><div class="sl-heading"><span class="sl-coin '+sym.toLowerCase()+'">'+(sym==='BTC'?'₿':'◆')+'</span><div><strong>'+sym+' · уровни докупок</strong><span>Текущая цена <b data-live-quote="'+sym+'">'+ (info.price?fmtPrice(info.price):'—')+'</b></span></div></div><button class="sl-button" type="button" data-level-action="add" data-coin="'+sym+'">+ Уровень</button></div><div class="sl-meta"><span>Лимит <b>'+money((Number(st?.capital)||1000)/2)+'</b></span><span>Свободно <b>'+money(reserve)+'</b></span><span>Запланировано <b>'+money(planned)+'</b></span></div>'+chart(sym,st)+'<div class="sl-caption"><span class="sl-legend"><i></i> Цель покупки <em></em> Текущая цена</span></div>'+(hit.length?'<div class="sl-alert">Достигнуты уровни: '+hit.map(l=>fmtPrice(l.price)).join(', ')+'. Проверь стратегию перед покупкой.</div>':'')+'<div class="sl-level-list">'+(targets.length?targets.map(l=>levelRow(sym,l,st,config.levels[sym].findIndex(a=>a.id===l.id))).join(''):'<div class="sl-empty-level">Уровни ещё не указаны. Добавь цену и сумму своей следующей покупки.</div>')+'</div>'+(planned>reserve+.0001?'<div class="sl-warning">Запланированные покупки превышают свободный лимит '+sym+'.</div>':'')+(edit?.coin===sym?editor():'')+'</section>';
+}
+function refreshQuotes(){
+ const st=state(),area=document.getElementById('strategyMount');
+ if(!area||!st||st.tab!=='positions'||!planExpanded)return;
+ notifyCrossings(st);
+ for(const sym of symbols){
+  const info=priceInfo(sym,st),quote=area.querySelector('[data-live-quote="'+sym+'"]');
+  if(quote)quote.textContent=info.price?fmtPrice(info.price):'—';
+  const rows=area.querySelectorAll('[data-live-level="'+sym+'"]');
+  for(const row of rows){
+   const level=config.levels[sym][Number(row.dataset.levelIndex)];
+   if(!level)continue;
+   const current=statusFor(level,info),percent=changePercent(level.price,info.price);
+   row.classList.remove('hit','waiting','muted');
+   row.classList.add(current.kind);
+   const status=row.querySelector('[data-live-status]'),distance=row.querySelector('[data-live-distance]');
+   if(status)status.textContent=current.label;
+   if(distance)distance.textContent=(Number.isFinite(percent)?fmtPct(percent):'—')+' от текущей цены';
+  }
+ }
 }
 function render(){
  const st=state();lastState=st;
@@ -222,6 +242,6 @@ function reloadLevels(){
  load();
  render();
 }
-window.fxmr4Levels={render,reloadLevels};
+window.fxmr4Levels={render,reloadLevels,refreshQuotes};
 render();
 })();
