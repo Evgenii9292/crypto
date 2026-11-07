@@ -39,8 +39,11 @@ test('overview labels current PNL and historical results separately',()=>{
  const {el}=mount();
  const markup=el('content').innerHTML;
  assert.match(markup,/Баланс портфеля/);
- assert.match(markup,/Текущий PNL[\s\S]*Учтённые покупки Spot \+ открытые фьючерсы/);
- assert.match(markup,/Фьючерсы · 30 дней[\s\S]*Результат закрытых операций Bybit/);
+ assert.match(markup,/Текущий PNL/);
+ assert.match(markup,/PNL за месяц/);
+ assert.equal((markup.match(/PNL за месяц/g)||[]).length,3);
+ assert.doesNotMatch(markup,/Фьючерсы · 30 дней|Изменение · 30 дней/);
+ assert.match(markup,/class="pnlAccountSelect overviewPeriodSelect"/);
  for(const mode of ['all','spot','futures'])assert.match(markup,new RegExp(`data-pnl-mode="${mode}"`));
  assert.doesNotMatch(markup,/data-pnl-mode="month"|Всего на счетах|heroBreakdown/);
  assert.match(markup,/class="assetTopline"/);
