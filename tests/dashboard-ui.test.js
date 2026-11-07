@@ -833,3 +833,82 @@ test('desktop sidebar stays viewport-height and sticky while main content scroll
  assert.match(css,/@media\(max-width:960px\)\s*\{[\s\S]*?\.tabs\s*\{\s*position:fixed/);
  assert.doesNotMatch(css,/@media\(max-width:960px\)\s*\{\s*\.sidebar\s*\{[^}]*position:sticky/);
 });
+
+test('hourly bar popup lists only real coins for that hour and shows USDT beside percentages',()=>{
+ const {window}=mount([{id:'bybit',name:'Bybit',accounts:[]}]);
+ const v=window.fxmr4Inspect;
+ v.onAccounts([{id:'a',label:'Primary'}]);
+ v.onSnapshot({account:{id:'a',name:'Primary'},updatedAt:Date.now(),
+  totals:{equity:1000,perpUPL:0,positionCount:0},positions:[]});
+ const day=Math.floor(Date.now()/86400000)*86400000;
+ const t1=day+3600000,t2=day+7200000;
+ const report={from:day,to:day+86400000,netPnl:5,fees:0,funding:0,
+  buckets:[{t:t1,netPnl:2},{t:t2,netPnl:3}],
+  days:[],points:[],
+  symbols:[{symbol:'ADAUSDT',netPnl:8},{symbol:'XMRUSDT',netPnl:-3}],
+  symbolBuckets:[{t:t1,symbol:'ADAUSDT',netPnl:5},
+   {t:t1,symbol:'XMRUSDT',netPnl:-3},
+   {t:t2,symbol:'ADAUSDT',netPnl:3}]};
+ const rendered=v.pnlBarSections(report,'24h','a');
+ assert.equal((rendered.match(/class="pnlBarTooltip"/g)||[]).length,2);
+ assert.match(rendered,/role="tooltip"/);
+ assert.match(rendered,/tabindex="0"/);
+ const first=rendered.split('class="pnlBarItem"')[1].split('class="pnlBarItem"')[0];
+ const second=rendered.split('class="pnlBarItem"')[2].split('class="pnlBarAxis"')[0];
+ assert.match(first,/ADAUSDT/);
+ assert.match(first,/\+5\.00 USDT/);
+ assert.match(first,/XMRUSDT/);
+ assert.match(first,/−3\.00 USDT/);
+ assert.doesNotMatch(second,/XMRUSDT/,'a different hour cannot borrow a coin from earlier');
+ assert.match(second,/\+3\.00 USDT/);
+ assert.match(rendered,/pnlCoinValues/);
+ assert.match(rendered,/\+0\.80%/,'coin percentage is relative to selected subaccount');
+ assert.match(rendered,/\+8\.00 USDT/);
+ assert.match(rendered,/−3\.00 USDT/);
+ assert.match(css,/\.pnlBarItem:where\(:hover,:focus-visible\) \.pnlBarTooltip\{display:block\}/);
+ assert.match(css,/\.pnlBarList\{overflow:visible\}/);
+});
+
+test('combined Futures bar popup adds two Bybit accounts without inventing unknown coins',()=>{
+ const {window}=mount([{id:'bybit',name:'Bybit',accounts:[]}]);
+ const v=window.fxmr4Inspect;
+ v.onAccounts([{id:'a',label:'Alpha'},{id:'b',label:'Beta'}]);
+ const from=Math.floor(Date.now()/86400000)*86400000-29*86400000,
+  to=from+30*86400000,t=from+86400000,day=new Date(t).toISOString().slice(0,10);
+ const make=(symbol,value)=>({
+  from,to,netPnl:value,fees:0,funding:0,
+  days:[{date:day,netPnl:value}],
+  points:[{t,netPnl:value}],
+  symbols:[{symbol,netPnl:value,operations:1}],
+  symbolBuckets:[{t,symbol,netPnl:value}]
+ });
+ v.s.monthlyPerformance.a=make('ADAUSDT',7);
+ v.s.monthlyPerformance.b=make('XMRUSDT',-2);
+ const combined=v.futuresLedgerData('30d');
+ assert.equal(combined.netPnl,5);
+ assert.equal(combined.symbolBuckets.length,2);
+ const html=v.pnlBarSections(combined,'30d');
+ assert.match(html,/ADAUSDT/);
+ assert.match(html,/\+7\.00 USDT/);
+ assert.match(html,/XMRUSDT/);
+ assert.match(html,/−2\.00 USDT/);
+ assert.match(html,/\+5\.00 USDT/);
+ const single=v.futuresLedgerData('30d','a');
+ const only=v.pnlBarSections(single,'30d','a');
+ assert.doesNotMatch(only,/XMRUSDT/);
+ assert.match(only,/\+7\.00 USDT/);
+});
+
+test('old Bybit history without coin-time buckets shows unknown, not fabricated contributions',()=>{
+ const {window}=mount([{id:'bybit',name:'Bybit',accounts:[]}]);
+ const v=window.fxmr4Inspect;
+ const t=Math.floor(Date.now()/86400000)*86400000-86400000,
+  day=new Date(t).toISOString().slice(0,10);
+ const data={netPnl:12,fees:0,funding:0,
+  buckets:[{t,netPnl:12}],days:[{date:day,netPnl:12}],
+  symbols:[{symbol:'ADAUSDT',netPnl:12}]};
+ const html=v.pnlBarSections(data,'30d');
+ assert.match(html,/Детализация монет пока недоступна/);
+ assert.doesNotMatch(html,/pnlTooltipRow/);
+ assert.match(html,/\+12\.00 USDT/,'total in USDT remains visible');
+});
