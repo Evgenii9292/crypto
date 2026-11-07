@@ -558,7 +558,8 @@ test('missing Spot history never turns a six-month Futures total into a fake All
  const markup=element('content').innerHTML;
  assert.match(markup,/data-overview-period/);
  assert.match(markup,/нет полной сопоставимой истории/);
- assert.doesNotMatch(markup,/\+\$142\.00[^]*class="chartlegend"/);
+ assert.match(markup,/Для выбранного периода пока нет полной сопоставимой истории/);
+ assert.doesNotMatch(markup,/<polyline/);
 });
 
 test('six-day Bybit chunks merge into 180-day report without gaps, duplicates or silent partial totals',async()=>{
