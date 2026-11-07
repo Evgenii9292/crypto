@@ -266,3 +266,13 @@ test('automatic updates do not restart pane animation or remount buying strategy
  assert.doesNotMatch(html,/classList\.remove\('pane'\)/);
  assert.doesNotMatch(html,/classList\.add\('pane'\)/);
 });
+
+test('existing portfolio opens the available full PNL history once',()=>{
+ const {window,store,element}=mount([{id:'bybit',name:'Bybit',accounts:[]}]);
+ assert.equal(window.fxmr4Inspect.s.chartPeriod.overview,'all');
+ assert.equal(window.fxmr4Inspect.s.chartPeriod.spot,'all');
+ assert.equal(store.get('fxmr4_chart_range_all_v1'),'1');
+ const saved=JSON.parse(store.get('fxmr4_portfolio_public_preview_v1'));
+ assert.equal(saved.chartPeriod.overview,'all');
+ assert.match(element('content').innerHTML,/data-period="all" data-chart="overview" class="period active"/);
+});
