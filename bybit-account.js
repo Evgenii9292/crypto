@@ -17,7 +17,11 @@
   const el=panel();if(!el)return;
   if(!status.available){
    const message=status.error==="HTTP 404"?"На VPS запущена старая версия FXMR4. Необходимо обновить сервер.":status.error||"Нет связи с сервером";
-   el.innerHTML='<div class="connectorState"><p class="bybitError">'+enc(message)+'</p><button class="btn" type="button" data-bybit-action="check">Проверить соединение</button></div>';
+   el.innerHTML='<div class="connectorState bybitAccountsPanel">'+
+     '<div class="bybitConnectActions"><button class="btn primary" type="button" disabled title="Сначала требуется связь с API FXMR4">'+
+     svg("plus")+'Добавить субаккаунт</button></div>'+
+     '<p class="bybitError" role="status">'+enc(message)+'</p>'+
+     '<button class="btn" type="button" data-bybit-action="check">Проверить соединение</button></div>';
    return;
   }
   const list=status.accounts.map(a=>{
