@@ -409,7 +409,7 @@ test('overview separates todays closed trade cashflow and live open PNL across s
  v.s.monthlyPerformance.b={...report(2),from:end-30*86400000};
  v.s.tab='overview';v.render();
  const markup=element('content').innerHTML;
- assert.match(markup,/Сегодня закрыто/);
+ assert.match(markup,/Реализовано сегодня/);
  assert.match(markup,/Открытые позиции/);
  assert.match(markup,/За 30 дней/);
  assert.match(markup,/\+\$3\.00/);
