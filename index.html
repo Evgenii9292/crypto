@@ -342,7 +342,7 @@ async function loadFuturesPeriod(period){
   }));
  }finally{
   delete s.periodLoading[period];
-  if(s.tab==='futures')renderLive();
+  if(s.tab==='futures'||s.tab==='overview')renderLive();
  }
 }
 
@@ -521,15 +521,21 @@ function overview(){
  const equity=p.hasFutures&&raw!=null&&Number.isFinite(Number(raw))?Number(raw):null;
  const total=accountTotal(),futureValue=equity==null?'—':dollars(equity);
  const month=monthlyFutures(),monthlyResult=month?.netPnl??null,spotMonth=pnlThirtyDayDelta('spot');
- const floating=p.futuresFloatingPnl;
+ const floating=p.futuresFloatingPnl,today=futuresLedgerData('today')?.netPnl??null;
  return `<div class="overview-layout"><div class="overview-primary">
    <div class="card tint overviewHero">
     <div class="overviewEyebrow">Баланс портфеля</div>
     <div class="total">${dollars(total)}</div>
-    <div class="overviewHeroMetrics overviewHeroMetrics--single">
-     <div class="overviewMetric"><span>Результат за 30 дней</span>
+    <div class="overviewHeroMetrics overviewHeroMetrics--three">
+     <div class="overviewMetric"><span>Сегодня закрыто</span>
+      <strong class="${today==null?'neutral':cls(today)}">${today==null?'—':signed(today)}</strong>
+      <small>С 00:00 UTC · без открытых</small></div>
+     <div class="overviewMetric"><span>Открытые позиции</span>
+      <strong class="${floating==null?'neutral':cls(floating)}">${floating==null?'—':signed(floating)}</strong>
+      <small>Плавающий PNL · сейчас</small></div>
+     <div class="overviewMetric"><span>За 30 дней</span>
       <strong class="${monthlyResult==null?'neutral':cls(monthlyResult)}">${monthlyResult==null?'—':signed(monthlyResult)}</strong>
-      <small>Закрытые операции Bybit · ${s.bybitExpectedIds.length} субакк.</small></div>
+      <small>Закрытые операции Bybit</small></div>
     </div>
    </div>
    ${overviewPerformanceChart()}</div>
@@ -688,14 +694,13 @@ function futures(){
  const snap=s.bybitSnapshot?.totals,ready=!!s.backendConnection.connected&&!!snap;
  const upl=ready&&snap.perpUPL!=null?Number(snap.perpUPL):null;
  const open=s.futuresPositions.filter(p=>p.exchangeId==='bybit');
- const monthly=monthlyFutures();
+ const monthly=monthlyFutures(),todayReport=futuresLedgerData('today');
  const monthlyError=(s.bybitExpectedIds||[]).map(id=>s.monthlyPerformance[id]?.error).find(Boolean);
-  const metrics=[['Баланс субаккаунта',ready&&snap.equity!=null?dollars(snap.equity):'—',''],
+ const metrics=[['Баланс субаккаунтов',ready&&snap.equity!=null?dollars(snap.equity):'—',''],
   ['Открытые позиции · PNL',upl!=null?signed(upl):'—',upl==null?'neutral':cls(upl)],
-  ['Результат за 30 дней',monthly?.netPnl==null?'—':signed(monthly.netPnl),monthly?.netPnl==null?'neutral':cls(monthly.netPnl)],
-  ['Открытых позиций',ready?String(open.length):'—','']];
- const coins=coinStack(open.map(p=>p.symbol));
- return `<div class="futureMetrics">${metrics.map(([name,value,tone])=>`<div class="card tint"><div class="eyebrow">${name}</div><div class="num ${tone}">${value}</div>${name==='Баланс субаккаунта'&&ready?`<div class="pnlParts">Доступно: ${snap.availableBalance==null?'—':dollars(snap.availableBalance)}</div>`:''}${name==='Результат за 30 дней'?monthly?`<div class="pnlParts"><span>Funding: ${signed(monthly.funding)}</span><span>Комиссии: ${dollars(monthly.fees)}</span></div>`:`<div class="pnlParts">${escape(monthlyError||'Загружаем операции Bybit…')}</div>`:''}${name==='Открытые позиции · PNL'&&ready?`<div class="pnlParts"><span>Нереализованный результат прямо сейчас</span></div>`:''}${name==='Открытых позиций'&&coins?`<div class="metricCoins">${coins}</div>`:''}</div>`).join('')}</div>
+  ['Сегодня закрыто · UTC',todayReport?.netPnl==null?'—':signed(todayReport.netPnl),todayReport?.netPnl==null?'neutral':cls(todayReport.netPnl)],
+  ['Результат за 30 дней',monthly?.netPnl==null?'—':signed(monthly.netPnl),monthly?.netPnl==null?'neutral':cls(monthly.netPnl)]];
+ return `<div class="futureMetrics">${metrics.map(([name,value,tone])=>`<div class="card tint"><div class="eyebrow">${name}</div><div class="num ${tone}">${value}</div>${name==='Баланс субаккаунтов'&&ready?`<div class="pnlParts">Доступно: ${snap.availableBalance==null?'—':dollars(snap.availableBalance)}</div>`:''}${name==='Результат за 30 дней'?monthly?`<div class="pnlParts"><span>Funding: ${signed(monthly.funding)}</span><span>Комиссии: ${dollars(monthly.fees)}</span></div>`:`<div class="pnlParts">${escape(monthlyError||'Загружаем операции Bybit…')}</div>`:''}${name==='Открытые позиции · PNL'&&ready?`<div class="pnlParts"><span>${open.length} позиций · не закрыты</span></div>`:''}${name==='Сегодня закрыто · UTC'?`<div class="pnlParts"><span>${todayReport?'Сделки, funding и комиссии. Не равно PNL Bybit за сегодня.':escape(futuresPeriodError('today')||'Загружаем операции…')}</span></div>`:''}</div>`).join('')}</div>
  ${futuresChartBlock()}
  <section class="section"><div class="futureToolbar"><div><div class="sectitle">Позиции и аккаунты</div><div class="tiny">Раскрывай биржи и выбирай группировку</div></div><button class="btn" type="button" data-action="goConnections">${icon('settings')} Настройки</button></div><div class="futureFilters"><div class="tradeSwitch" role="tablist" aria-label="Группировка фьючерсов">${[['all','Все позиции'],['exchange','По биржам'],['account','По субаккаунтам']].map(([id,name])=>`<button type="button" data-future-mode="${id}" class="${s.futureMode===id?'active':''}">${name}</button>`).join('')}</div></div>${s.futureMode==='all'?futuresSortBar():''}<div class="sourceList futureResults">${body}</div></section>`;
 }
@@ -747,7 +752,9 @@ function render(){
  updateChrome();
  window.fxmr4Levels?.render?.();
  window.fxmr4Bybit?.renderPanel?.();
- if(s.tab==='futures'&&s.chartPeriod.futures!=='30d')void loadFuturesPeriod(s.chartPeriod.futures);
+ if(s.tab==='futures'&&s.futuresView==='pnl'&&s.chartPeriod.futures!=='30d')void loadFuturesPeriod(s.chartPeriod.futures);
+ if(s.tab==='futures')void loadEquityHistory();
+ if(s.tab==='futures'||s.tab==='overview')void loadFuturesPeriod('today');
 }
 function reconcileLive(current,next){
  if(next.nodeType===11){
@@ -797,7 +804,9 @@ function renderLive(){
  }
  updateChrome();
  window.fxmr4Levels?.refreshQuotes?.();
- if(s.tab==='futures'&&s.chartPeriod.futures!=='30d')void loadFuturesPeriod(s.chartPeriod.futures);
+ if(s.tab==='futures'&&s.futuresView==='pnl'&&s.chartPeriod.futures!=='30d')void loadFuturesPeriod(s.chartPeriod.futures);
+ if(s.tab==='futures')void loadEquityHistory();
+ if(s.tab==='futures'||s.tab==='overview')void loadFuturesPeriod('today');
 }
 
 function saveCapital(fd){
