@@ -500,7 +500,7 @@ test('history and daily bars can filter one Bybit subaccount without changing ag
  v.s.tab='futures';
  v.s.futuresAccountFilter='a';v.s.futuresValueMode='pct';v.render();
  const markup=element('content').innerHTML;
- assert.match(markup,/30\.00%/,'the 30-day percent is 30 divided by Alpha balance 1000 = 3%; chart may show differently');
+ assert.match(markup,/\+3\.00%/,'the 30-day percent is net PNL divided by Alpha current equity');
  assert.match(markup,/ADAUSDT/);
  assert.doesNotMatch(markup,/BTCUSDT/);
  assert.match(markup,/data-futures-account/);
