@@ -78,46 +78,45 @@ function portfolioSummary(){
  const positions=s.futuresPositions.filter(p=>p.exchangeId==='bybit');
  const known=!!snap&&fresh&&positions.every(p=>p.initialMargin!=null&&Number.isFinite(Number(p.initialMargin)));
  const margin=known?positions.reduce((v,p)=>v+Number(p.initialMargin),0):null;
- const futuresPnl=snap&&fresh&&snap.totals?.perpUPL!=null&&Number.isFinite(Number(snap.totals.perpUPL))?Number(snap.totals.perpUPL):null;
+ const futuresFloatingPnl=snap&&fresh&&snap.totals?.perpUPL!=null&&Number.isFinite(Number(snap.totals.perpUPL))?Number(snap.totals.perpUPL):null;
+  const futuresRealisedPnl=snap&&fresh&&snap.totals?.realisedPnl!=null&&Number.isFinite(Number(snap.totals.realisedPnl))?Number(snap.totals.realisedPnl):null;
+  const futuresPnl=snap&&fresh&&snap.totals?.accountPnl!=null&&Number.isFinite(Number(snap.totals.accountPnl))?Number(snap.totals.accountPnl):null;
  const pnl=futuresPnl!=null?a.profit+futuresPnl:hasTrackedFutures()?null:a.profit;
  return {spot:a,hasFutures:!!snap,margin,invested:!snap?a.invested:margin===null?null:a.invested+margin,
-  futuresPnl,pnl};
+  futuresPnl,futuresFloatingPnl,futuresRealisedPnl,pnl};
 }
 const PERIODS={'24h':86400000,'7d':604800000,'30d':2592000000,'90d':7776000000,'6m':15552000000};
 const PERIOD_NAMES={'24h':'24 часа','7d':'7 дней','30d':'30 дней','90d':'90 дней','6m':'6 месяцев'};
 function pnlField(kind){return kind==='spot'?'spot':kind==='futures'?'futures':'total'}
 function hasTrackedFutures(){
- const known=p=>p&&p.futures!=null&&Number.isFinite(Number(p.futures));
+ const known=p=>p&&(p.futures!=null||p.futuresAccount!=null);
  return !!(s.backendConnection.configured||s.bybitSnapshot||s.portfolioSnapshots.some(known)||(s.pnlHistory||[]).some(known));
 }
-function pnlSeries(kind){
+function pnlSeries(kind,metric='pnl'){
  kind=kind||s.pnlMode;
- const field=pnlField(kind),fullRequired=kind==='all'&&hasTrackedFutures();
+ const field=pnlField(kind);
  const n=x=>x!=null&&Number.isFinite(Number(x))?Number(x):null;
  function value(p){
   if(kind==='spot')return n(p.spot??p.pnl);
-  if(kind==='futures')return n(p.futures);
-  const spot=n(p.spot),futures=n(p.futures);
+  if(kind==='futures')return n(metric==='floating'?p.futures:p.futuresAccount);
+  const spot=n(p.spot),futures=n(p.futuresAccount);
   if(spot!==null&&futures!==null)return spot+futures;
-  if(fullRequired)return null;
-  return n(p.total)??spot??n(p.pnl);
+  if(hasTrackedFutures())return null;
+  return spot;
  }
  const live=kind==='spot'
   ?s.snapshots.map(p=>({t:Number(p.time),v:Number(p.pnl)}))
   :s.portfolioSnapshots.map(p=>({t:Number(p.time),v:value(p)}));
  const server=(s.pnlHistory||[]).map(p=>({t:Number(p.t),v:value(p)}));
- // The browser does not sample while closed. Server samples must be merged
- // throughout the timeline, not just before the oldest local timestamp.
  const byTime=new Map();
  for(const p of server.concat(live)){
   if(Number.isFinite(p.t)&&p.v!==null&&Number.isFinite(p.v))byTime.set(p.t,p);
  }
- const points=Array.from(byTime.values()).sort((a,b)=>a.t-b.t);
- return {kind,field,points};
+ return {kind,field,points:Array.from(byTime.values()).sort((a,b)=>a.t-b.t)};
 }
-function pnlWindow(kind,period){
+function pnlWindow(kind,period,metric='pnl'){
  const from=Date.now()-(PERIODS[period]||PERIODS['7d']);
- const all=pnlSeries(kind).points,points=all.filter(p=>p.t>=from).slice(-1500);
+ const all=pnlSeries(kind,metric).points,points=all.filter(p=>p.t>=from).slice(-1500);
  return {all,points,from,first:points.length?points[0].t:null,last:points.length?points[points.length-1].t:null};
 }
 function balanceSeries(kind,period){
@@ -129,7 +128,7 @@ function balanceSeries(kind,period){
  return {points,from,first:points[0]?.t??null,last:points.at(-1)?.t??null};
 }
 function chartHTML(kind,period,metric='pnl'){
- const balance=metric==='balance',win=balance?balanceSeries(kind,period):pnlWindow(kind,period),data=win.points;
+ const balance=metric==='balance',win=balance?balanceSeries(kind,period):pnlWindow(kind,period,metric),data=win.points;
  if(data.length<2)return '<div class="emptychart"><strong>История '+(balance?'баланса':'PNL')+' формируется</strong><span>Здесь появится история измерений без выдуманных значений.</span></div>';
  const start=data[0].t,end=data[data.length-1].t,W=660,H=224,L=65,R=16,T=14,B=39;
  const vals=data.map(x=>x.v),min=balance?Math.min(...vals):Math.min(0,...vals),max=balance?Math.max(...vals):Math.max(0,...vals);
@@ -144,12 +143,12 @@ function chartHTML(kind,period,metric='pnl'){
  return '<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="xMidYMid meet" role="img" aria-label="График '+(balance?'баланса':'PNL')+' с датами и значениями"><g>'+guide+'</g>'+(balance?'':'<line x1="'+L+'" x2="'+(W-R)+'" y1="'+y(0).toFixed(1)+'" y2="'+y(0).toFixed(1)+'" class="chartZero"/>')+'<polyline points="'+pts+'" fill="none" stroke="'+color+'" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="'+x(last.t).toFixed(1)+'" cy="'+y(last.v).toFixed(1)+'" r="4" fill="'+color+'"><title>'+escape(axis(last.v)+' · '+new Date(last.t).toLocaleString('ru-RU'))+'</title></circle></svg>';
 }
 function chartCaption(kind,period,p,metric='pnl'){
- const balance=metric==='balance',win=balance?balanceSeries(kind,period):pnlWindow(kind,period);
+ const balance=metric==='balance',win=balance?balanceSeries(kind,period):pnlWindow(kind,period,metric);
  const scope=kind==='spot'?'Спот':kind==='futures'?'Фьючерсы':'Портфель';
  if(!win.points.length)return scope+' · нет истории за '+PERIOD_NAMES[period];
  const days=Math.max(1,Math.round((win.last-win.first)/86400000));
  const span=days>=2?days+' дн.':Math.max(1,Math.round((win.last-win.first)/3600000))+' ч';
- return scope+' · '+(balance?'баланс':'PNL')+' · '+span;
+ return scope+' · '+(balance?'баланс':metric==='floating'?'плавающий PNL':kind==='futures'?'PNL счёта':'PNL')+' · '+span;
 }
 function periodButtons(period,chart){
  return `<div class="periods">${[['24h','24ч'],['7d','7д'],['30d','30д'],['90d','90д'],['6m','6 мес']].map(([q,name])=>`<button type="button" data-period="${q}" data-chart="${chart}" class="period ${period===q?'active':''}">${name}</button>`).join('')}</div>`;
