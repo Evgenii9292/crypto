@@ -164,3 +164,36 @@ test('no historical ledger never invents a monthly profit',()=>{
  assert.match(rendered,/Загружаем операции Bybit/);
  assert.equal(view.monthlyFutures(),null);
 });
+
+test('overview month mode draws exchange cash-PNL, not a synthetic portfolio curve',()=>{
+ const {element,window}=mount([{id:'bybit',name:'Bybit',accounts:[]}]);
+ const v=window.fxmr4Inspect;
+ v.onAccounts([{id:'sub-one',label:'Primary'}]);
+ const end=v.s.monthlyAnchorMs;
+ v.s.monthlyPerformance['sub-one']={
+  from:end-30*86400000,to:end,netPnl:13,tradingPnl:16,funding:-1,fees:2,
+  days:[{date:new Date(end-86400000).toISOString().slice(0,10),netPnl:13}]
+ };
+ v.s.pnlMode='month';v.s.tab='overview';v.render();
+ const html=element('content').innerHTML;
+ assert.match(html,/PNL · Фьючерсы за 30 дней/);
+ assert.match(html,/Результат завершённых операций/);
+ assert.match(html,/data-pnl-mode="month"/);
+ assert.match(html,/polyline/);
+ assert.match(html,/\+\$13\.00/);
+ assert.doesNotMatch(html,/data-period="24h" data-chart="overview"/);
+});
+
+test('multiaccount monthly summary requires one identical 30-day reporting window',()=>{
+ const {window}=mount([{id:'bybit',name:'Bybit',accounts:[]}]);
+ const v=window.fxmr4Inspect;
+ v.onAccounts([{id:'a',label:'A'},{id:'b',label:'B'}]);
+ const end=v.s.monthlyAnchorMs;
+ const first={from:end-30*86400000,to:end,netPnl:3,tradingPnl:5,funding:-1,fees:1,days:[]};
+ const second={...first,netPnl:2,tradingPnl:3};
+ v.s.monthlyPerformance.a=first;
+ v.s.monthlyPerformance.b={...second,to:end-300000};
+ assert.equal(v.monthlyFutures(),null,'cannot mix unmatched reporting intervals');
+ v.s.monthlyPerformance.b=second;
+ assert.equal(v.monthlyFutures().netPnl,5);
+});
