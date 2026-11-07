@@ -973,7 +973,20 @@ function handleChange(e){
   document.addEventListener('change',handleChange);
   window.fxmr4GetState=()=>({tab:s.tab,quotes:s.quotes,holdings:{BTC:coin('BTC'),ETH:coin('ETH')},capital:C});
   // Standalone web preview. Every edit is saved only in this browser, never to a public repository.
-  loadLocal();render();chart();sync({quiet:true});loadPnlHistory();
+  loadLocal();
+  // Switch this existing install from the old 24-hour view to the entire
+  // recorded history once, without overriding later user period selections.
+  try{
+   const rangeMigration='fxmr4_chart_range_all_v1';
+   if(!localStorage.getItem(rangeMigration)){
+    s.chartPeriod.overview='all';
+    s.chartPeriod.spot='all';
+    s.period='all';
+    localStorage.setItem(rangeMigration,'1');
+    saveLocal(false);
+   }
+  }catch(e){/* Stored chart preferences remain optional. */}
+  render();chart();sync({quiet:true});loadPnlHistory();
   setInterval(()=>{if(!document.hidden&&!s.busy)sync({quiet:true})},60000);
   document.addEventListener('visibilitychange',()=>{
     if(!document.hidden){
