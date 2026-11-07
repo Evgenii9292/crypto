@@ -516,7 +516,7 @@ function overviewSpotHistory(period){
  const eth=new Map(record.prices.ETH.map(x=>[Number(x.t),Number(x.close)]));
  const btc=new Map(record.prices.BTC.map(x=>[Number(x.t),Number(x.close)]));
  const entries=s.trades.filter(t=>['BTC','ETH'].includes(t.coin)&&
-  Number(t.spent)>0&&Number(t.entry)>0&&/^\\d{4}-\\d{2}-\\d{2}$/.test(t.buy_date))
+  Number(t.spent)>0&&Number(t.entry)>0&&/^\d{4}-\d{2}-\d{2}$/.test(t.buy_date))
   .map(t=>({...t,bought:Date.parse(t.buy_date+'T00:00:00Z')}));
  if(!entries.length)return null;
  const points=[];
