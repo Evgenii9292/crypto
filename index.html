@@ -628,25 +628,40 @@ function pnlChartBlock(opts){
  return `<section class="section pnlChart card"><div class="hrow pnlChartHead"><div><div class="sectitle">${opts.title||'Портфель'}</div>${subtitle?`<div class="tiny">${escape(subtitle)}</div>`:''}</div>${opts.monthOnly||metric==='realized30d'?'<span class="overviewLedgerPeriod">Последние 30 дней</span>':periodButtons(period,key)}</div>${showModes?`<div class="pnlMode">${[['all','Все'],['spot','Спот'],['futures','Фьючерсы'],['month','30 дней']].map(([k,name])=>`<button class="${s.pnlMode===k?'active':''}" data-pnl-mode="${k}" type="button">${name}</button>`).join('')}</div>`:''}${metricSwitch}<div class="chartbox">${chartHTML(kind,period,metric)}</div><div class="chartlegend"><span>${chartCaption(kind,period,opts.summary,metric)}</span><strong class="${current==null||metric==='balance'?'neutral':cls(current)}">${current==null?'—':metric==='balance'?dollars(current):signed(current)}</strong></div></section>`;
 }
 function overviewPerformanceChart(){
- // The only time-scoped portfolio performance currently verified by an
- // exchange is the 30-day derivatives transaction log. Never combine it with
- // the Spot valuation delta or an account's lifetime realised PNL.
- const month=monthlyFutures(),ids=s.bybitExpectedIds||[];
- const error=ids.map(id=>s.monthlyPerformance[id]?.error).find(Boolean);
- const value=month?.netPnl;
- const period=month?
-  new Date(month.from).toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric'})+
-  ' – '+new Date(month.to).toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric'}):
-  'Последние 30 дней';
- const empty=error||(!ids.length?'Нет подключённых субаккаунтов с торговой историей':'Загружаем операции Bybit…');
- return `<section class="section pnlChart card overviewLedger" aria-label="Результат закрытых операций за 30 дней">
-  <div class="hrow pnlChartHead"><div><div class="sectitle">Результат за 30 дней</div>
-   <div class="tiny">Подключённые субаккаунты Bybit · закрытые операции</div></div>
-   <span class="overviewLedgerPeriod">${escape(period)}</span></div>
-  <div class="chartbox">${month?chartHTML('futures','30d','realized30d'):`<div class="emptychart">${escape(empty)}</div>`}</div>
-  <div class="chartlegend"><span>Закрытые сделки + funding − комиссии</span>
-   <strong class="${value==null?'neutral':cls(value)}">${value==null?'—':signed(value)}</strong></div>
-  <div class="overviewLedgerDetail">Открытые позиции и спотовая переоценка не входят в этот результат.</div>
+ const period=s.chartPeriod.overview||'30d',mode=['all','spot','futures'].includes(s.pnlMode)?s.pnlMode:'all';
+ const data=overviewHistoryData(mode,period),progress=s.periodProgress[period];
+ const spotError=s.spotHistoricalReports[period]?.error;
+ const futuresError=futuresPeriodError(period);
+ const pending=(mode!=='futures'&&s.spotHistoryLoading[period])||
+  (mode!=='spot'&&s.periodLoading[period]);
+ const detail=data?.description||'';
+ const error=mode==='spot'?spotError:mode==='futures'?futuresError:(spotError||futuresError);
+ const status=pending?('Загружаем историю Bybit'+(progress?' · '+progress.done+'/'+progress.total+' фрагментов':'')+'…'):
+  error||'Для выбранного периода пока нет полной сопоставимой истории.';
+ const length=PERIOD_NAMES[period]||'30 дней';
+ const last=data?.points?.at(-1)?.v;
+ const covered=data?.coverage?
+  new Date(data.coverage).toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric'}):null;
+ return `<section class="section pnlChart card overviewLedger" aria-label="История PNL Спот и Фьючерсы">
+  <div class="hrow pnlChartHead"><div>
+   <div class="sectitle">История PNL</div>
+   <div class="tiny">Реальные данные Bybit и учтённые покупки Spot</div></div>
+   <label class="overviewHistoryPeriod">Период <select data-overview-period aria-label="Период исторического PNL">
+    ${[['30d','30 дней'],['60d','60 дней'],['90d','90 дней'],['6m','180 дней'],['1y','1 год'],['all','До 2 лет']].map(([key,label])=>
+      `<option value="${key}" ${key===period?'selected':''}>${label}</option>`).join('')}
+   </select></label></div>
+  <div class="pnlMode" role="tablist" aria-label="История портфеля">
+   ${[['all','Все'],['spot','Спот'],['futures','Фьючерсы']].map(([key,label])=>
+     `<button type="button" data-pnl-mode="${key}" role="tab" aria-selected="${mode===key}" class="${mode===key?'active':''}">${label}</button>`).join('')}
+  </div>
+  <div class="chartbox">${data?.points?.length>=2?
+   chartHTML(mode==='spot'?'spot':'futures',period,'realized30d',data.points):
+   `<div class="emptychart"><strong>${escape(status)}</strong></div>`}</div>
+  <div class="chartlegend"><span>${escape(length)} · ${covered?'данные с '+covered:'ожидаются данные за выбранный период'}</span>
+   <strong class="${last==null?'neutral':cls(last)}">${last==null?'—':signed(last)}</strong></div>
+  <div class="overviewLedgerDetail">${escape(detail||'Переключай «Все», «Спот», «Фьючерсы», чтобы увидеть только подтверждённое покрытие истории.')}
+   ${data?.provisional?' · В Spot есть предварительные покупки, их даты и цены нужно подтвердить.':''}
+   ${mode==='all'?' · «Все» включает только даты, доступные одновременно для Spot и фьючерсов.':''}</div>
  </section>`;
 }
 function spotChartBlock(){
@@ -748,22 +763,23 @@ function overview(){
  const raw=s.bybitSnapshot?.totals?.equity;
  const equity=p.hasFutures&&raw!=null&&Number.isFinite(Number(raw))?Number(raw):null;
  const total=accountTotal(),futureValue=equity==null?'—':dollars(equity);
- const month=monthlyFutures(),monthlyResult=month?.netPnl??null,spotMonth=pnlThirtyDayDelta('spot');
- const floating=p.futuresFloatingPnl,today=futuresLedgerData('today')?.netPnl??null;
+ const period=s.chartPeriod.overview||'30d';
+ const floating=p.futuresFloatingPnl;
+ const openTotal=floating==null?(hasTrackedFutures()?null:a.profit):a.profit+floating;
+ const periodFutures=futuresLedgerData(period),periodSpot=overviewHistoryData('spot',period);
+ const futureNet=periodFutures?.netPnl??null,spotNet=periodSpot?.points.at(-1)?.v??null;
+ const periodName=PERIOD_NAMES[period]||'30 дней';
  return `<div class="overview-layout"><div class="overview-primary">
    <div class="card tint overviewHero">
     <div class="overviewEyebrow">Баланс портфеля</div>
     <div class="total">${dollars(total)}</div>
-    <div class="overviewHeroMetrics overviewHeroMetrics--three">
-     <div class="overviewMetric"><span>Реализовано сегодня</span>
-      <strong class="${today==null?'neutral':cls(today)}">${today==null?'—':signed(today)}</strong>
-      <small>С 00:00 UTC · сделки, funding, комиссии</small></div>
-     <div class="overviewMetric"><span>Открытые позиции</span>
-      <strong class="${floating==null?'neutral':cls(floating)}">${floating==null?'—':signed(floating)}</strong>
-      <small>Плавающий PNL · сейчас</small></div>
-     <div class="overviewMetric"><span>За 30 дней</span>
-      <strong class="${monthlyResult==null?'neutral':cls(monthlyResult)}">${monthlyResult==null?'—':signed(monthlyResult)}</strong>
-      <small>Закрытые операции Bybit</small></div>
+    <div class="overviewHeroMetrics">
+     <div class="overviewMetric"><span>Текущий PNL</span>
+      <strong class="${openTotal==null?'neutral':cls(openTotal)}">${openTotal==null?'—':signed(openTotal)}</strong>
+      <small>Спот + открытые фьючерсные позиции</small></div>
+     <div class="overviewMetric"><span>Фьючерсы · ${escape(periodName)}</span>
+      <strong class="${futureNet==null?'neutral':cls(futureNet)}">${futureNet==null?'—':signed(futureNet)}</strong>
+      <small>Реализовано · funding · комиссии</small></div>
     </div>
    </div>
    ${overviewPerformanceChart()}</div>
@@ -771,15 +787,15 @@ function overview(){
     <button class="assetSummary" type="button" data-action="gotoSpot">
      <div class="assetTopline"><span class="assetTitle">Спот</span><strong>${dollars(a.holdings)}</strong></div>
      <div class="assetPnlMetrics">
-      <span class="assetPnlMetric"><small>Открытые монеты</small><strong class="${cls(a.profit)}">${signed(a.profit)}</strong></span>
-      <span class="assetPnlMetric"><small>За 30 дней · оценка</small><strong>${monthlyMarkup(spotMonth)}</strong></span>
+      <span class="assetPnlMetric"><small>Текущий PNL</small><strong class="${cls(a.profit)}">${signed(a.profit)}</strong></span>
+      <span class="assetPnlMetric"><small>Изменение · ${escape(periodName)}</small><strong>${monthlyMarkup(spotNet)}</strong></span>
      </div>
     </button>
     <button class="assetSummary" type="button" data-action="gotoFutures">
      <div class="assetTopline"><span class="assetTitle">Фьючерсы</span><strong>${futureValue}</strong></div>
      <div class="assetPnlMetrics">
       <span class="assetPnlMetric"><small>Открытые позиции</small><strong class="${floating==null?'neutral':cls(floating)}">${floating==null?'—':signed(floating)}</strong></span>
-      <span class="assetPnlMetric"><small>За 30 дней</small><strong>${monthlyMarkup(monthlyResult,true)}</strong></span>
+      <span class="assetPnlMetric"><small>${escape(periodName)}</small><strong>${monthlyMarkup(futureNet,true)}</strong></span>
      </div>
     </button>
    </div></div>`;
