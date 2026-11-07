@@ -242,6 +242,7 @@ def monthly_futures_activity(key, secret, end_ms=None, period_ms=PERFORMANCE_MS,
     totals = {"tradingPnl": 0.0, "funding": 0.0, "fees": 0.0}
     daily = {}
     per_symbol = {}
+    per_bucket_symbol = {}  # Exact UTC hour/day + market for chart hover breakdown.
     cost_events = []
     costs_complete = True
     unknown_types = set()
@@ -308,6 +309,8 @@ def monthly_futures_activity(key, secret, end_ms=None, period_ms=PERFORMANCE_MS,
                     group[name] += amount
                 slot = max(start_ms, when // bucket_ms * bucket_ms)
                 series_bins[slot] = series_bins.get(slot, 0.0) + net_change
+                bucket_symbols = per_bucket_symbol.setdefault(slot, {})
+                bucket_symbols[symbol] = bucket_symbols.get(symbol, 0.0) + net_change
                 date = time.strftime("%Y-%m-%d", time.gmtime(when / 1000))
                 bucket = daily.setdefault(date, {"tradingPnl": 0.0, "funding": 0.0, "fees": 0.0})
                 for name, value in pieces.items():
@@ -329,6 +332,11 @@ def monthly_futures_activity(key, secret, end_ms=None, period_ms=PERFORMANCE_MS,
         days.append({"date": date, "netPnl": round(values["tradingPnl"] + values["funding"] - values["fees"], 8),
                      "funding": round(values["funding"], 8), "fees": round(values["fees"], 8)})
     series = [{"t": t, "netPnl": round(value, 8)} for t, value in sorted(series_bins.items())]
+    # Every tooltip amount comes from actual transaction-log records, never
+    # proportional estimates based on the full-period coin totals.
+    symbol_buckets = [{"t": timestamp, "symbol": symbol, "netPnl": round(value, 8)}
+                      for timestamp, group in sorted(per_bucket_symbol.items())
+                      for symbol, value in sorted(group.items())]
     symbols = []
     for symbol, values in sorted(per_symbol.items(), key=lambda pair: abs(pair[1]["netPnl"]), reverse=True):
         symbols.append({"symbol": symbol, "netPnl": round(values["netPnl"], 8),
@@ -347,7 +355,8 @@ def monthly_futures_activity(key, secret, end_ms=None, period_ms=PERFORMANCE_MS,
         symbols = symbols[:99] + [other]
     result = {"from": start_ms, "to": end_ms, "days": days,
               "points": series, "bucketMs": bucket_ms,
-              "symbols": symbols, "intervalType": "UTC day" if utc_today else "rolling",
+              "symbols": symbols, "symbolBuckets": symbol_buckets,
+              "intervalType": "UTC day" if utc_today else "rolling",
               # Used for matching exact position open time without guessing
               # fees from the entire 30-day account trading history.
               "costEvents": cost_events if costs_complete else [],
