@@ -1252,16 +1252,19 @@ async function loadMonthlyPerformance(id){
  try{
   const r=await fetch('./api/monthly-pnl?id='+encodeURIComponent(id)+'&endAt='+anchored,{cache:'no-store',credentials:'same-origin'});
   const data=await r.json();
-  if(r.ok&&Number.isFinite(data.netPnl)&&data.to===anchored){
+  if(r.ok&&Number.isFinite(data.netPnl)&&data.to===anchored&&Array.isArray(data.points)){
    s.monthlyPerformance[id]={...data,endAt:anchored,receivedAt:Date.now()};
+   delete s.monthlyErrors[id];
+   persistBybitHistory();
    if(s.chartMetric.futures==='pnl'&&pnlSeries('futures').points.length<2){s.chartMetric.futures='realized30d';s.chartPeriod.futures='30d'}
-   // Keep the selected overview mode stable; a new API result must not switch charts.
-  }
-  else s.monthlyPerformance[id]={error:data.error||'Нет журнала операций',endAt:anchored,receivedAt:Date.now()};
-  if(s.tab==='overview'||s.tab==='futures')renderLive();
+  }else s.monthlyErrors[id]=data.error||'Нет журнала операций';
  }catch(e){
-  s.monthlyPerformance[id]={error:'Нет доступа к месячной статистике',endAt:anchored,receivedAt:Date.now()};
- }finally{delete s.monthlyLoading[id]}
+  // A temporary failure must never delete an already confirmed chart.
+  s.monthlyErrors[id]='Не удалось обновить статистику Bybit';
+ }finally{
+  delete s.monthlyLoading[id];
+  if(s.tab==='overview'||s.tab==='futures')renderLive();
+ }
 }
 
 function onSnapshot(data){
