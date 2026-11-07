@@ -389,11 +389,6 @@
 .reserveMuted .reserveProgress span{background:var(--reserve)}
 .reserveTag{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:999px;background:var(--surface3);color:var(--muted);font-size:9px;font-weight:650;letter-spacing:.2px;vertical-align:1px}
 .reserveNote{margin:10px 0 0!important;line-height:1.45;color:var(--muted)}
-.futureSortBar{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}
-.sortChip{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--border);background:var(--surface);color:var(--sub);border-radius:999px;padding:6px 11px;font-size:11px;font-weight:600;transition:background .15s,color .15s,border-color .15s}
-.sortChip:hover{background:var(--surface2);color:var(--text)}
-.sortChip.active{background:var(--text);border-color:var(--text);color:var(--surface)}
-.sortDir{font-size:10px;opacity:.85}
 .futurePosition.futureHead{padding:0 13px 8px;border-bottom:1px solid var(--border);color:var(--muted);font-size:10px;font-weight:650;letter-spacing:.3px;text-transform:uppercase}
 .futurePosition.futureHead>span{display:block}
 .futureCoin{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
@@ -415,7 +410,6 @@
  .futurePosition.futureHead .hShort{display:inline}
  .futurePosition{grid-template-columns:minmax(0,1fr) auto auto;gap:8px;padding:12px 4px}
  .futurePosition .right strong{font-size:12px}
- .sortChip{padding:5px 9px;font-size:10px}
  .pnlChartHead .periods{justify-content:flex-start}
 }
 
@@ -970,4 +964,34 @@
 @media(max-width:600px){
  .overviewHistoryPeriod .overviewPeriodSelect{min-width:115px;max-width:150px}
  .overviewHistoryPeriod .overviewPeriodSelect select{padding-right:30px;font-size:11px}
+}
+
+/* Sort Futures positions in place without a second toolbar of pill buttons. */
+.futurePosition.futureHead{align-items:end;row-gap:0}
+.futurePosition.futureHead>.futureSortCell{display:flex;min-width:0;align-items:stretch}
+.futurePosition.futureHead>.futureSortCell.right{justify-content:flex-end}
+.futureSortButton{
+ display:inline-flex;align-items:center;gap:4px;justify-content:flex-start;
+ width:auto;min-width:0;max-width:100%;padding:5px 0 6px;
+ background:transparent;border:0;border-radius:0;
+ color:var(--muted);font:inherit;font-size:10px;font-weight:650;
+ letter-spacing:.15px;line-height:1.25;text-transform:uppercase;
+ white-space:nowrap;cursor:pointer;text-align:left;transition:color .15s;
+}
+.futurePosition.futureHead>.futureSortCell.right .futureSortButton{text-align:right;justify-content:flex-end}
+.futureSortButton:hover,.futureSortButton:focus-visible,.futureSortButton.isActive{color:var(--text)}
+.futureSortButton:focus-visible{outline:2px solid var(--border);outline-offset:3px;border-radius:3px}
+.futureSortArrow{display:inline-block;min-width:9px;font-size:10px;line-height:1;letter-spacing:0;opacity:.48}
+.futureSortButton.isActive .futureSortArrow{opacity:1}
+.futurePosition.futureHead .posRoi{align-self:stretch;font-size:9px}
+.futurePosition.futureHead .posRoi .futureSortButton{font-size:9px;letter-spacing:0}
+.futurePosition:not(.futureHead) .posRoi{font-size:10px;font-weight:450}
+.futurePosition:not(.futureHead) .posSize strong{
+ font-size:12px;font-weight:400;line-height:1.4;letter-spacing:0;
+ color:var(--sub);font-variant-numeric:tabular-nums;
+}
+@media(max-width:600px){
+ .futureSortButton{font-size:9px;gap:2px;letter-spacing:0}
+ .futureSortArrow{font-size:9px;min-width:7px}
+ .futurePosition:not(.futureHead) .posSize strong{font-size:10px}
 }
