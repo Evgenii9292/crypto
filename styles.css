@@ -837,6 +837,10 @@
  margin:5px 0 0;line-height:1.18;font-size:26px;
  font-variant-numeric:tabular-nums;
 }
+/* Single-line balance title: move the amount up, but keep a deliberate
+   gap to the heading; the available-balance note remains bottom-aligned. */
+.futureMetricCard:first-child .eyebrow{min-height:18px}
+.futureMetricCard:first-child .num{margin-top:10px}
 .futureMetricCard .pnlParts{
  margin-top:auto;padding-top:17px;min-height:34px;
  display:block;font-size:10px;line-height:1.45;overflow-wrap:anywhere;
