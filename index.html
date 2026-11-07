@@ -1042,7 +1042,7 @@ function handleClick(e){
  const pnl=e.target.closest('[data-pnl-mode]');
  if(pnl){s.pnlMode=pnl.dataset.pnlMode;render();return}
  const per=e.target.closest('[data-period]');
- if(per){const key=per.dataset.chart||'overview';s.chartPeriod[key]=per.dataset.period;if(key==='overview')s.period=per.dataset.period;chart();render();return}
+ if(per){const key=per.dataset.chart||'overview';s.chartPeriod[key]=per.dataset.period;if(key==='overview')s.period=per.dataset.period;saveLocal(false);chart();render();return}
  const met=e.target.closest('[data-metric]');
  if(met){s.chartMetric[met.dataset.chart]=met.dataset.metric;if(met.dataset.metric==='realized30d')s.chartPeriod[met.dataset.chart]='30d';render();return}
  const sort=e.target.closest('[data-sort]');
