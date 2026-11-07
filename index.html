@@ -231,16 +231,27 @@ function pnlChartBlock(opts){
   const current=metric==='balance'?(balanceValue!=null&&Number.isFinite(Number(balanceValue))?Number(balanceValue):null):rawCurrent==null?null:Number(rawCurrent);
  return `<section class="section pnlChart card"><div class="hrow pnlChartHead"><div><div class="sectitle">${opts.title||'Портфель'}</div>${subtitle?`<div class="tiny">${escape(subtitle)}</div>`:''}</div>${opts.monthOnly?'<div class="tiny">Последние 30 дней</div>':periodButtons(period,key)}</div>${showModes?`<div class="pnlMode">${[['all','Все'],['spot','Спот'],['futures','Фьючерсы'],['month','30 дней']].map(([k,name])=>`<button class="${s.pnlMode===k?'active':''}" data-pnl-mode="${k}" type="button">${name}</button>`).join('')}</div>`:''}${metricSwitch}<div class="chartbox">${chartHTML(kind,period,metric)}</div><div class="chartlegend"><span>${chartCaption(kind,period,opts.summary,metric)}</span><strong class="${current==null||metric==='balance'?'neutral':cls(current)}">${current==null?'—':metric==='balance'?dollars(current):signed(current)}</strong></div></section>`;
 }
-function spotPnlChart(){
- const p=portfolioSummary();
- if(s.pnlMode==='month'){
-  return pnlChartBlock({key:'overview',kind:'futures',metricOverride:'realized30d',
-   monthOnly:true,title:'PNL · Фьючерсы за 30 дней',
-   subtitle:'Результат завершённых операций с учётом funding и комиссий, без открытого PNL',
-   modes:true,current:monthlyFutures()?.netPnl??null,summary:p});
- }
- const shown=s.pnlMode==='spot'?p.spot.profit:s.pnlMode==='futures'?p.futuresPnl:p.pnl;
- return pnlChartBlock({key:'overview',title:'Портфель',subtitle:'',modes:true,current:shown,summary:p});
+function overviewPerformanceChart(){
+ // The only time-scoped portfolio performance currently verified by an
+ // exchange is the 30-day derivatives transaction log. Never combine it with
+ // the Spot valuation delta or an account's lifetime realised PNL.
+ const month=monthlyFutures(),ids=s.bybitExpectedIds||[];
+ const error=ids.map(id=>s.monthlyPerformance[id]?.error).find(Boolean);
+ const value=month?.netPnl;
+ const period=month?
+  new Date(month.from).toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric'})+
+  ' – '+new Date(month.to).toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric'}):
+  'Последние 30 дней';
+ const empty=error||(!ids.length?'Нет подключённых субаккаунтов с торговой историей':'Загружаем операции Bybit…');
+ return `<section class="section pnlChart card overviewLedger" aria-label="Результат закрытых операций за 30 дней">
+  <div class="hrow pnlChartHead"><div><div class="sectitle">Результат за 30 дней</div>
+   <div class="tiny">Подключённые субаккаунты Bybit · закрытые операции</div></div>
+   <span class="overviewLedgerPeriod">${escape(period)}</span></div>
+  <div class="chartbox">${month?chartHTML('futures','30d','realized30d'):`<div class="emptychart">${escape(empty)}</div>`}</div>
+  <div class="chartlegend"><span>Закрытые сделки + funding − комиссии</span>
+   <strong class="${value==null?'neutral':cls(value)}">${value==null?'—':signed(value)}</strong></div>
+  <div class="overviewLedgerDetail">Открытые позиции и спотовая переоценка не входят в этот результат.</div>
+ </section>`;
 }
 function spotChartBlock(){
  const p=portfolioSummary(),a=p.spot;
@@ -297,36 +308,35 @@ function overview(){
  const raw=s.bybitSnapshot?.totals?.equity;
  const equity=p.hasFutures&&raw!=null&&Number.isFinite(Number(raw))?Number(raw):null;
  const total=accountTotal(),futureValue=equity==null?'—':dollars(equity);
- const pnl=p.pnl==null?'—':signed(p.pnl);
- const month=pnlThirtyDayDelta('all'),spotMonth=pnlThirtyDayDelta('spot'),monthly=monthlyFutures(),futureMonth=monthly?.netPnl??null;
- const overviewMonth=month!=null?month:futureMonth;
- const overviewMonthName=month!=null?'Месячный PNL':futureMonth!=null?'Фьючерсы · 30 дней':'Месячный PNL';
+ const month=monthlyFutures(),monthlyResult=month?.netPnl??null,spotMonth=pnlThirtyDayDelta('spot');
+ const floating=p.futuresFloatingPnl;
  return `<div class="overview-layout"><div class="overview-primary">
-  <div class="card tint overviewHero">
-   <div class="overviewEyebrow">Баланс портфеля</div>
-   <div class="total">${dollars(total)}</div>
-   <div class="overviewHeroMetrics">
-    <div class="overviewMetric"><span>Текущий PNL</span><strong class="${p.pnl==null?'neutral':cls(p.pnl)}">${pnl}</strong></div>
-    <div class="overviewMetric"><span>${overviewMonthName}</span><strong>${monthlyMarkup(overviewMonth,month==null&&futureMonth!=null)}</strong></div>
+   <div class="card tint overviewHero">
+    <div class="overviewEyebrow">Баланс портфеля</div>
+    <div class="total">${dollars(total)}</div>
+    <div class="overviewHeroMetrics overviewHeroMetrics--single">
+     <div class="overviewMetric"><span>Результат за 30 дней</span>
+      <strong class="${monthlyResult==null?'neutral':cls(monthlyResult)}">${monthlyResult==null?'—':signed(monthlyResult)}</strong>
+      <small>Закрытые операции Bybit · ${s.bybitExpectedIds.length} субакк.</small></div>
+    </div>
    </div>
-  </div>
-  ${spotPnlChart()}</div>
-  <div class="overview-aside">
-   <button class="assetSummary" type="button" data-action="gotoSpot">
-    <div class="assetTopline"><span class="assetTitle">Спот</span><strong>${dollars(a.holdings)}</strong></div>
-    <div class="assetPnlMetrics">
-     <span class="assetPnlMetric"><small>Текущий PNL</small><strong class="${cls(a.profit)}">${signed(a.profit)}</strong></span>
-     <span class="assetPnlMetric"><small>Месячный PNL</small><strong>${monthlyMarkup(spotMonth)}</strong></span>
-    </div>
-   </button>
-   <button class="assetSummary" type="button" data-action="gotoFutures">
-    <div class="assetTopline"><span class="assetTitle">Фьючерсы</span><strong>${futureValue}</strong></div>
-    <div class="assetPnlMetrics">
-     <span class="assetPnlMetric"><small>Текущий PNL</small><strong class="${p.futuresPnl==null?'neutral':cls(p.futuresPnl)}">${p.futuresPnl==null?'—':signed(p.futuresPnl)}</strong></span>
-     <span class="assetPnlMetric"><small>Месячный PNL</small><strong>${monthlyMarkup(futureMonth,true)}</strong></span>
-    </div>
-   </button>
-  </div></div>`;
+   ${overviewPerformanceChart()}</div>
+   <div class="overview-aside">
+    <button class="assetSummary" type="button" data-action="gotoSpot">
+     <div class="assetTopline"><span class="assetTitle">Спот</span><strong>${dollars(a.holdings)}</strong></div>
+     <div class="assetPnlMetrics">
+      <span class="assetPnlMetric"><small>Открытые монеты</small><strong class="${cls(a.profit)}">${signed(a.profit)}</strong></span>
+      <span class="assetPnlMetric"><small>За 30 дней · оценка</small><strong>${monthlyMarkup(spotMonth)}</strong></span>
+     </div>
+    </button>
+    <button class="assetSummary" type="button" data-action="gotoFutures">
+     <div class="assetTopline"><span class="assetTitle">Фьючерсы</span><strong>${futureValue}</strong></div>
+     <div class="assetPnlMetrics">
+      <span class="assetPnlMetric"><small>Открытые позиции</small><strong class="${floating==null?'neutral':cls(floating)}">${floating==null?'—':signed(floating)}</strong></span>
+      <span class="assetPnlMetric"><small>За 30 дней</small><strong>${monthlyMarkup(monthlyResult,true)}</strong></span>
+     </div>
+    </button>
+   </div></div>`;
 }
 function spotRow(symbol){
  const x=coin(symbol),a=sums(),open=!!s.spotOpen[symbol],tx=s.trades.filter(t=>t.coin===symbol),accounts=[...new Set(tx.map(t=>t.account||'fxmr4'))].join(', ')||'fxmr4';
@@ -451,11 +461,11 @@ function futures(){
  const monthly=monthlyFutures();
  const monthlyError=(s.bybitExpectedIds||[]).map(id=>s.monthlyPerformance[id]?.error).find(Boolean);
   const metrics=[['Баланс субаккаунта',ready&&snap.equity!=null?dollars(snap.equity):'—',''],
-  ['PNL счёта',accountPnl!=null?signed(accountPnl):'—',accountPnl==null?'neutral':cls(accountPnl)],
-  ['30 дней · PNL',monthly?.netPnl==null?'—':signed(monthly.netPnl),monthly?.netPnl==null?'neutral':cls(monthly.netPnl)],
+  ['Открытые позиции · PNL',upl!=null?signed(upl):'—',upl==null?'neutral':cls(upl)],
+  ['Результат за 30 дней',monthly?.netPnl==null?'—':signed(monthly.netPnl),monthly?.netPnl==null?'neutral':cls(monthly.netPnl)],
   ['Открытых позиций',ready?String(open.length):'—','']];
  const coins=coinStack(open.map(p=>p.symbol));
- return `<div class="futureMetrics">${metrics.map(([name,value,tone])=>`<div class="card tint"><div class="eyebrow">${name}</div><div class="num ${tone}">${value}</div>${name==='Баланс субаккаунта'&&ready?`<div class="pnlParts">Доступно: ${snap.availableBalance==null?'—':dollars(snap.availableBalance)}</div>`:''}${name==='30 дней · PNL'?monthly?`<div class="pnlParts"><span>Funding: ${signed(monthly.funding)}</span><span>Комиссии: ${dollars(monthly.fees)}</span></div>`:`<div class="pnlParts">${escape(monthlyError||'Загружаем операции Bybit…')}</div>`:''}${name==='PNL счёта'&&ready?`<div class="pnlParts"><span>Закрыто: ${snap.realisedPnl==null?'—':signed(Number(snap.realisedPnl))}</span><span>Открыто: ${upl==null?'—':signed(upl)}</span></div>`:''}${name==='Открытых позиций'&&coins?`<div class="metricCoins">${coins}</div>`:''}</div>`).join('')}</div>
+ return `<div class="futureMetrics">${metrics.map(([name,value,tone])=>`<div class="card tint"><div class="eyebrow">${name}</div><div class="num ${tone}">${value}</div>${name==='Баланс субаккаунта'&&ready?`<div class="pnlParts">Доступно: ${snap.availableBalance==null?'—':dollars(snap.availableBalance)}</div>`:''}${name==='Результат за 30 дней'?monthly?`<div class="pnlParts"><span>Funding: ${signed(monthly.funding)}</span><span>Комиссии: ${dollars(monthly.fees)}</span></div>`:`<div class="pnlParts">${escape(monthlyError||'Загружаем операции Bybit…')}</div>`:''}${name==='Открытые позиции · PNL'&&ready?`<div class="pnlParts"><span>Нереализованный результат прямо сейчас</span></div>`:''}${name==='Открытых позиций'&&coins?`<div class="metricCoins">${coins}</div>`:''}</div>`).join('')}</div>
  ${futuresChartBlock()}
  <section class="section"><div class="futureToolbar"><div><div class="sectitle">Позиции и аккаунты</div><div class="tiny">Раскрывай биржи и выбирай группировку</div></div><button class="btn" type="button" data-action="goConnections">${icon('settings')} Настройки</button></div><div class="futureFilters"><div class="tradeSwitch" role="tablist" aria-label="Группировка фьючерсов">${[['all','Все позиции'],['exchange','По биржам'],['account','По субаккаунтам']].map(([id,name])=>`<button type="button" data-future-mode="${id}" class="${s.futureMode===id?'active':''}">${name}</button>`).join('')}</div></div>${s.futureMode==='all'?futuresSortBar():''}<div class="sourceList futureResults">${body}</div></section>`;
 }
