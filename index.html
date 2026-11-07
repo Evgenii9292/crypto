@@ -969,10 +969,10 @@ function futureAccountRow(ex,ac){
   <span><small>Открытые позиции</small><b class="${open==null?'neutral':cls(open)}">${open==null?'—':signed(open)}</b></span>
   <span><small>За 30 дней</small><b class="${monthly==null?'neutral':cls(monthly)}" title="${escape(reportHint)}">${monthly==null?'—':signed(monthly)}</b></span>
  </span>`;
- return `<div class="sourceSub"><div class="accountRow"><button type="button" class="sourceSubHeader" data-action="toggleAccount" data-id="${escape(id)}"><span class="accountIdentity"><strong>${escape(ac.name)}</strong><span class="accountTag">Фьючерсы</span></span><span class="sourceSubRight">${metrics}<span class="chev ${s.openedAccounts[id]?'rotated':''}">⌄</span></span></button><button class="accountManage" type="button" data-action="manageAccount" data-id="${escape(id)}" aria-label="Настройки ${escape(ac.name)}">${icon('settings')}</button></div>${s.openedAccounts[id]?(pp.length?pp.map(futurePositionLine).join(''):'<div class="sourceEmpty">Нет открытых позиций или API не подключён.</div>'):''}</div>`;
+ return `<div class="sourceSub"><div class="accountRow"><button type="button" class="sourceSubHeader" data-action="toggleAccount" data-id="${escape(id)}"><span class="accountIdentity"><strong>${escape(ac.name)}</strong><span class="accountTag">Фьючерсы</span></span><span class="sourceSubRight">${metrics}<span class="chev ${s.openedAccounts[id]!==false?'rotated':''}">⌄</span></span></button><button class="accountManage" type="button" data-action="manageAccount" data-id="${escape(id)}" aria-label="Настройки ${escape(ac.name)}">${icon('settings')}</button></div>${s.openedAccounts[id]!==false?(pp.length?pp.map(futurePositionLine).join(''):'<div class="sourceEmpty">Нет открытых позиций или API не подключён.</div>'):''}</div>`;
 }
 function futureExchangeCard(ex){
- const opened=!!s.openedExchanges[ex.id],balance=ex.id==='bybit'&&s.backendConnection.connected&&s.bybitSnapshot?.totals?.equity!=null?dollars(s.bybitSnapshot.totals.equity):'—';
+ const opened=s.openedExchanges[ex.id]!==false,balance=ex.id==='bybit'&&s.backendConnection.connected&&s.bybitSnapshot?.totals?.equity!=null?dollars(s.bybitSnapshot.totals.equity):'—';
  return `<section class="sourceCard"><button class="sourceHeader" type="button" data-action="toggleExchange" data-id="${escape(ex.id)}"><span class="sourceLogo">${escape(ex.name.slice(0,1))}</span><span class="sourceName"><strong>${escape(ex.name)}</strong><span class="tiny">${ex.accounts.length} субаккаунтов · ${ex.connected?'Подключено':'Не подключено'}</span></span><span class="sourceHeaderRight">${balance} <span class="chev ${opened?'rotated':''}">⌄</span></span></button>${opened?`<div class="sourceChildren">${ex.accounts.length?ex.accounts.map(ac=>futureAccountRow(ex,ac)).join(''):'<div class="sourceEmpty">Субаккаунты пока не добавлены.</div>'}</div>`:''}</section>`;
 }
 function futuresByAccount(){
@@ -1532,8 +1532,16 @@ function handleClick(e){
  if(act==='cancelRenameAccount'){s.renameId=null;s.renameValue='';s.renameError='';render();return}
  if(act==='saveRenameAccount'){saveRenameAccount(id);return}
  if(act==='prices'){s.showPrices=!s.showPrices;render();return}
- if(act==='toggleExchange'){s.openedExchanges[id]=!s.openedExchanges[id];render();return}
- if(act==='toggleAccount'){s.openedAccounts[id]=!s.openedAccounts[id];render();return}
+ if(act==='toggleExchange'){
+   const expandedByDefault=s.tab==='futures'&&s.futureMode==='exchange';
+   s.openedExchanges[id]=expandedByDefault?s.openedExchanges[id]===false:!s.openedExchanges[id];
+   render();return
+  }
+ if(act==='toggleAccount'){
+   const expandedByDefault=s.tab==='futures'&&s.futureMode!=='all';
+   s.openedAccounts[id]=expandedByDefault?s.openedAccounts[id]===false:!s.openedAccounts[id];
+   render();return
+  }
  if(act==='toggleSpotCoin'){s.spotOpen[id]=!s.spotOpen[id];render();return}
  if(act==='toggleHistory'){s.spotHistoryOpen=!s.spotHistoryOpen;s.form=false;render();return}
  if(act==='toggleSpotAccounts'){s.spotAccountsOpen=!s.spotAccountsOpen;render();return}
