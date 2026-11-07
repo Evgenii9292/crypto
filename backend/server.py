@@ -198,7 +198,16 @@ def futures_pnl_totals(account):
 # accumulated 30 days of snapshot samples. Bybit limits each query to 7 days.
 PERFORMANCE_MS = 30 * 24 * 3600 * 1000
 LEDGER_WINDOW_MS = 6 * 24 * 3600 * 1000
-LEDGER_TYPES = {"TRADE", "SETTLEMENT", "DELIVERY", "LIQUIDATION", "ADL"}
+LEDGER_TYPES = {"TRADE", "SETTLEMENT", "DELIVERY", "LIQUIDATION", "ADL",
+                "FEE_REFUND", "FORWARD_SPLIT_SETTLE", "FORWARD_SPLIT_OPEN",
+                "REVERSE_SPLIT_SETTLE", "REVERSE_SPLIT_OPEN"}
+NON_PNL_LEDGER_TYPES = {"TRANSFER_IN", "TRANSFER_OUT", "TRANSFER", "AIRDROP",
+                        "BONUS", "BONUS_RECOLLECT", "BONUS_TRANSFER_IN",
+                        "BONUS_TRANSFER_OUT", "INTEREST", "BORROW", "REPAY",
+                        "CURRENCY_BUY", "CURRENCY_SELL", "CONVERT",
+                        "SPOT_REPAYMENT_SELL", "SPOT_REPAYMENT_BUY",
+                        "DEPOSIT", "WITHDRAW", "FLOATING_TO_FIXED_BORROW",
+                        "FLOATING_TO_FIXED_REPAY"}
 
 
 def monthly_futures_activity(key, secret, end_ms=None):
@@ -240,7 +249,10 @@ def monthly_futures_activity(key, secret, end_ms=None):
                     # Transfers, bonuses and other balance adjustments are not PNL.
                     # Raise on unfamiliar nonzero derivative cash flow instead of
                     # mislabelling it as profit or silently ignoring actual trades.
-                    if kind not in {"TRANSFER", "BONUS", "DEPOSIT", "WITHDRAW", "INTEREST"}:
+                    if kind not in NON_PNL_LEDGER_TYPES and any(
+                        (_num(record.get(field)) or 0) != 0
+                        for field in ("cashFlow", "funding", "fee", "change")
+                    ):
                         unknown_types.add(kind or "UNKNOWN")
                     continue
                 pieces = {}
