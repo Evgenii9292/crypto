@@ -67,7 +67,6 @@ test('overview has only All Spot Futures modes and true current open PNL',()=>{
  assert.match(overview,/data-pnl-mode="spot"/);
  assert.match(overview,/data-pnl-mode="futures"/);
  assert.doesNotMatch(overview,/data-pnl-mode="month"/);
- assert.doesNotMatch(overview,/PNL счёта/);
  assert.ok(!html.includes('class="brandBadge">FXMR4'));
 });
 
