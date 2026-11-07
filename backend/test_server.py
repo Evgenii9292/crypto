@@ -251,8 +251,12 @@ class TestHistorySampler(TestCase):
         def stub(request, timeout):
             visited.append(request)
             return Response()
-        with patch.object(server, "urlopen", side_effect=stub):
-            quotes = server.public_spot_quotes([{"coin": "BTC"}])
+        self.quotes.stop()
+        try:
+            with patch.object(server, "urlopen", side_effect=stub):
+                quotes = server.public_spot_quotes([{"coin": "BTC"}])
+        finally:
+            self.quotes.start()
         self.assertAlmostEqual(quotes["BTC"]["price"], 76321.25)
         self.assertIn("/v5/market/tickers?", visited[0].full_url)
         self.assertNotIn("X-BAPI-API-KEY", dict(visited[0].header_items()))
