@@ -509,3 +509,87 @@ test('history and daily bars can filter one Bybit subaccount without changing ag
  assert.doesNotMatch(markup,/BTCUSDT/);
  assert.match(markup,/data-futures-account/);
 });
+
+test('historical Spot mode uses real Bybit candle closes and recorded purchase dates',()=>{
+ const {window,element}=mount([{id:'bybit',name:'Bybit',accounts:[]}]);
+ const v=window.fxmr4Inspect,utc=Math.floor(Date.now()/86400000)*86400000;
+ const t0=utc-2*86400000,t1=utc-86400000;
+ v.s.trades=[{id:1,coin:'BTC',spent:100,entry:100,
+  buy_date:new Date(t0).toISOString().slice(0,10),confirmed:true}];
+ v.s.spotHistoricalReports['30d']={to:utc,from:utc-30*86400000,
+  prices:{
+   BTC:[{t:t0,close:100},{t:t1,close:120}],
+   ETH:[{t:t0,close:200},{t:t1,close:210}]
+  }};
+ const spot=v.overviewHistoryData('spot','30d');
+ assert.equal(spot.points.length,2);
+ assert.equal(spot.points[0].v,0);
+ assert.equal(spot.points[1].v,20);
+ v.onAccounts([{id:'a',label:'Alpha'}]);
+ v.s.monthlyPerformance.a={from:t0-86400000,to:t1+86400000,
+  netPnl:10,tradingPnl:10,fees:0,funding:0,days:[],
+  points:[{t:t1,netPnl:10}]};
+ const futures=v.overviewHistoryData('futures','30d');
+ assert.equal(futures.points.at(-1).v,10);
+ const all=v.overviewHistoryData('all','30d');
+ assert.equal(all.points.length,2);
+ assert.equal(all.points[0].v,0);
+ assert.equal(all.points[1].v,30,'combined chart is Spot change + futures trades on shared interval');
+ v.s.pnlMode='all';v.s.tab='overview';v.render();
+ const markup=element('content').innerHTML;
+ assert.match(markup,/data-pnl-mode="all"/);
+ assert.match(markup,/data-pnl-mode="spot"/);
+ assert.match(markup,/data-pnl-mode="futures"/);
+ assert.doesNotMatch(markup,/data-pnl-mode="month"/);
+ assert.match(markup,/polyline/);
+ assert.match(markup,/\+\$30\.00/);
+});
+
+test('missing Spot history never turns a six-month Futures total into a fake All portfolio chart',()=>{
+ const {window,element}=mount([{id:'bybit',name:'Bybit',accounts:[]}]);
+ const v=window.fxmr4Inspect;
+ v.onAccounts([{id:'a',label:'A'}]);
+ const day=Math.floor(Date.now()/86400000)*86400000;
+ v.s.periodReports['6m']={a:{from:day-180*86400000,to:day,netPnl:142,
+  points:[{t:day-86400000,netPnl:142}],days:[],symbols:[]}};
+ assert.equal(v.overviewHistoryData('all','6m'),null);
+ assert.equal(v.overviewHistoryData('futures','6m').points.at(-1).v,142);
+ v.s.chartPeriod.overview='6m';v.s.tab='overview';v.s.pnlMode='all';v.render();
+ const markup=element('content').innerHTML;
+ assert.match(markup,/data-overview-period/);
+ assert.match(markup,/нет полной сопоставимой истории/);
+ assert.doesNotMatch(markup,/\+\$142\.00[^]*class="chartlegend"/);
+});
+
+test('six-day Bybit chunks merge into 180-day report without gaps, duplicates or silent partial totals',async()=>{
+ const seen=[];
+ const startId='sub-one';
+ const stub=async url=>{
+  if(!String(url).includes('/api/period-chunk?'))return new Promise(()=>{});
+  const u=String(url),start=Number(u.match(/startAt=(\d+)/)[1]),
+   end=Number(u.match(/endAt=(\d+)/)[1]);
+  seen.push([start,end]);
+  return {ok:true,json:async()=>({from:start,to:end,netPnl:2,tradingPnl:2,
+   funding:0,fees:0,points:[{t:start+1000,netPnl:2}],
+   days:[{date:new Date(start).toISOString().slice(0,10),netPnl:2}],
+   symbols:[{symbol:'ADAUSDT',netPnl:2,operations:1}]})};
+ };
+ const {window}=mount([{id:'bybit',name:'Bybit',accounts:[]}],stub);
+ const v=window.fxmr4Inspect;
+ v.onAccounts([{id:startId,label:'Alpha'}]);
+ v.s.backendConnection.available=true;
+ await v.loadFuturesPeriod('6m');
+ assert.equal(seen.length,30,'180 days must use 30 requests of up to 6 days');
+ assert.ok(seen.every(([start,end])=>end-start===6*86400000));
+ const data=v.futuresLedgerData('6m');
+ assert.ok(data,'all slices must have been checked before drawing history');
+ assert.equal(data.netPnl,60);
+ assert.equal(data.days.length,30);
+ assert.equal(data.symbols[0].netPnl,60);
+ await v.loadFuturesPeriod('6m');
+ assert.equal(seen.length,30,'reload must reuse the period cache');
+ const parts=[{from:0,to:1000,netPnl:1,points:[]},{from:1100,to:2000,netPnl:1,points:[]}];
+ let threw=false;
+ try{v.combineBybitChunks(parts,0,2000,'6m')}catch(e){threw=true}
+ assert.ok(threw,'a missing history interval must never be labelled as zero PNL');
+});
