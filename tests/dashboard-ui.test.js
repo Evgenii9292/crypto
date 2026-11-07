@@ -43,7 +43,7 @@ function mount(sources,fetchImpl=null){
   setTimeout:()=>1,clearTimeout(){},setInterval:()=>{},
   window:{},FormData:class{constructor(form){this.form=form}get(key){return this.form.fields?.[key]??null}}
  };
- vm.runInNewContext(script.replace('window.fxmr4GetState=()=>', 'window.fxmr4Inspect={s,onAccounts,onSnapshot,render,renderLive,reconcileLive,pnlWindow,monthlyFutures,monthlyFuturesSeries,positionAge,futuresLedgerData,activeFuturesReports,positionAccountEquity,loadFuturesPeriod};window.fxmr4GetState=()=>'),context,{filename:'index.html',timeout:3000});
+ vm.runInNewContext(script.replace('window.fxmr4GetState=()=>', 'window.fxmr4Inspect={s,onAccounts,onSnapshot,render,renderLive,reconcileLive,pnlWindow,monthlyFutures,monthlyFuturesSeries,positionAge,futuresLedgerData,activeFuturesReports,positionAccountEquity,loadFuturesPeriod,observedEquitySeries,futuresCSVText,futuresValue,pnlBarSections};window.fxmr4GetState=()=>'),context,{filename:'index.html',timeout:3000});
  const click=action=>{
   const target={dataset:{action},closest(selector){return selector==='[data-action]'?this:null}};
   for(const listener of listeners.click||[])listener({target});
@@ -390,4 +390,87 @@ test('clicking history period fetches both Bybit subaccounts and reuses cached r
  assert.match(markup,/data-period="24h" data-chart="futures" class="period active"/);
  assert.match(markup,/\+\$5\.00/);
  assert.match(markup,/polyline/);
+});
+
+test('overview separates todays closed trade cashflow and live open PNL across subaccounts',()=>{
+ const {element,window}=mount([{id:'bybit',name:'Bybit',accounts:[]}]);
+ const v=window.fxmr4Inspect;
+ v.onAccounts([{id:'a',label:'Alpha'},{id:'b',label:'Beta'}]);
+ for(const [id,equity,upl] of [['a',1000,3],['b',500,-5]]){
+  v.onSnapshot({account:{id,name:id},updatedAt:Date.now(),
+   totals:{equity,perpUPL:upl,accountPnl:-100,realisedPnl:-98,positionCount:1},
+   positions:[{symbol:'ADAUSDT',pnl:upl,side:'Long',size:40}]});
+ }
+ const end=v.s.monthlyAnchorMs,begin=Math.floor(end/86400000)*86400000;
+ const report=(netPnl)=>({from:begin,to:end,netPnl,funding:0,fees:0,
+  points:[{t:begin+3600000,netPnl}],days:[{date:new Date(begin).toISOString().slice(0,10),netPnl}],symbols:[]});
+ v.s.periodReports.today={a:report(7),b:report(-4)};
+ v.s.monthlyPerformance.a={...report(14),from:end-30*86400000};
+ v.s.monthlyPerformance.b={...report(2),from:end-30*86400000};
+ v.s.tab='overview';v.render();
+ const markup=element('content').innerHTML;
+ assert.match(markup,/Сегодня закрыто/);
+ assert.match(markup,/Открытые позиции/);
+ assert.match(markup,/За 30 дней/);
+ assert.match(markup,/\+\$3\.00/);
+ assert.match(markup,/−\$2\.00/);
+ assert.match(markup,/\+\$16\.00/);
+ assert.doesNotMatch(markup,/Текущий PNL/);
+});
+
+test('daily result and symbol bars use the same Bybit ledger and can export CSV',()=>{
+ const {window,element}=mount([{id:'bybit',name:'Bybit',accounts:[]}]);
+ const v=window.fxmr4Inspect;
+ v.onAccounts([{id:'a',label:'Main'}]);
+ const end=v.s.monthlyAnchorMs,from=end-60*86400000;
+ v.s.periodReports['60d']={a:{from,to:end,netPnl:15,funding:-1,fees:2,receivedAt:Date.now(),
+  points:[{t:from+3600000,netPnl:10},{t:from+2*3600000,netPnl:5}],
+  days:[{date:'2026-10-01',netPnl:10},{date:'2026-10-08',netPnl:5}],
+  symbols:[{symbol:'ADAUSDT',netPnl:18,operations:5},{symbol:'XMRUSDT',netPnl:-3,operations:1}]
+ }};
+ v.s.tab='futures';v.s.chartPeriod.futures='60d';v.render();
+ const markup=element('content').innerHTML;
+ assert.match(markup,/Результат по периодам/);
+ assert.match(markup,/По активам/);
+ assert.match(markup,/ADAUSDT/);
+ assert.match(markup,/XMRUSDT/);
+ assert.match(markup,/pnlBarItem/);
+ assert.match(markup,/data-futures-unit="pct"/);
+ assert.match(markup,/data-futures-account/);
+ assert.match(markup,/data-action="exportFuturesCsv"/);
+ const csv=v.futuresCSVText('60d','all','pnl');
+ assert.match(csv,/daily/);
+ assert.match(csv,/symbol/);
+ assert.match(csv,/ADAUSDT/);
+ assert.match(csv,/XMRUSDT/);
+ assert.match(csv,/15/);
+});
+
+test('observed equity never invents a jump when another account joins',()=>{
+ const {window,element}=mount([{id:'bybit',name:'Bybit',accounts:[]}]);
+ const v=window.fxmr4Inspect;
+ v.onAccounts([{id:'a',label:'Alpha'},{id:'b',label:'Beta'}]);
+ const now=Math.floor(Date.now()/300000)*300000;
+ v.s.equityHistory=[
+  {accountId:'a',t:now-900000,equity:1100},
+  {accountId:'a',t:now-600000,equity:1100},
+  {accountId:'b',t:now-600000,equity:2200},
+  {accountId:'a',t:now-300000,equity:1110},
+  {accountId:'b',t:now-300000,equity:2190}
+ ];
+ const series=v.observedEquitySeries('7d');
+ assert.equal(series.length,2);
+ assert.equal(series[0].v,3300);
+ assert.equal(series[1].v,3300);
+ const one=v.observedEquitySeries('7d','a');
+ assert.equal(one.length,3);
+ v.s.tab='futures';v.s.futuresView='equity';v.s.chartPeriod.futures='7d';v.render();
+ const markup=element('content').innerHTML;
+ assert.match(markup,/Стоимость счёта · наблюдения/);
+ assert.match(markup,/История стоимости сохраняется автоматически/);
+ assert.match(markup,/polyline/);
+ const csv=v.futuresCSVText('7d','all','equity');
+ assert.match(csv,/observed_equity/);
+ assert.match(csv,/3300/);
+ assert.doesNotMatch(markup,/data-futures-unit="pct" class="active"/);
 });
