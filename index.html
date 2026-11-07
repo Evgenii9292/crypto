@@ -477,31 +477,79 @@ function exchangeFooterStatus(){
  const connected=all.filter(ex=>ex.connected);
  return connected.length?{text:'Биржи подключены',error:false,details:connected.map(ex=>ex.name).join(', ')}:{text:'Биржи не подключены',error:false,details:''};
 }
+// Background API polling patches only changed DOM nodes. Never restart the
+// page entrance animation or discard an in-progress form.
+function updateChrome(){
+ const titles={overview:'Обзор',positions:'Спот',futures:'Фьючерсы',connections:'Настройки'};
+ const title=$('pageTitle'),total=$('sidebarTotal');
+ if(title.textContent!==titles[s.tab])title.textContent=titles[s.tab];
+ const nextTotal=dollars(accountTotal());
+ if(total.textContent!==nextTotal)total.textContent=nextTotal;
+ syncThemeButtons();
+ const status=exchangeFooterStatus(),label=$('connectionStatusText');
+ if(label.textContent!==status.text)label.textContent=status.text;
+ if(label.title!==status.details)label.title=status.details;
+ $('connectionDot').classList.toggle('isDisconnected',!s.backendConnection.connected&&!status.error);
+ $('connectionDot').classList.toggle('isError',!!status.error);
+ const tabs=document.querySelector('.tabs');
+ if(tabs)tabs.dataset.active=s.tab;
+ document.querySelectorAll('[data-tab]').forEach(b=>{
+  const active=b.dataset.tab===s.tab;
+  b.classList.toggle('active',active);
+  b.setAttribute('aria-selected',active?'true':'false');
+ });
+ const toast=s.flash?'<div class="toast">'+escape(s.flash)+'</div>':'';
+ if($('message').innerHTML!==toast)$('message').innerHTML=toast;
+}
 function render(){
- // Incoming quotes/PNL must not erase half-entered API credentials.
- if(s.tab==='positions'&&s.capitalOpen&&document.activeElement?.closest?.('#capitalForm'))return;
- if(s.tab==='connections'&&window.fxmr4Bybit?.isEditing?.()&&
-   (document.querySelector('#bybitConnectForm')||document.querySelector('.bybitRenameForm')))return;
  const views={overview,positions,futures,connections};
  $('content').innerHTML=(views[s.tab]||overview)();
- $('content').classList.remove('pane');void $('content').offsetWidth;$('content').classList.add('pane');
- const titles={overview:'Обзор',positions:'Спот',futures:'Фьючерсы',connections:'Настройки'};
- $('pageTitle').textContent=titles[s.tab];
- $('sidebarTotal').textContent=dollars(accountTotal());
- syncThemeButtons();
- const status=exchangeFooterStatus();
- $('connectionStatusText').textContent=status.text;
- $('connectionStatusText').title=status.details;
- $('connectionDot').classList.toggle('isDisconnected',!s.backendConnection.connected&&!status.error);
- $('connectionDot').classList.toggle('isError',status.error);
- document.querySelector('.tabs').dataset.active=s.tab;
- document.querySelectorAll('[data-tab]').forEach(b=>{const active=b.dataset.tab===s.tab;b.classList.toggle('active',active);b.setAttribute('aria-selected',active?'true':'false')});
- $('message').innerHTML=s.flash?`<div class="toast">${escape(s.flash)}</div>`:'';
-
- if(window.fxmr4Levels?.render)window.fxmr4Levels.render();
- if(window.fxmr4Bybit?.renderPanel)window.fxmr4Bybit.renderPanel();
+ updateChrome();
+ window.fxmr4Levels?.render?.();
+ window.fxmr4Bybit?.renderPanel?.();
 }
-
+function reconcileLive(current,next){
+ if(current.nodeType!==next.nodeType||
+    (current.nodeType===1&&current.tagName!==next.tagName)){
+  current.replaceWith(next.cloneNode(true));return;
+ }
+ if(current.nodeType===3||current.nodeType===8){
+  if(current.nodeValue!==next.nodeValue)current.nodeValue=next.nodeValue;
+  return;
+ }
+ if(current.nodeType!==1)return;
+ // These separate widgets own their DOM (including the buy-level editor).
+ if(current.id==='strategyMount'||current.id==='bybitConnectionPanel')return;
+ const active=document.activeElement;
+ if(current.tagName==='FORM'&&active&&current.contains(active))return;
+ if(current.isContentEditable||(current===active&&/^(INPUT|TEXTAREA|SELECT)$/.test(current.tagName)))return;
+ for(const a of Array.from(current.attributes)){
+  if(!next.hasAttribute(a.name))current.removeAttribute(a.name);
+ }
+ for(const a of Array.from(next.attributes)){
+  if(current.getAttribute(a.name)!==a.value)current.setAttribute(a.name,a.value);
+ }
+ const oldChildren=Array.from(current.childNodes),newChildren=Array.from(next.childNodes);
+ for(let i=0,n=Math.max(oldChildren.length,newChildren.length);i<n;i++){
+  if(!oldChildren[i])current.appendChild(newChildren[i].cloneNode(true));
+  else if(!newChildren[i])oldChildren[i].remove();
+  else reconcileLive(oldChildren[i],newChildren[i]);
+ }
+}
+function renderLive(){
+ const views={overview,positions,futures,connections},html=(views[s.tab]||overview)();
+ const content=$('content');
+ if(typeof document.createElement==='function'&&content?.childNodes){
+  const template=document.createElement('template');
+  template.innerHTML=html;
+  reconcileLive(content,template.content);
+ }else if(content.innerHTML!==html){
+  // DOM-less unit-test fallback; real browsers use the incremental branch.
+  content.innerHTML=html;
+ }
+ updateChrome();
+ window.fxmr4Levels?.refreshQuotes?.();
+}
 
 function saveCapital(fd){
  const v=Number(fd.get('capital'));
@@ -550,8 +598,8 @@ function onBackendStatus(status){
  if(status.available&&!wasAvailable)loadPnlHistory();
  const ex=s.sources.find(x=>x.id==='bybit');
  if(ex)ex.connected=!!status.connected;
- // Keep the last known values on network error, but mark them stale in the UI.
- render();
+ // Keep the last known values on network error without UI remounting.
+ renderLive();
 }
 function onAccounts(accounts){
  if(s.monthlyAnchorMs==null||Date.now()-s.monthlyAnchorMs>600000)
@@ -575,7 +623,7 @@ function onAccounts(accounts){
   s.futuresPositions=s.futuresPositions.filter(p=>p.accountId!==id);
  }
  rebuildBybitTotals();
- render();
+ renderLive();
 }
 function rebuildBybitTotals(){
  const snapshots=Object.values(s.bybitAccountsSnapshots||{});
@@ -609,7 +657,7 @@ async function loadMonthlyPerformance(id){
    if(s.pnlMode==='all'&&pnlSeries('all').points.length<2)s.pnlMode='month';
   }
   else s.monthlyPerformance[id]={error:data.error||'Нет журнала операций',endAt:anchored,receivedAt:Date.now()};
-  if(s.tab==='overview'||s.tab==='futures')render();
+  if(s.tab==='overview'||s.tab==='futures')renderLive();
  }catch(e){
   s.monthlyPerformance[id]={error:'Нет доступа к месячной статистике',endAt:anchored,receivedAt:Date.now()};
  }finally{delete s.monthlyLoading[id]}
@@ -644,7 +692,7 @@ function onSnapshot(data){
  rebuildBybitTotals();
  s.backendConnection={available:true,configured:true,connected:!!s.bybitSnapshot,error:''};
  loadMonthlyPerformance(accountId);
- recordPortfolioSnapshot();saveLocal(false);render();
+ recordPortfolioSnapshot();saveLocal(false);renderLive();
 }
 function applyCloudState(){
  // Cloud owns manual Spot allocations. The live API accounts are owned by VPS
@@ -660,7 +708,7 @@ function applyCloudState(){
   else bybit.accounts.push(ac);
  }
  bybit.connected=!!s.backendConnection.connected;
- render();
+ renderLive();
 }
 window.fxmr4App={onBackendStatus,onSnapshot,onAccounts,onDisconnected,applyCloudState};
 
@@ -717,7 +765,7 @@ window.fxmr4App={onBackendStatus,onSnapshot,onAccounts,onDisconnected,applyCloud
     const windowMs=PERIODS[s.period]??PERIODS['7d'];
      const from=windowMs===Infinity?-Infinity:Date.now()-windowMs;
     s.points=s.snapshots.filter(p=>p.time>=from);
-    if(s.tab==='overview'&&!s.showPrices&&!s.form)render();
+    // Passive quote sync updates the live numbers after recording this snapshot.
   }
   function recordSnapshot(){
     const p={time:Date.now(),pnl:sums().profit};
@@ -730,7 +778,7 @@ window.fxmr4App={onBackendStatus,onSnapshot,onAccounts,onDisconnected,applyCloud
       const r=await fetch('./api/pnl-history',{cache:'no-store',credentials:'same-origin',headers:{'Accept':'application/json'}});
       if(!r.ok)return;
       const data=await r.json();
-      if(Array.isArray(data.points)){s.pnlHistory=data.points;if(!s.form&&['overview','positions','futures'].includes(s.tab))render()}
+      if(Array.isArray(data.points)){s.pnlHistory=data.points;if(['overview','positions','futures'].includes(s.tab))renderLive()}
     }catch(e){/* offline: the local series still renders */}
   }
   let historyPushAt=0;
@@ -806,7 +854,7 @@ function bybitQuotes(){
     const quiet=!!opts.quiet;
     if(s.busy)return;
     lastSyncAttempt=Date.now();s.busy=true;s.sync=null;
-    if(!quiet&&!s.form&&!s.futureForm&&!s.showPrices)render();
+    if(!quiet)renderLive();
     let success=false;
     for(const provider of [bybitQuotes,coingeckoQuotes,cryptocompareQuotes]){
       try{
@@ -819,7 +867,7 @@ function bybitQuotes(){
     }
     if(!success){s.sync={error:true};if(!quiet)s.flash='Источники цен недоступны. Используются сохранённые курсы.'}
     s.busy=false;
-    if(!s.form&&!s.futureForm&&!s.showPrices)render();
+    renderLive();
   }
   function flash(msg){s.flash=msg;render()}
   function formOpen(id=null){s.tab='positions';s.spotHistoryOpen=true;s.form=true;s.editing=id;s.deleteId=null;s.formError='';s.flash='';render();$('tradeForm')?.scrollIntoView({block:'nearest',behavior:'smooth'})}
