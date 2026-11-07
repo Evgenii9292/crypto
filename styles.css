@@ -904,3 +904,49 @@
 .pnlBarAxis span:first-child{text-align:left}
 .pnlBarAxis span:last-child{text-align:right}
 @media(max-width:600px){.pnlBarAxis{font-size:9px}}
+
+/* Real Bybit time-bucket PNL: keyboard-accessible per-coin hover breakdown. */
+.pnlAnalyticsPanel{position:relative;overflow:visible}
+.pnlBarList{overflow:visible}
+.pnlBarItem{position:relative;cursor:crosshair;outline-offset:3px}
+.pnlBarItem:focus-visible{outline:2px solid var(--sub);border-radius:3px}
+.pnlBarItem:where(:hover,:focus-visible) .pnlBarTooltip{display:block}
+.pnlBarTooltip{
+ display:none;position:absolute;z-index:40;pointer-events:none;
+ width:max-content;min-width:196px;max-width:255px;
+ left:50%;bottom:calc(100% + 9px);transform:translateX(-50%);
+ padding:10px 11px;border:1px solid var(--border);border-radius:11px;
+ background:var(--surface);box-shadow:0 12px 34px rgba(0,0,0,.16);
+ color:var(--text);font-size:10px;line-height:1.4;
+ font-variant-numeric:tabular-nums;text-align:left;
+}
+.pnlBarItem[data-tooltip-edge="start"] .pnlBarTooltip{left:0;right:auto;transform:none}
+.pnlBarItem[data-tooltip-edge="end"] .pnlBarTooltip{left:auto;right:0;transform:none}
+.pnlTooltipHeader{
+ display:flex;align-items:center;justify-content:space-between;gap:12px;
+ padding-bottom:7px;margin-bottom:6px;border-bottom:1px solid var(--border);
+ white-space:nowrap;
+}
+.pnlTooltipHeader strong{font-size:11px;font-weight:680}
+.pnlTooltipRow{
+ display:flex;align-items:center;justify-content:space-between;gap:12px;
+ min-height:22px;white-space:nowrap;
+}
+.pnlTooltipRow>span{max-width:112px;overflow:hidden;text-overflow:ellipsis;color:var(--sub)}
+.pnlTooltipRow>strong{font-size:10px;font-weight:680;white-space:nowrap}
+.pnlTooltipEmpty{max-width:210px;color:var(--sub);white-space:normal}
+.pnlCoinRow{
+ grid-template-columns:minmax(77px,1fr) minmax(25px,.6fr) minmax(126px,auto);
+ gap:6px;
+}
+.pnlCoinValues{
+ display:flex;align-items:center;justify-content:flex-end;
+ gap:8px;white-space:nowrap;font-variant-numeric:tabular-nums;
+}
+.pnlCoinValues strong{font-size:10px;font-weight:650;text-align:right}
+.pnlCoinValues strong:last-child{min-width:70px;font-size:9px}
+@media(max-width:600px){
+ .pnlBarTooltip{min-width:170px;max-width:225px;padding:9px}
+ .pnlCoinRow{grid-template-columns:minmax(75px,1fr) minmax(20px,.6fr) minmax(122px,auto)}
+ .pnlCoinValues{gap:5px}
+}
