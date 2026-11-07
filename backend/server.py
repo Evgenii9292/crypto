@@ -433,14 +433,39 @@ def chunk_account_performance(account_id, start_ms, end_ms):
         raise BybitFailure("API-ключ субаккаунта не настроен")
     fingerprint = hashlib.sha256((key+":"+secret).encode("utf-8")).digest()
     cache_key = (account_id, start_ms, end_ms)
+    # Complete historical windows may be reused across server restarts.
+    # The trailing two days are refreshed more often for corrections/funding.
+    historical = end_ms <= now_ms - 2 * 86400000
+    max_age_s = 180 * 86400 if historical else 600
+    token = hashlib.sha256((str(account_id) + ":" + str(start_ms) +
+                            ":" + str(end_ms)).encode("utf-8") +
+                           fingerprint).hexdigest()
     with LOCK:
         cached = CHUNK_CACHE.get(cache_key)
         if (cached and cached["fingerprint"] == fingerprint and
-            time.monotonic()-cached["at"] < 3600):
+            time.monotonic() - cached["at"] < max_age_s):
             return cached["data"]
+    try:
+        saved = saved_state.read_ledger_chunk_cache(token)
+    except saved_state.StateError:
+        saved = None
+    if saved is not None and (now_ms - saved["receivedAt"] <
+                              max_age_s * 1000):
+        report = saved["report"]
+        if (report.get("from") == start_ms and report.get("to") == end_ms
+                and isinstance(report.get("netPnl"), (float, int))):
+            with LOCK:
+                CHUNK_CACHE[cache_key] = {"at": time.monotonic(),
+                                          "fingerprint": fingerprint,
+                                          "data": report}
+            return report
     report = monthly_futures_activity(key, secret, end_ms=end_ms,
                                       period_ms=end_ms-start_ms)
     report["source"] = "Bybit transaction-log · verified 6-day slice · UTC"
+    try:
+        saved_state.write_ledger_chunk_cache(token, report)
+    except (saved_state.StateError, OSError) as exc:
+        print("Bybit history cache write skipped: " + type(exc).__name__, flush=True)
     with LOCK:
         if len(CHUNK_CACHE) > 1800:
             CHUNK_CACHE.clear()
