@@ -205,7 +205,7 @@ function chartCaption(kind,period,p,metric='pnl'){
  if(!win.points.length)return scope+' · нет истории за '+PERIOD_NAMES[period];
  const days=Math.max(1,Math.round((win.last-win.first)/86400000));
  const span=days>=2?days+' дн.':Math.max(1,Math.round((win.last-win.first)/3600000))+' ч';
- return scope+' · '+(balance?'баланс':metric==='floating'?'плавающий PNL':kind==='futures'?'PNL счёта':'PNL')+' · '+span;
+ return scope+' · '+(balance?'баланс':metric==='floating'?'плавающий PNL':metric==='realized30d'?'реализовано за 30 дней':kind==='futures'?'PNL счёта':'PNL')+' · '+span;
 }
 function periodButtons(period,chart){
  return `<div class="periods">${[['24h','24ч'],['7d','7д'],['30d','30д'],['90d','90д'],['6m','6 мес']].map(([q,name])=>`<button type="button" data-period="${q}" data-chart="${chart}" class="period ${period===q?'active':''}">${name}</button>`).join('')}</div>`;
@@ -215,9 +215,9 @@ function pnlChartBlock(opts){
  const metric=opts.metricSwitch?(s.chartMetric[key]||'pnl'):'pnl';
  const subtitle=opts.subtitle===undefined?'Динамика результатов по позициям':opts.subtitle;
  const showModes=!!opts.modes;
- const metricSwitch=opts.metricSwitch?`<div class="pnlMode"><button class="${metric==='pnl'?'active':''}" data-metric="pnl" data-chart="${key}" type="button">${kind==='futures'?'PNL счёта':'PNL'}</button>${kind==='futures'?`<button class="${metric==='floating'?'active':''}" data-metric="floating" data-chart="${key}" type="button">Плавающий</button>`:''}<button class="${metric==='balance'?'active':''}" data-metric="balance" data-chart="${key}" type="button">Баланс</button></div>`:'';
+ const metricSwitch=opts.metricSwitch?`<div class="pnlMode"><button class="${metric==='pnl'?'active':''}" data-metric="pnl" data-chart="${key}" type="button">${kind==='futures'?'PNL счёта':'PNL'}</button>${kind==='futures'?`<button class="${metric==='realized30d'?'active':''}" data-metric="realized30d" data-chart="${key}" type="button">За 30 дней</button><button class="${metric==='floating'?'active':''}" data-metric="floating" data-chart="${key}" type="button">Плавающий</button>`:''}<button class="${metric==='balance'?'active':''}" data-metric="balance" data-chart="${key}" type="button">Баланс</button></div>`:'';
  const balanceValue=metric==='balance'?(kind==='spot'?sums().holdings:s.bybitSnapshot?.totals?.equity):null;
- const rawCurrent=metric==='floating'?opts.summary?.futuresFloatingPnl:opts.current;
+ const rawCurrent=metric==='floating'?opts.summary?.futuresFloatingPnl:metric==='realized30d'?monthlyFutures()?.netPnl:opts.current;
   const current=metric==='balance'?(balanceValue!=null&&Number.isFinite(Number(balanceValue))?Number(balanceValue):null):rawCurrent==null?null:Number(rawCurrent);
  return `<section class="section pnlChart card"><div class="hrow pnlChartHead"><div><div class="sectitle">${opts.title||'Портфель'}</div>${subtitle?`<div class="tiny">${escape(subtitle)}</div>`:''}</div>${periodButtons(period,key)}</div>${showModes?`<div class="pnlMode">${[['all','Все'],['spot','Спот'],['futures','Фьючерсы']].map(([k,name])=>`<button class="${kind===k?'active':''}" data-pnl-mode="${k}" type="button">${name}</button>`).join('')}</div>`:''}${metricSwitch}<div class="chartbox">${chartHTML(kind,period,metric)}</div><div class="chartlegend"><span>${chartCaption(kind,period,opts.summary,metric)}</span><strong class="${current==null||metric==='balance'?'neutral':cls(current)}">${current==null?'—':metric==='balance'?dollars(current):signed(current)}</strong></div></section>`;
 }
@@ -272,8 +272,8 @@ function pnlThirtyDayDelta(kind='all'){
  if(!baseline||!latest||latest.t<=cutoff||Date.now()-latest.t>6*3600000)return null;
  return latest.v-baseline.v;
 }
-function monthlyMarkup(value){
- const note='Изменение PNL счёта за последние 30 дней, если достаточно накопленной истории.';
+function monthlyMarkup(value,actual=false){
+ const note=actual?'Фактический результат Bybit за 30 дней: закрытые сделки, funding и комиссии. Открытый PNL отдельно.':'Изменение наблюдаемого PNL счёта за 30 дней, только при достаточной истории.';
  return `<span class="${value==null?'neutral':cls(value)}" title="${note}">${value==null?'—':signed(value)}</span>`;
 }
 function overview(){
@@ -282,14 +282,16 @@ function overview(){
  const equity=p.hasFutures&&raw!=null&&Number.isFinite(Number(raw))?Number(raw):null;
  const total=accountTotal(),futureValue=equity==null?'—':dollars(equity);
  const pnl=p.pnl==null?'—':signed(p.pnl);
- const month=pnlThirtyDayDelta('all'),spotMonth=pnlThirtyDayDelta('spot'),futureMonth=pnlThirtyDayDelta('futures');
+ const month=pnlThirtyDayDelta('all'),spotMonth=pnlThirtyDayDelta('spot'),monthly=monthlyFutures(),futureMonth=monthly?.netPnl??null;
+ const overviewMonth=month!=null?month:futureMonth;
+ const overviewMonthName=month!=null?'Месячный PNL':futureMonth!=null?'Фьючерсы · 30 дней':'Месячный PNL';
  return `<div class="overview-layout"><div class="overview-primary">
   <div class="card tint overviewHero">
    <div class="overviewEyebrow">Баланс портфеля</div>
    <div class="total">${dollars(total)}</div>
    <div class="overviewHeroMetrics">
     <div class="overviewMetric"><span>Текущий PNL</span><strong class="${p.pnl==null?'neutral':cls(p.pnl)}">${pnl}</strong></div>
-    <div class="overviewMetric"><span>Месячный PNL</span><strong>${monthlyMarkup(month)}</strong></div>
+    <div class="overviewMetric"><span>${overviewMonthName}</span><strong>${monthlyMarkup(overviewMonth,month==null&&futureMonth!=null)}</strong></div>
    </div>
   </div>
   ${spotPnlChart()}</div>
@@ -305,7 +307,7 @@ function overview(){
     <div class="assetTopline"><span class="assetTitle">Фьючерсы</span><strong>${futureValue}</strong></div>
     <div class="assetPnlMetrics">
      <span class="assetPnlMetric"><small>Текущий PNL</small><strong class="${p.futuresPnl==null?'neutral':cls(p.futuresPnl)}">${p.futuresPnl==null?'—':signed(p.futuresPnl)}</strong></span>
-     <span class="assetPnlMetric"><small>Месячный PNL</small><strong>${monthlyMarkup(futureMonth)}</strong></span>
+     <span class="assetPnlMetric"><small>Месячный PNL</small><strong>${monthlyMarkup(futureMonth,true)}</strong></span>
     </div>
    </button>
   </div></div>`;
@@ -366,8 +368,9 @@ function coinStack(symbols){
   return t.slice(0,4);};
  return `<span class="coinStack">${list.map(sym=>`<i class="coinChip" title="${escape(String(sym))}">${escape(label(sym))}</i>`).join('')}${extra?`<i class="coinChip more">+${extra}</i>`:''}</span>`;
 }
-const FUTURE_SORTS=[['pnl','Плавающий PNL'],['size','Объём'],['symbol','Монета'],['leverage','Плечо'],['opened','Дата открытия'],['side','Направление']];
+const FUTURE_SORTS=[['roi','ROI · %'],['pnl','Плавающий PNL'],['size','Объём'],['symbol','Монета'],['leverage','Плечо'],['opened','Дата открытия'],['side','Направление']];
 function futureSortValue(p,key){
+ if(key==='roi')return p.initialMargin>0&&p.pnl!=null?Number(p.pnl)/Number(p.initialMargin):-Infinity;
  if(key==='size')return Number(p.size)||0;
  if(key==='symbol')return String(p.symbol||'').toLowerCase();
  if(key==='leverage')return Number(p.leverage)||0;
@@ -396,14 +399,15 @@ function positionAge(time,now=Date.now()){
  return minutes+' мин';
 }
 function futuresTableHead(){
- return `<div class="futurePosition futureHead"><span>Монета</span><span>В сделке</span><span class="right"><span class="hLong">Объём · USD</span><span class="hShort">Объём</span></span><span class="right"><span class="hLong">Плавающий PNL</span><span class="hShort">PNL</span></span></div>`;
+ return `<div class="futurePosition futureHead"><span>Монета</span><span>В сделке</span><span class="right"><span class="hLong">Объём · USD</span><span class="hShort">Объём</span></span><span class="right"><span class="hLong">Плавающий PNL</span><span class="hShort">PNL</span></span><span class="right posRoi">ROI · %</span></div>`;
 }
 function futurePositionLine(p){
  const side=String(p.side||'').toLowerCase();
  const sideName=side==='buy'||side==='long'?'Long':side==='sell'||side==='short'?'Short':'—';
  const badge=`<span class="posBadges"><i class="posBadge ${sideName==='Short'?'short':'long'}">${sideName}</i>${p.leverage?`<i class="posBadge lev">${escape(String(p.leverage))}×</i>`:''}</span>`;
  const age=positionAge(p.openedAt);
- return `<div class="futurePosition"><span><span class="futureCoin"><strong>${escape(p.symbol)}</strong>${badge}</span></span><span class="posDuration" title="Время с открытия позиции">${age}</span><span class="right"><strong>${dollars(p.size)}</strong></span><span class="right ${p.pnl==null?'neutral':cls(Number(p.pnl))}"><strong>${p.pnl==null?'—':signed(Number(p.pnl))}</strong></span></div>`;
+ const roi=p.initialMargin>0&&p.pnl!=null?Number(p.pnl)/Number(p.initialMargin)*100:null;
+ return `<div class="futurePosition"><span><span class="futureCoin"><strong>${escape(p.symbol)}</strong>${badge}</span></span><span class="posDuration" title="Время с открытия позиции">${age}</span><span class="right posSize"><strong>${dollars(p.size)}</strong></span><span class="right ${p.pnl==null?'neutral':cls(Number(p.pnl))}"><strong>${p.pnl==null?'—':signed(Number(p.pnl))}</strong></span><span class="right posRoi ${roi==null?'neutral':cls(roi)}" title="Доходность к начальной марже">${roi==null?'—':pct(roi)}</span></div>`;
 }
 function futureAccountRow(ex,ac){
  const id=ex.id+':'+ac.id,pp=futuresSorted().filter(p=>p.exchangeId===ex.id&&p.accountId===ac.id);
@@ -428,12 +432,13 @@ function futures(){
  const upl=ready&&snap.perpUPL!=null?Number(snap.perpUPL):null;
  const open=s.futuresPositions.filter(p=>p.exchangeId==='bybit');
  const accountPnl=ready&&snap.accountPnl!=null?Number(snap.accountPnl):null;
+ const monthly=monthlyFutures();
   const metrics=[['Баланс субаккаунта',ready&&snap.equity!=null?dollars(snap.equity):'—',''],
   ['PNL счёта',accountPnl!=null?signed(accountPnl):'—',accountPnl==null?'neutral':cls(accountPnl)],
-  ['Доступно',ready&&snap.availableBalance!=null?dollars(snap.availableBalance):'—',''],
+  ['30 дней · PNL',monthly?.netPnl==null?'—':signed(monthly.netPnl),monthly?.netPnl==null?'neutral':cls(monthly.netPnl)],
   ['Открытых позиций',ready?String(open.length):'—','']];
  const coins=coinStack(open.map(p=>p.symbol));
- return `<div class="futureMetrics">${metrics.map(([name,value,tone])=>`<div class="card tint"><div class="eyebrow">${name}</div><div class="num ${tone}">${value}</div>${name==='PNL счёта'&&ready?`<div class="pnlParts"><span>Закрыто: ${snap.realisedPnl==null?'—':signed(Number(snap.realisedPnl))}</span><span>Открыто: ${upl==null?'—':signed(upl)}</span></div>`:''}${name==='Открытых позиций'&&coins?`<div class="metricCoins">${coins}</div>`:''}</div>`).join('')}</div>
+ return `<div class="futureMetrics">${metrics.map(([name,value,tone])=>`<div class="card tint"><div class="eyebrow">${name}</div><div class="num ${tone}">${value}</div>${name==='Баланс субаккаунта'&&ready?`<div class="pnlParts">Доступно: ${snap.availableBalance==null?'—':dollars(snap.availableBalance)}</div>`:''}${name==='30 дней · PNL'&&monthly?`<div class="pnlParts"><span>Funding: ${signed(monthly.funding)}</span><span>Комиссии: ${dollars(monthly.fees)}</span></div>`:''}${name==='PNL счёта'&&ready?`<div class="pnlParts"><span>Закрыто: ${snap.realisedPnl==null?'—':signed(Number(snap.realisedPnl))}</span><span>Открыто: ${upl==null?'—':signed(upl)}</span></div>`:''}${name==='Открытых позиций'&&coins?`<div class="metricCoins">${coins}</div>`:''}</div>`).join('')}</div>
  ${futuresChartBlock()}
  <section class="section"><div class="futureToolbar"><div><div class="sectitle">Позиции и аккаунты</div><div class="tiny">Раскрывай биржи и выбирай группировку</div></div><button class="btn" type="button" data-action="goConnections">${icon('settings')} Настройки</button></div><div class="futureFilters"><div class="tradeSwitch" role="tablist" aria-label="Группировка фьючерсов">${[['all','Все позиции'],['exchange','По биржам'],['account','По субаккаунтам']].map(([id,name])=>`<button type="button" data-future-mode="${id}" class="${s.futureMode===id?'active':''}">${name}</button>`).join('')}</div></div>${s.futureMode==='all'?futuresSortBar():''}<div class="sourceList futureResults">${body}</div></section>`;
 }
