@@ -433,12 +433,13 @@ function futures(){
  const open=s.futuresPositions.filter(p=>p.exchangeId==='bybit');
  const accountPnl=ready&&snap.accountPnl!=null?Number(snap.accountPnl):null;
  const monthly=monthlyFutures();
+ const monthlyError=(s.bybitExpectedIds||[]).map(id=>s.monthlyPerformance[id]?.error).find(Boolean);
   const metrics=[['Баланс субаккаунта',ready&&snap.equity!=null?dollars(snap.equity):'—',''],
   ['PNL счёта',accountPnl!=null?signed(accountPnl):'—',accountPnl==null?'neutral':cls(accountPnl)],
   ['30 дней · PNL',monthly?.netPnl==null?'—':signed(monthly.netPnl),monthly?.netPnl==null?'neutral':cls(monthly.netPnl)],
   ['Открытых позиций',ready?String(open.length):'—','']];
  const coins=coinStack(open.map(p=>p.symbol));
- return `<div class="futureMetrics">${metrics.map(([name,value,tone])=>`<div class="card tint"><div class="eyebrow">${name}</div><div class="num ${tone}">${value}</div>${name==='Баланс субаккаунта'&&ready?`<div class="pnlParts">Доступно: ${snap.availableBalance==null?'—':dollars(snap.availableBalance)}</div>`:''}${name==='30 дней · PNL'&&monthly?`<div class="pnlParts"><span>Funding: ${signed(monthly.funding)}</span><span>Комиссии: ${dollars(monthly.fees)}</span></div>`:''}${name==='PNL счёта'&&ready?`<div class="pnlParts"><span>Закрыто: ${snap.realisedPnl==null?'—':signed(Number(snap.realisedPnl))}</span><span>Открыто: ${upl==null?'—':signed(upl)}</span></div>`:''}${name==='Открытых позиций'&&coins?`<div class="metricCoins">${coins}</div>`:''}</div>`).join('')}</div>
+ return `<div class="futureMetrics">${metrics.map(([name,value,tone])=>`<div class="card tint"><div class="eyebrow">${name}</div><div class="num ${tone}">${value}</div>${name==='Баланс субаккаунта'&&ready?`<div class="pnlParts">Доступно: ${snap.availableBalance==null?'—':dollars(snap.availableBalance)}</div>`:''}${name==='30 дней · PNL'?monthly?`<div class="pnlParts"><span>Funding: ${signed(monthly.funding)}</span><span>Комиссии: ${dollars(monthly.fees)}</span></div>`:`<div class="pnlParts">${escape(monthlyError||'Загружаем операции Bybit…')}</div>`:''}${name==='PNL счёта'&&ready?`<div class="pnlParts"><span>Закрыто: ${snap.realisedPnl==null?'—':signed(Number(snap.realisedPnl))}</span><span>Открыто: ${upl==null?'—':signed(upl)}</span></div>`:''}${name==='Открытых позиций'&&coins?`<div class="metricCoins">${coins}</div>`:''}</div>`).join('')}</div>
  ${futuresChartBlock()}
  <section class="section"><div class="futureToolbar"><div><div class="sectitle">Позиции и аккаунты</div><div class="tiny">Раскрывай биржи и выбирай группировку</div></div><button class="btn" type="button" data-action="goConnections">${icon('settings')} Настройки</button></div><div class="futureFilters"><div class="tradeSwitch" role="tablist" aria-label="Группировка фьючерсов">${[['all','Все позиции'],['exchange','По биржам'],['account','По субаккаунтам']].map(([id,name])=>`<button type="button" data-future-mode="${id}" class="${s.futureMode===id?'active':''}">${name}</button>`).join('')}</div></div>${s.futureMode==='all'?futuresSortBar():''}<div class="sourceList futureResults">${body}</div></section>`;
 }
@@ -583,7 +584,10 @@ async function loadMonthlyPerformance(id){
  try{
   const r=await fetch('./api/monthly-pnl?id='+encodeURIComponent(id),{cache:'no-store',credentials:'same-origin'});
   const data=await r.json();
-  if(r.ok&&Number.isFinite(data.netPnl))s.monthlyPerformance[id]={...data,receivedAt:Date.now()};
+  if(r.ok&&Number.isFinite(data.netPnl)){
+   s.monthlyPerformance[id]={...data,receivedAt:Date.now()};
+   if(s.chartMetric.futures==='pnl'&&pnlSeries('futures').points.length<2){s.chartMetric.futures='realized30d';s.chartPeriod.futures='30d'}
+  }
   else s.monthlyPerformance[id]={error:data.error||'Нет журнала операций',receivedAt:Date.now()};
   if(s.tab==='overview'||s.tab==='futures')render();
  }catch(e){
