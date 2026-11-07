@@ -746,10 +746,10 @@ function overviewPerformanceChart(){
   <div class="hrow pnlChartHead"><div>
    <div class="sectitle">История PNL</div>
    <div class="tiny">Реальные данные Bybit и учтённые покупки Spot</div></div>
-   <label class="overviewHistoryPeriod">Период <select data-overview-period aria-label="Период исторического PNL">
+   <label class="overviewHistoryPeriod">Период <span class="pnlAccountSelect overviewPeriodSelect"><select data-overview-period aria-label="Период исторического PNL">
     ${[['30d','30 дней'],['60d','60 дней'],['90d','90 дней'],['6m','180 дней'],['1y','1 год'],['all','До 2 лет']].map(([key,label])=>
       `<option value="${key}" ${key===period?'selected':''}>${label}</option>`).join('')}
-   </select></label></div>
+   </select>${icon('chevron-down')}</span></label></div>
   <div class="pnlMode" role="tablist" aria-label="История портфеля">
    ${[['all','Все'],['spot','Спот'],['futures','Фьючерсы']].map(([key,label])=>
      `<button type="button" data-pnl-mode="${key}" role="tab" aria-selected="${mode===key}" class="${mode===key?'active':''}">${label}</button>`).join('')}
@@ -855,7 +855,7 @@ function pnlThirtyDayDelta(kind='all'){
  return latest.v-baseline.v;
 }
 function monthlyMarkup(value,actual=false){
- const note=actual?'Фактический результат Bybit за 30 дней: закрытые сделки, funding и комиссии. Открытый PNL отдельно.':'Изменение наблюдаемого PNL счёта за 30 дней, только при достаточной истории.';
+ const note=actual?'Фактический результат Bybit за 30 дней: закрытые сделки, funding и комиссии. Открытый PNL отдельно.':'Изменение стоимости учтённых покупок Spot за последние 30 дней по историческим ценам.';
  return `<span class="${value==null?'neutral':cls(value)}" title="${note}">${value==null?'—':signed(value)}</span>`;
 }
 function overview(){
@@ -863,12 +863,15 @@ function overview(){
  const raw=s.bybitSnapshot?.totals?.equity;
  const equity=p.hasFutures&&raw!=null&&Number.isFinite(Number(raw))?Number(raw):null;
  const total=accountTotal(),futureValue=equity==null?'—':dollars(equity);
- const period=s.chartPeriod.overview||'30d';
  const floating=p.futuresFloatingPnl;
  const openTotal=floating==null?(hasTrackedFutures()?null:a.profit):a.profit+floating;
- const periodFutures=futuresLedgerData(period),periodSpot=overviewHistoryData('spot',period);
- const futureNet=periodFutures?.netPnl??null,spotNet=periodSpot?.points.at(-1)?.v??null;
- const periodName=PERIOD_NAMES[period]||'30 дней';
+ // All overview cards display the fixed 30-day window. The history select
+ // changes only the chart, never the KPI amounts or KPI labels.
+ const monthFutures=futuresLedgerData('30d'),monthSpot=overviewHistoryData('spot','30d');
+ const futureNet=monthFutures?.netPnl??null,spotNet=monthSpot?.points.at(-1)?.v??null;
+ const tracked=hasTrackedFutures();
+ const monthTotal=spotNet!=null&&(!tracked||futureNet!=null)?
+  spotNet+(tracked?futureNet:0):null;
  return `<div class="overview-layout"><div class="overview-primary">
    <div class="card tint overviewHero">
     <div class="overviewEyebrow">Баланс портфеля</div>
@@ -876,10 +879,9 @@ function overview(){
     <div class="overviewHeroMetrics">
      <div class="overviewMetric"><span>Текущий PNL</span>
       <strong class="${openTotal==null?'neutral':cls(openTotal)}">${openTotal==null?'—':signed(openTotal)}</strong>
-      <small>Учтённые покупки Spot + открытые фьючерсы</small></div>
-     <div class="overviewMetric"><span>Фьючерсы · ${escape(periodName)}</span>
-      <strong class="${futureNet==null?'neutral':cls(futureNet)}">${futureNet==null?'—':signed(futureNet)}</strong>
-      <small>Результат закрытых операций Bybit</small></div>
+     </div>
+     <div class="overviewMetric"><span>PNL за месяц</span>
+      <strong class="${monthTotal==null?'neutral':cls(monthTotal)}" title="Spot и закрытые сделки фьючерсов за 30 дней">${monthTotal==null?'—':signed(monthTotal)}</strong></div>
     </div>
    </div>
    ${overviewPerformanceChart()}</div>
@@ -888,14 +890,14 @@ function overview(){
      <div class="assetTopline"><span class="assetTitle">Спот</span><strong>${dollars(a.holdings)}</strong></div>
      <div class="assetPnlMetrics">
       <span class="assetPnlMetric"><small>Текущий PNL</small><strong class="${cls(a.profit)}">${signed(a.profit)}</strong></span>
-      <span class="assetPnlMetric"><small>Изменение · ${escape(periodName)}</small><strong>${monthlyMarkup(spotNet)}</strong></span>
+      <span class="assetPnlMetric"><small>PNL за месяц</small><strong>${monthlyMarkup(spotNet)}</strong></span>
      </div>
     </button>
     <button class="assetSummary" type="button" data-action="gotoFutures">
      <div class="assetTopline"><span class="assetTitle">Фьючерсы</span><strong>${futureValue}</strong></div>
      <div class="assetPnlMetrics">
-      <span class="assetPnlMetric"><small>Открытые позиции</small><strong class="${floating==null?'neutral':cls(floating)}">${floating==null?'—':signed(floating)}</strong></span>
-      <span class="assetPnlMetric"><small>${escape(periodName)}</small><strong>${monthlyMarkup(futureNet,true)}</strong></span>
+      <span class="assetPnlMetric"><small>Текущий PNL</small><strong class="${floating==null?'neutral':cls(floating)}">${floating==null?'—':signed(floating)}</strong></span>
+      <span class="assetPnlMetric"><small>PNL за месяц</small><strong>${monthlyMarkup(futureNet,true)}</strong></span>
      </div>
     </button>
    </div></div>`;
@@ -1146,8 +1148,11 @@ function render(){
  if(s.tab==='futures')void loadEquityHistory();
  if(s.tab==='overview'){
   const period=s.chartPeriod.overview||'30d';
-  void loadSpotHistory(period);
-  if(period!=='30d')void loadFuturesPeriod(period);
+  void loadSpotHistory('30d');
+  if(period!=='30d'){
+   void loadSpotHistory(period);
+   void loadFuturesPeriod(period);
+  }
  }
  if(s.tab==='futures')void loadFuturesPeriod('today');
 }
@@ -1203,8 +1208,11 @@ function renderLive(){
  if(s.tab==='futures')void loadEquityHistory();
  if(s.tab==='overview'){
   const period=s.chartPeriod.overview||'30d';
-  void loadSpotHistory(period);
-  if(period!=='30d')void loadFuturesPeriod(period);
+  void loadSpotHistory('30d');
+  if(period!=='30d'){
+   void loadSpotHistory(period);
+   void loadFuturesPeriod(period);
+  }
  }
  if(s.tab==='futures')void loadFuturesPeriod('today');
 }
