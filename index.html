@@ -416,7 +416,13 @@ async function fetchLongBybitPeriod(accountId,period,anchor){
  const duration=period==='all'?729*86400000:PERIODS[period];
  if(!Number.isFinite(duration)||duration<=0)throw Error('Неизвестный период');
  const from=anchor-duration,interval=6*86400000,windows=[];
- for(let t=from;t<anchor;t+=interval)windows.push([t,Math.min(t+interval,anchor)]);
+ // UTC epoch-aligned six-day boundaries are stable across calendar days.
+ // Only the rolling first fragment and the recent tail may need refreshing.
+ for(let t=from;t<anchor;){
+  const boundary=(Math.floor(t/interval)+1)*interval;
+  const stop=Math.min(anchor,boundary);
+  windows.push([t,stop]);t=stop;
+ }
  const results=new Array(windows.length);
  const progress=s.periodProgress[period]||{done:0,total:windows.length};
  s.periodProgress[period]=progress;
@@ -428,7 +434,9 @@ async function fetchLongBybitPeriod(accountId,period,anchor){
    const i=next++, [start,stop]=windows[i];
    const cacheKey=accountId+':'+start+':'+stop;
    const cached=s.periodChunkCache[cacheKey];
-   if(cached&&Date.now()-cached.receivedAt<3600000){
+   const immutable=stop<=Date.now()-2*86400000;
+   const fresh=immutable||cached&&Date.now()-cached.receivedAt<600000;
+   if(cached&&fresh){
     results[i]=cached.data;
    }else{
     const u='./api/period-chunk?id='+encodeURIComponent(accountId)+
@@ -448,6 +456,7 @@ async function fetchLongBybitPeriod(accountId,period,anchor){
     }
     results[i]=data;
     s.periodChunkCache[cacheKey]={data,receivedAt:Date.now()};
+    if(progress.done%3===2)persistBybitHistory();
     const keys=Object.keys(s.periodChunkCache);
     if(keys.length>1500){
      for(const key of keys.slice(0,300))delete s.periodChunkCache[key];
@@ -459,6 +468,7 @@ async function fetchLongBybitPeriod(accountId,period,anchor){
   }
  }
  await Promise.all([worker(),worker()]);
+ persistBybitHistory();
  return combineBybitChunks(results,from,anchor,period);
 }
 async function loadFuturesPeriod(period){
@@ -472,16 +482,24 @@ async function loadFuturesPeriod(period){
  const ids=[...s.bybitExpectedIds];
  const already=ids.every(id=>{
   const v=s.periodReports[period]?.[id];
-  return v&&v.to===anchor&&Date.now()-v.receivedAt<(long?3600000:600000);
+  return v&&Number.isFinite(v.netPnl)&&v.to===anchor&&
+   (long||Date.now()-v.receivedAt<600000);
  });
  if(already)return;
  s.periodLoading[period]=true;
  s.periodReports[period] ||= {};
- if(long)s.periodProgress[period]={done:0,total:Math.ceil((period==='all'?729*86400000:PERIODS[period])/(6*86400000))*ids.length};
+ if(long){
+  const duration=period==='all'?729*86400000:PERIODS[period];
+  const from=anchor-duration,interval=6*86400000;
+  let windows=0;
+  for(let t=from;t<anchor;t=Math.min(anchor,(Math.floor(t/interval)+1)*interval))windows++;
+  s.periodProgress[period]={done:0,total:windows*ids.length};
+ }
  try{
   await Promise.all(ids.map(async id=>{
    const prev=s.periodReports[period][id];
-   if(prev&&prev.to===anchor&&Date.now()-prev.receivedAt<(long?3600000:600000))return;
+   if(prev&&Number.isFinite(prev.netPnl)&&prev.to===anchor&&
+      (long||Date.now()-prev.receivedAt<600000))return;
    try{
     let data;
     if(long)data=await fetchLongBybitPeriod(id,period,anchor);
@@ -492,12 +510,14 @@ async function loadFuturesPeriod(period){
      data=await response.json();
      if(!response.ok)throw Error(data.error||'Не удалось получить историю Bybit');
     }
-    s.periodReports[period][id]=data&&data.to===anchor&&Number.isFinite(data.netPnl)&&Array.isArray(data.points)
-     ?{...data,receivedAt:Date.now()}
-     :{error:'История Bybit неполная',to:anchor,receivedAt:Date.now()};
+    if(data&&data.to===anchor&&Number.isFinite(data.netPnl)&&Array.isArray(data.points)){
+     s.periodReports[period][id]={...data,receivedAt:Date.now()};
+     delete s.periodErrors[period];
+     persistBybitHistory();
+    }else s.periodErrors[period]='История Bybit неполная';
    }catch(error){
-    s.periodReports[period][id]={error:String(error.message||'История Bybit недоступна').slice(0,150),
-      to:anchor,receivedAt:Date.now()};
+    // A network or Bybit failure must not erase the last confirmed chart.
+    s.periodErrors[period]=String(error.message||'История Bybit недоступна').slice(0,150);
    }
   }));
  }finally{
