@@ -43,7 +43,7 @@ function mount(sources,fetchImpl=null){
   setTimeout:()=>1,clearTimeout(){},setInterval:()=>{},
   window:{},FormData:class{constructor(form){this.form=form}get(key){return this.form.fields?.[key]??null}}
  };
- vm.runInNewContext(script.replace('window.fxmr4GetState=()=>', 'window.fxmr4Inspect={s,onAccounts,onSnapshot,render,renderLive,reconcileLive,pnlWindow,monthlyFutures,monthlyFuturesSeries,positionAge,futuresLedgerData,activeFuturesReports,positionAccountEquity,loadFuturesPeriod,observedEquitySeries,futuresCSVText,futuresValue,pnlBarSections};window.fxmr4GetState=()=>'),context,{filename:'index.html',timeout:3000});
+ vm.runInNewContext(script.replace('window.fxmr4GetState=()=>', 'window.fxmr4Inspect={s,onAccounts,onSnapshot,render,renderLive,reconcileLive,pnlWindow,monthlyFutures,monthlyFuturesSeries,positionAge,futuresLedgerData,activeFuturesReports,positionAccountEquity,loadFuturesPeriod,observedEquitySeries,futuresCSVText,futuresValue,pnlBarSections,overviewSpotHistory,overviewHistoryData,combineBybitChunks,fetchLongBybitPeriod,loadSpotHistory};window.fxmr4GetState=()=>'),context,{filename:'index.html',timeout:3000});
  const click=action=>{
   const target={dataset:{action},closest(selector){return selector==='[data-action]'?this:null}};
   for(const listener of listeners.click||[])listener({target});
@@ -54,18 +54,20 @@ function mount(sources,fetchImpl=null){
  return {elements,window:context.window,element,store,document,themeControls,click,submit};
 }
 
-test('overview clearly separates 30-day realised PNL from currently open positions',()=>{
+test('overview has only All Spot Futures modes and true current open PNL',()=>{
  const {element}=mount([{id:'bybit',name:'Bybit',accounts:[]}]);
  const overview=element('content').innerHTML;
  assert.match(overview,/class="card tint overviewHero"/);
  assert.match(overview,/Баланс портфеля/);
- assert.match(overview,/class="sectitle">Результат за 30 дней<\/div>/);
- assert.match(overview,/Открытые монеты/);
- assert.match(overview,/Открытые позиции/);
- assert.doesNotMatch(overview,/Текущий PNL/);
- assert.doesNotMatch(overview,/data-period="24h" data-chart="overview"/);
- assert.doesNotMatch(overview,/data-pnl-mode=/);
- assert.match(overview,/не входят в этот результат/);
+ assert.match(overview,/Текущий PNL/);
+ assert.match(overview,/Спот \+ открытые фьючерсные позиции/);
+ assert.match(overview,/data-overview-period/);
+ assert.match(overview,/История PNL/);
+ assert.match(overview,/data-pnl-mode="all"/);
+ assert.match(overview,/data-pnl-mode="spot"/);
+ assert.match(overview,/data-pnl-mode="futures"/);
+ assert.doesNotMatch(overview,/data-pnl-mode="month"/);
+ assert.doesNotMatch(overview,/PNL счёта/);
  assert.ok(!html.includes('class="brandBadge">FXMR4'));
 });
 
@@ -169,24 +171,24 @@ test('no historical ledger never invents a monthly profit',()=>{
  assert.equal(view.monthlyFutures(),null);
 });
 
-test('overview draws exactly the 30-day Bybit ledger without fake period selectors',()=>{
+test('overview Futures tab uses actual Bybit ledger and not unlabelled account PNL',()=>{
  const {element,window}=mount([{id:'bybit',name:'Bybit',accounts:[]}]);
  const v=window.fxmr4Inspect;
  v.onAccounts([{id:'sub-one',label:'Primary'}]);
  const end=v.s.monthlyAnchorMs;
  v.s.monthlyPerformance['sub-one']={
   from:end-30*86400000,to:end,netPnl:13,tradingPnl:16,funding:-1,fees:2,
-  days:[{date:new Date(end-86400000).toISOString().slice(0,10),netPnl:13}]
+  days:[{date:new Date(end-86400000).toISOString().slice(0,10),netPnl:13}],
+  points:[{t:end-86400000,netPnl:13}]
  };
- v.s.tab='overview';v.render();
+ v.s.pnlMode='futures';v.s.chartPeriod.overview='30d';v.s.tab='overview';v.render();
  const overview=element('content').innerHTML;
- assert.match(overview,/Результат за 30 дней/);
- assert.match(overview,/Подключённые субаккаунты Bybit/);
- assert.match(overview,/Закрытые сделки \+ funding − комиссии/);
+ assert.match(overview,/История PNL/);
+ assert.match(overview,/Реализованные сделки Bybit/);
  assert.match(overview,/polyline/);
  assert.match(overview,/\+\$13\.00/);
- assert.doesNotMatch(overview,/data-period="30d" data-chart="overview"/);
- assert.doesNotMatch(overview,/data-pnl-mode=/);
+ assert.match(overview,/data-pnl-mode="futures"/);
+ assert.doesNotMatch(overview,/data-pnl-mode="month"/);
 });
 
 test('multiaccount monthly summary requires one identical 30-day reporting window',()=>{
@@ -273,7 +275,7 @@ test('existing portfolio keeps a full historical Spot chart without overview tim
  assert.match(element('content').innerHTML,/class="section pnlChart card overviewLedger"/);
  assert.doesNotMatch(element('content').innerHTML,/data-period="all" data-chart="overview"/);
 });
-test('futures subaccount uses Bybit unrealised value and its own 30-day report',()=>{
+test('overview current PNL sums Spot and open futures, not lifetime account PNL',()=>{
  const {element,window}=mount([{id:'bybit',name:'Bybit',accounts:[]}]);
  const v=window.fxmr4Inspect;
  v.onAccounts([{id:'sub-a',label:'Alpha'},{id:'sub-b',label:'Beta'}]);
@@ -283,23 +285,24 @@ test('futures subaccount uses Bybit unrealised value and its own 30-day report',
    positions:[{symbol:'BTCUSDT',side:'Long',pnl:upl,size:120}]});
  }
  const end=v.s.monthlyAnchorMs;
- const base={from:end-30*86400000,to:end,tradingPnl:0,funding:0,fees:0,days:[]};
- v.s.monthlyPerformance['sub-a']={...base,netPnl:25};
- v.s.monthlyPerformance['sub-b']={...base,netPnl:-4};
+ const base={from:end-30*86400000,to:end,tradingPnl:0,funding:0,fees:0,days:[],
+  points:[{t:end-86400000,netPnl:0}]};
+ v.s.monthlyPerformance['sub-a']={...base,netPnl:25,points:[{t:end-86400000,netPnl:25}]};
+ v.s.monthlyPerformance['sub-b']={...base,netPnl:-4,points:[{t:end-86400000,netPnl:-4}]};
  v.s.tab='futures';v.s.futureMode='account';v.render();
  const futures=element('content').innerHTML;
  assert.match(futures,/Открытые позиции · PNL/);
- assert.match(futures,/−\$14\.00/,'sum open unrealised only, not lifetime account total');
- assert.match(futures,/\+\$21\.00/,'sum 30-day net activity');
+ assert.match(futures,/−\$14\.00/);
+ assert.match(futures,/\+\$21\.00/);
  assert.match(futures,/Alpha/);
  assert.match(futures,/Beta/);
- assert.match(futures,/−\$17\.00/);
- assert.match(futures,/\+\$25\.00/);
- assert.match(futures,/\+\$3\.00/);
- assert.match(futures,/−\$4\.00/);
  v.s.tab='overview';v.render();
  const overview=element('content').innerHTML;
- assert.match(overview,/Открытые позиции/);
+ const holdings=window.fxmr4GetState().holdings;
+ const expected=holdings.BTC.profit+holdings.ETH.profit-14;
+ const fmt=(expected<0?'−':'+')+'$'+Math.abs(expected).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+ assert.match(overview,/Текущий PNL/);
+ assert.ok(overview.includes(fmt),'overview current PNL includes tracked Spot and both open subaccounts');
  assert.match(overview,/−\$14\.00/);
  assert.match(overview,/\+\$21\.00/);
  assert.doesNotMatch(overview,/−\$400\.00/);
@@ -392,7 +395,7 @@ test('clicking history period fetches both Bybit subaccounts and reuses cached r
  assert.match(markup,/polyline/);
 });
 
-test('overview separates todays closed trade cashflow and live open PNL across subaccounts',()=>{
+test('overview current PNL excludes historic realised loss while Futures shows today separately',()=>{
  const {element,window}=mount([{id:'bybit',name:'Bybit',accounts:[]}]);
  const v=window.fxmr4Inspect;
  v.onAccounts([{id:'a',label:'Alpha'},{id:'b',label:'Beta'}]);
@@ -403,19 +406,21 @@ test('overview separates todays closed trade cashflow and live open PNL across s
  }
  const end=v.s.monthlyAnchorMs,begin=Math.floor(end/86400000)*86400000;
  const report=(netPnl)=>({from:begin,to:end,netPnl,funding:0,fees:0,
-  points:[{t:begin+3600000,netPnl}],days:[{date:new Date(begin).toISOString().slice(0,10),netPnl}],symbols:[]});
+  points:[{t:begin+3600000,netPnl}],days:[],symbols:[]});
  v.s.periodReports.today={a:report(7),b:report(-4)};
  v.s.monthlyPerformance.a={...report(14),from:end-30*86400000};
  v.s.monthlyPerformance.b={...report(2),from:end-30*86400000};
  v.s.tab='overview';v.render();
  const markup=element('content').innerHTML;
- assert.match(markup,/Реализовано сегодня/);
- assert.match(markup,/Открытые позиции/);
- assert.match(markup,/За 30 дней/);
- assert.match(markup,/\+\$3\.00/);
- assert.match(markup,/−\$2\.00/);
+ const h=window.fxmr4GetState().holdings;
+ const combined=h.BTC.profit+h.ETH.profit-2;
+ const expected=(combined<0?'−':'+')+'$'+Math.abs(combined).toFixed(2);
+ assert.match(markup,/Текущий PNL/);
+ assert.ok(markup.includes(expected),'sum Spot and current futures value');
  assert.match(markup,/\+\$16\.00/);
- assert.doesNotMatch(markup,/Текущий PNL/);
+ assert.doesNotMatch(markup,/−\$200\.00/);
+ v.s.tab='futures';v.render();
+ assert.match(element('content').innerHTML,/Операции за сегодня · UTC/);
 });
 
 test('daily result and symbol bars use the same Bybit ledger and can export CSV',()=>{
