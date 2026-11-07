@@ -333,6 +333,44 @@ class TestExchangePeriodLedger(TestCase):
         self.assertEqual(report["from"], start)
         self.assertEqual(report["to"], end)
 
+    def test_hourly_symbol_contributions_are_exact_transaction_totals(self):
+        end = 1762473600000
+        start = end - server.PERFORMANCE_PERIODS["24h"]
+        def bybit(path, params, key, secret):
+            return {"nextPageCursor": "", "list": [
+                {"category": "linear", "currency": "USDT", "type": "TRADE",
+                 "symbol": "ADAUSDT", "transactionTime": str(start+3600000),
+                 "cashFlow": "5", "funding": "0", "fee": "0.3"},
+                {"category": "linear", "currency": "USDT", "type": "SETTLEMENT",
+                 "symbol": "XMRUSDT", "transactionTime": str(start+3600000),
+                 "cashFlow": "-2", "funding": "-0.1", "fee": "0.2"},
+                {"category": "linear", "currency": "USDT", "type": "TRADE",
+                 "symbol": "ADAUSDT", "transactionTime": str(start+7200000),
+                 "cashFlow": "3", "funding": "0", "fee": "0.1"},
+                {"category": "linear", "currency": "USDT", "type": "TRANSFER_IN",
+                 "symbol": "ADAUSDT", "transactionTime": str(start+7200000),
+                 "cashFlow": "500", "funding": "", "fee": ""}
+            ]}
+        with patch.object(server, "request_bybit", side_effect=bybit):
+            report = server.monthly_futures_activity(
+                "key", "secret", end_ms=end,
+                period_ms=server.PERFORMANCE_PERIODS["24h"])
+        buckets = report["symbolBuckets"]
+        self.assertEqual(len(buckets), 3)
+        self.assertEqual(report["bucketMs"], 3600000)
+        groups = {}
+        for entry in buckets:
+            groups.setdefault(entry["t"], {})[entry["symbol"]] = entry["netPnl"]
+        self.assertEqual(len(groups), 2)
+        first = min(groups)
+        self.assertAlmostEqual(groups[first]["ADAUSDT"], 4.7)
+        self.assertAlmostEqual(groups[first]["XMRUSDT"], -2.3)
+        self.assertAlmostEqual(groups[max(groups)]["ADAUSDT"], 2.9)
+        self.assertAlmostEqual(sum(x["netPnl"] for x in buckets), report["netPnl"])
+        hourly_totals = {row["t"]: row["netPnl"] for row in report["points"]}
+        for timestamp, amounts in groups.items():
+            self.assertAlmostEqual(hourly_totals[timestamp], sum(amounts.values()))
+
     def test_week_chart_period_fetches_two_separate_7day_safe_windows(self):
         end = 1762473600000
         calls = []
