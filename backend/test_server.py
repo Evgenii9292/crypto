@@ -275,7 +275,7 @@ class TestConsistentMonthlyAnchor(TestCase):
     def test_anchor_rounds_to_utc_5_minutes_and_is_cached(self):
         now = int(server.time.time() * 1000)
         anchor = now // 300000 * 300000
-        report = {"netPnl": 8, "from": anchor - server.PERFORMANCE_MS, "to": anchor}
+        report = {"netPnl": 8, "from": anchor - server.PERFORMANCE_MS, "to": anchor, "symbolBuckets": []}
         with patch.object(server, "credentials", return_value=("key", "secret", "Test")):
             with patch.object(server, "monthly_futures_activity", return_value=report) as ledger:
                 first = server.monthly_account_performance("bybit-subaccount", anchor)
@@ -390,7 +390,7 @@ class TestExchangePeriodLedger(TestCase):
         now = int(server.time.time() * 1000)
         anchor = now // 300000 * 300000
         template = {"from": anchor - server.PERFORMANCE_MS, "to": anchor, "netPnl": 0,
-                    "points": []}
+                    "points": [], "symbolBuckets": []}
         with patch.object(server, "credentials", return_value=("k", "s", "Sub")):
             with patch.object(server, "monthly_futures_activity", side_effect=lambda *a, **k: dict(template)) as ledger:
                 a = server.monthly_account_performance("bybit-subaccount", anchor, "24h")
