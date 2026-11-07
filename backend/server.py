@@ -281,7 +281,7 @@ def monthly_futures_activity(key, secret, end_ms=None, period_ms=PERFORMANCE_MS)
                         raise BybitFailure("Bybit вернул некорректную сумму операции")
                     pieces[name] = value
                 net_change = pieces["tradingPnl"] + pieces["funding"] - pieces["fees"]
-                slot = when // bucket_ms * bucket_ms
+                slot = max(start_ms, when // bucket_ms * bucket_ms)
                 series_bins[slot] = series_bins.get(slot, 0.0) + net_change
                 date = time.strftime("%Y-%m-%d", time.gmtime(when / 1000))
                 bucket = daily.setdefault(date, {"tradingPnl": 0.0, "funding": 0.0, "fees": 0.0})
