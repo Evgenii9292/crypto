@@ -687,3 +687,42 @@
 .pnlParts{display:flex;gap:6px 12px;flex-wrap:wrap;margin-top:9px;color:var(--sub);font-size:10px;font-weight:540;font-variant-numeric:tabular-nums}
 .pnlParts span{white-space:nowrap}
 @media(max-width:600px){.pnlParts{gap:5px 9px;font-size:10px}}
+
+/* FXMR4: compact Spot budget editor, kept with Spot allocation rather than settings. */
+.spotBudgetToggle{font-size:11px;font-weight:590;white-space:nowrap;background:transparent;color:var(--sub);height:32px;padding:0 9px}
+.spotBudgetToggle .icon{width:13px;height:13px}
+.spotBudgetToggle:hover{color:var(--text);background:var(--surface2)}
+.spotBudgetEditor{border-top:1px solid var(--border);margin-top:15px;padding-top:14px}
+.spotBudgetForm{display:flex;align-items:end;flex-wrap:wrap;gap:8px 10px}
+.spotBudgetForm label{display:flex;flex-direction:column;gap:5px;font-size:11px;color:var(--sub);font-weight:590}
+.spotBudgetForm input{width:156px;max-width:100%;height:34px;padding:7px 9px;border-radius:9px;background:var(--surface);color:var(--text);border:1px solid var(--border);font-size:12px;font-variant-numeric:tabular-nums}
+.spotBudgetForm .btn{height:34px}
+.spotBudgetHint{margin-top:9px;color:var(--muted);font-size:10px}
+@media(max-width:600px){.spotBudgetToggle{height:30px;font-size:10px}.spotBudgetForm input{width:140px}}
+
+/* Manual theme overrides follow the system preference, unless user picks a theme. */
+:root[data-theme="light"]{color-scheme:light;--bg:#fafbfc;--surface:#fff;--surface2:#f5f6f8;--surface3:#edf0f4;--border:#e6e8ec;--text:#22262e;--muted:#858d99;--sub:#666f7b;--green:#168c58;--red:#dc4d52;--reserve:#8993a3;--shadow:0 9px 34px rgba(22,30,45,.035)}
+:root[data-theme="dark"]{color-scheme:dark;--bg:#101216;--surface:#191c22;--surface2:#252931;--surface3:#333945;--border:#343942;--text:#f3f4f6;--muted:#989fae;--sub:#bdc2cb;--green:#4ed69a;--red:#ff777d;--reserve:#8490a3;--shadow:none}
+:root[data-theme="light"] .posBadge.long{background:#e6f7ed;color:#196342}
+:root[data-theme="light"] .posBadge.short{background:#fdeaea;color:#a52a2f}
+:root[data-theme="light"] .toast{background:#e6f7ed;color:#196342;border-color:#caeed8}
+:root[data-theme="light"] .connectBadge.warn{color:#a8761f}
+:root[data-theme="dark"] .posBadge.long{background:#1a422d;color:#a4f1c0}
+:root[data-theme="dark"] .posBadge.short{background:#4a2226;color:#ffb3b6}
+:root[data-theme="dark"] .toast{background:#1a422d;color:#a4f1c0;border-color:#306143}
+:root[data-theme="dark"] .connectBadge.warn{color:#e8b866}
+
+/* One restrained icon beside Settings. Never a second settings screen. */
+.sideFooterActions{display:flex;align-items:center;gap:7px;margin-top:14px}
+.sideFooterActions .navConfig{margin:0;min-width:0;flex:1;width:auto}
+.sideFooterActions .themeSwitch{margin:0;padding:0;flex:none;width:34px;height:34px;display:grid;place-items:center;color:var(--sub)}
+.sideFooterActions .themeSwitch:hover{color:var(--text)}
+.themeSwitch .icon{width:16px;height:16px}
+.mobileControls{display:none}
+@media(max-width:960px){
+ .mobileControls{display:flex;align-items:center;gap:7px;margin-left:auto;flex:none}
+ .mobileControls .mobileSettings{margin-left:0}
+ .mobileControls .mobileTheme{width:34px;height:34px;display:grid;place-items:center;padding:0;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--sub)}
+ .mobileControls .mobileTheme:hover{background:var(--surface2);color:var(--text)}
+ .mobileControls .mobileTheme .icon{width:17px;height:17px}
+}
