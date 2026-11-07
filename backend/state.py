@@ -25,6 +25,7 @@ CREDS_PATH = DATA_DIR / "bybit.cred"
 EXTRA_ACCOUNTS_PATH = DATA_DIR / "bybit-accounts.cred"
 PROFILE_PATH = DATA_DIR / "user-data.json"
 HISTORY_PATH = DATA_DIR / "pnl-history.json"
+EQUITY_HISTORY_PATH = DATA_DIR / "bybit-equity-history.json"
 
 # PNL history is tiny per point but must outlive one browser: month and half-year
 # charts need data the browser no longer holds. Points are compacted into tiers
@@ -400,6 +401,72 @@ def merge_history(points):
                          separators=(",", ":")).encode("utf-8")
         _write_private(HISTORY_PATH, raw)
     return {"points": len(merged)}
+
+
+
+def read_equity_history():
+    """Historical *observed* UTA equity, never transaction-log cash balance.
+
+    Existing 90-day equity history cannot be backfilled by the wallet endpoint.
+    Only authenticated API snapshots collected since this feature was enabled
+    are included. Values and account IDs are private to this server.
+    """
+    with LOCK:
+        if not EQUITY_HISTORY_PATH.is_file():
+            return {"points": []}
+        try:
+            raw = json.loads(EQUITY_HISTORY_PATH.read_text(encoding="utf-8"))
+            rows = raw.get("points") if isinstance(raw, dict) else None
+            if not isinstance(rows, list):
+                raise ValueError("not list")
+            return {"points": rows}
+        except (OSError, UnicodeError, ValueError) as exc:
+            raise StateError("История стоимости субаккаунтов повреждена") from exc
+
+
+def merge_equity_history(points):
+    if not isinstance(points, list) or len(points) > 100:
+        raise StateError("Некорректный пакет стоимости субаккаунтов")
+    clean = []
+    now = int(time.time() * 1000)
+    for item in points:
+        if not isinstance(item, dict):
+            raise StateError("Некорректный снимок баланса")
+        try:
+            t = int(item.get("t"))
+            account_id = str(item.get("accountId") or "").strip()
+            equity = float(item.get("equity"))
+        except (ValueError, TypeError) as exc:
+            raise StateError("В снимке баланса не хватает полей") from exc
+        if not (1000000000000 <= t <= now + 60000 and
+                1 <= len(account_id) <= 100 and
+                math.isfinite(equity) and equity >= 0):
+            raise StateError("Недопустимое значение снимка баланса")
+        clean.append({"t": t, "accountId": account_id, "equity": round(equity, 8)})
+    if not clean:
+        return {"points": 0}
+    with LOCK:
+        existing = read_equity_history()["points"]
+        combined = {}
+        for row in existing + clean:
+            try:
+                t = int(row["t"])
+                account = str(row["accountId"])
+                equity = float(row["equity"])
+            except (KeyError, ValueError, TypeError):
+                continue
+            if not math.isfinite(equity) or equity < 0:
+                continue
+            bucket = _history_bucket_ms(max(0, now-t))
+            k = (account, t//bucket*bucket)
+            previous = combined.get(k)
+            if previous is None or t>=previous["t"]:
+                combined[k] = {"t": t, "accountId": account, "equity": round(equity, 8)}
+        rows = sorted(combined.values(), key=lambda row:(row["t"], row["accountId"]))[-50000:]
+        raw = json.dumps({"points": rows}, ensure_ascii=False, allow_nan=False,
+                         separators=(",", ":")).encode("utf-8")
+        _write_private(EQUITY_HISTORY_PATH, raw)
+        return {"points": len(rows)}
 
 
 def is_ready():
