@@ -85,7 +85,7 @@
   const nowLocal=()=>{const d=new Date();return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-')};
   const fmtDate=d=>{if(!d)return 'Нет даты';const a=d.slice(0,10).split('-');return a.length===3?`${a[2]}.${a[1]}.${a[0]}`:d};
   const fmtTime=d=>{if(!d)return '';const x=new Date(d);return isNaN(x)?'':x.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})};
-  const s={tab:'overview',trades:[{id:1,coin:'BTC',spent:25,entry:76200,buy_date:'2026-11-06',confirmed:false},{id:2,coin:'ETH',spent:25,entry:2247,buy_date:'2026-11-06',confirmed:false}],quotes:{BTC:{price:initial.BTC,source:'Предварительно'},ETH:{price:initial.ETH,source:'Предварительно'}},capital:C,period:'7d',chartPeriod:{overview:'7d',spot:'7d',futures:'30d'},chartMetric:{spot:'pnl',futures:'realized30d'},points:[],snapshots:[],sync:null,form:false,editing:null,deleteId:null,busy:false,flash:'',formError:'',showPrices:false,tradingSubtab:'futures',futureMode:'all',futureSort:'pnl',futureSortDir:-1,pnlMode:'all',capitalOpen:false,portfolioSnapshots:[],pnlHistory:[],pendingRemove:null,renameId:null,renameValue:'',renameError:'',futureForm:null,futureFormError:'',sources:[{id:'bybit',name:'Bybit',connected:false,accounts:[]}],futuresPositions:[],openedExchanges:{},openedAccounts:{},spotHistoryOpen:false,spotAccountsOpen:false,spotOpen:{},bybitSnapshot:null,bybitAccountsSnapshots:{},monthlyPerformance:{},monthlyLoading:{},monthlyAnchorMs:null,bybitExpectedIds:[],backendConnection:{available:false,configured:false,connected:false,error:''}};
+  const s={tab:'overview',trades:[{id:1,coin:'BTC',spent:25,entry:76200,buy_date:'2026-11-06',confirmed:false},{id:2,coin:'ETH',spent:25,entry:2247,buy_date:'2026-11-06',confirmed:false}],quotes:{BTC:{price:initial.BTC,source:'Предварительно'},ETH:{price:initial.ETH,source:'Предварительно'}},capital:C,period:'7d',chartPeriod:{overview:'all',spot:'all',futures:'30d'},chartMetric:{spot:'pnl',futures:'realized30d'},points:[],snapshots:[],sync:null,form:false,editing:null,deleteId:null,busy:false,flash:'',formError:'',showPrices:false,tradingSubtab:'futures',futureMode:'all',futureSort:'pnl',futureSortDir:-1,pnlMode:'all',capitalOpen:false,portfolioSnapshots:[],pnlHistory:[],pendingRemove:null,renameId:null,renameValue:'',renameError:'',futureForm:null,futureFormError:'',sources:[{id:'bybit',name:'Bybit',connected:false,accounts:[]}],futuresPositions:[],openedExchanges:{},openedAccounts:{},spotHistoryOpen:false,spotAccountsOpen:false,spotOpen:{},bybitSnapshot:null,bybitAccountsSnapshots:{},monthlyPerformance:{},monthlyLoading:{},monthlyAnchorMs:null,bybitExpectedIds:[],backendConnection:{available:false,configured:false,connected:false,error:''}};
   function coin(m){const trades=s.trades.filter(t=>t.coin===m);const invested=trades.reduce((t,x)=>t+Number(x.spent),0);const quantity=trades.reduce((t,x)=>t+Number(x.spent)/Number(x.entry),0);const current=Number(s.quotes[m]?.price||initial[m]);const value=quantity*current;return {invested,quantity,current,value,profit:value-invested,remaining:C/2-invested,avg:quantity?invested/quantity:0,provisional:trades.some(t=>!t.confirmed)}}
   function sums(){const btc=coin('BTC'),eth=coin('ETH'),invested=btc.invested+eth.invested,cash=C-invested,holdings=btc.value+eth.value,profit=holdings-invested;return {btc,eth,invested,cash,holdings,profit,total:cash+holdings}}
 
@@ -110,8 +110,8 @@ function portfolioSummary(){
  return {spot:a,hasFutures:!!snap,margin,invested:!snap?a.invested:margin===null?null:a.invested+margin,
   futuresPnl,futuresFloatingPnl,futuresRealisedPnl,pnl};
 }
-const PERIODS={'24h':86400000,'7d':604800000,'30d':2592000000,'90d':7776000000,'6m':15552000000};
-const PERIOD_NAMES={'24h':'24 часа','7d':'7 дней','30d':'30 дней','90d':'90 дней','6m':'6 месяцев'};
+const PERIODS={'24h':86400000,'7d':604800000,'30d':2592000000,'90d':7776000000,'6m':15552000000,'1y':31536000000,'all':Infinity};
+const PERIOD_NAMES={'24h':'24 часа','7d':'7 дней','30d':'30 дней','90d':'90 дней','6m':'6 месяцев','1y':'1 год','all':'всё время'};
 function pnlField(kind){return kind==='spot'?'spot':kind==='futures'?'futures':'total'}
 function hasTrackedFutures(){
  const known=p=>p&&(p.futures!=null||p.futuresAccount!=null);
@@ -172,13 +172,21 @@ function monthlyFuturesSeries(){
 }
 
 function pnlWindow(kind,period,metric='pnl'){
- const from=Date.now()-(PERIODS[period]||PERIODS['7d']);
+ const windowMs=PERIODS[period]??PERIODS['7d'];
+ const from=windowMs===Infinity?-Infinity:Date.now()-windowMs;
  const all=kind==='futures'&&metric==='realized30d'?monthlyFuturesSeries():pnlSeries(kind,metric).points;
- const points=kind==='futures'&&metric==='realized30d'?all:all.filter(p=>p.t>=from).slice(-1500);
+ const observed=kind==='futures'&&metric==='realized30d'?all:all.filter(p=>p.t>=from).slice(-1500);
+ // Live PNL is a lifetime account reading. For a selected interval, plot its
+ // CHANGE from the first observed reading, not the historic loss as a flat line.
+ // Never invent history before the first stored snapshot.
+ const baseline=observed[0]?.v;
+ const points=metric==='pnl'&&Number.isFinite(baseline)?
+   observed.map(p=>({t:p.t,v:p.v-baseline})):observed;
  return {all,points,from,first:points.length?points[0].t:null,last:points.length?points[points.length-1].t:null};
 }
 function balanceSeries(kind,period){
- const from=Date.now()-(PERIODS[period]||PERIODS['7d']);
+ const windowMs=PERIODS[period]??PERIODS['7d'];
+ const from=windowMs===Infinity?-Infinity:Date.now()-windowMs;
  const field=kind==='spot'?'spotBalance':'futuresBalance';
  const points=s.portfolioSnapshots.map(p=>({t:Number(p.time),v:p[field]==null?null:Number(p[field])}))
   .filter(p=>Number.isFinite(p.t)&&p.t>=from&&p.v!==null&&Number.isFinite(p.v)&&p.v>=0)
@@ -195,7 +203,7 @@ function chartHTML(kind,period,metric='pnl'){
  const axis=n=>balance?dollars(n):axisMoney(n);
  let guide='';
  for(let k=0;k<=4;k++){let value=high-(high-low)*k/4,cy=y(value);guide+='<line x1="'+L+'" x2="'+(W-R)+'" y1="'+cy.toFixed(1)+'" y2="'+cy.toFixed(1)+'" class="chartGrid"/><text x="'+(L-9)+'" y="'+(cy+4).toFixed(1)+'" text-anchor="end" class="chartAxis">'+axis(value)+'</text>'}
- const f=t=>period==='24h'?new Date(t).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}):new Date(t).toLocaleDateString('ru-RU',{month:'short',day:'numeric'});
+ const f=t=>end-start<86400000?new Date(t).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}):new Date(t).toLocaleDateString('ru-RU',{month:'short',day:'numeric',year:period==='all'||period==='1y'?'2-digit':undefined});
  for(const fraction of [0,.5,1]){const tick=L+fraction*(W-L-R);guide+='<text x="'+tick+'" y="'+(H-10)+'" text-anchor="'+(fraction===0?'start':fraction===1?'end':'middle')+'" class="chartAxis">'+escape(f(start+(end-start)*fraction))+'</text>'}
  const pts=data.map(p=>x(p.t).toFixed(1)+','+y(p.v).toFixed(1)).join(' '),last=data[data.length-1],color=balance?'var(--text)':last.v<0?'var(--red)':'var(--green)';
  return '<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="xMidYMid meet" role="img" aria-label="График '+(balance?'баланса':'PNL')+' с датами и значениями"><g>'+guide+'</g>'+(balance?'':'<line x1="'+L+'" x2="'+(W-R)+'" y1="'+y(0).toFixed(1)+'" y2="'+y(0).toFixed(1)+'" class="chartZero"/>')+'<polyline points="'+pts+'" fill="none" stroke="'+color+'" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="'+x(last.t).toFixed(1)+'" cy="'+y(last.v).toFixed(1)+'" r="4" fill="'+color+'"><title>'+escape(axis(last.v)+' · '+new Date(last.t).toLocaleString('ru-RU'))+'</title></circle></svg>';
@@ -203,13 +211,14 @@ function chartHTML(kind,period,metric='pnl'){
 function chartCaption(kind,period,p,metric='pnl'){
  const balance=metric==='balance',win=balance?balanceSeries(kind,period):pnlWindow(kind,period,metric);
  const scope=kind==='spot'?'Спот':kind==='futures'?'Фьючерсы':'Портфель';
- if(!win.points.length)return scope+' · нет истории за '+PERIOD_NAMES[period];
- const days=Math.max(1,Math.round((win.last-win.first)/86400000));
- const span=days>=2?days+' дн.':Math.max(1,Math.round((win.last-win.first)/3600000))+' ч';
- return scope+' · '+(balance?'баланс':metric==='floating'?'плавающий PNL':metric==='realized30d'?'реализовано за 30 дней':kind==='futures'?'PNL счёта':'PNL')+' · '+span;
+ const label=balance?'баланс':metric==='floating'?'плавающий PNL':metric==='realized30d'?'закрытые сделки, funding и комиссии':'изменение PNL';
+ const periodName=PERIOD_NAMES[period]||PERIOD_NAMES['7d'];
+ if(!win.points.length)return scope+' · '+label+' · '+periodName+' · история пока не накоплена';
+ const first=new Date(win.first).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+ return scope+' · '+label+' · '+periodName+' · данные с '+first;
 }
 function periodButtons(period,chart){
- return `<div class="periods">${[['24h','24ч'],['7d','7д'],['30d','30д'],['90d','90д'],['6m','6 мес']].map(([q,name])=>`<button type="button" data-period="${q}" data-chart="${chart}" class="period ${period===q?'active':''}">${name}</button>`).join('')}</div>`;
+ return `<div class="periods">${[['24h','24ч'],['7d','7д'],['30d','30д'],['90d','90д'],['6m','6 мес'],['1y','1 год'],['all','Всё']].map(([q,name])=>`<button type="button" data-period="${q}" data-chart="${chart}" class="period ${period===q?'active':''}">${name}</button>`).join('')}</div>`;
 }
 function pnlChartBlock(opts){
  const key=opts.key,kind=opts.kind||s.pnlMode,period=opts.monthOnly?'30d':(s.chartPeriod[key]||'7d');
@@ -218,7 +227,7 @@ function pnlChartBlock(opts){
  const showModes=!!opts.modes;
  const metricSwitch=opts.metricSwitch?`<div class="pnlMode"><button class="${metric==='pnl'?'active':''}" data-metric="pnl" data-chart="${key}" type="button">${kind==='futures'?'PNL счёта':'PNL'}</button>${kind==='futures'?`<button class="${metric==='realized30d'?'active':''}" data-metric="realized30d" data-chart="${key}" type="button">За 30 дней</button><button class="${metric==='floating'?'active':''}" data-metric="floating" data-chart="${key}" type="button">Плавающий</button>`:''}<button class="${metric==='balance'?'active':''}" data-metric="balance" data-chart="${key}" type="button">Баланс</button></div>`:'';
  const balanceValue=metric==='balance'?(kind==='spot'?sums().holdings:s.bybitSnapshot?.totals?.equity):null;
- const rawCurrent=metric==='floating'?opts.summary?.futuresFloatingPnl:metric==='realized30d'?monthlyFutures()?.netPnl:opts.current;
+ const rawCurrent=metric==='pnl'?pnlWindow(kind,period,metric).points.at(-1)?.v:metric==='floating'?opts.summary?.futuresFloatingPnl:metric==='realized30d'?monthlyFutures()?.netPnl:opts.current;
   const current=metric==='balance'?(balanceValue!=null&&Number.isFinite(Number(balanceValue))?Number(balanceValue):null):rawCurrent==null?null:Number(rawCurrent);
  return `<section class="section pnlChart card"><div class="hrow pnlChartHead"><div><div class="sectitle">${opts.title||'Портфель'}</div>${subtitle?`<div class="tiny">${escape(subtitle)}</div>`:''}</div>${opts.monthOnly?'<div class="tiny">Последние 30 дней</div>':periodButtons(period,key)}</div>${showModes?`<div class="pnlMode">${[['all','Все'],['spot','Спот'],['futures','Фьючерсы'],['month','30 дней']].map(([k,name])=>`<button class="${s.pnlMode===k?'active':''}" data-pnl-mode="${k}" type="button">${name}</button>`).join('')}</div>`:''}${metricSwitch}<div class="chartbox">${chartHTML(kind,period,metric)}</div><div class="chartlegend"><span>${chartCaption(kind,period,opts.summary,metric)}</span><strong class="${current==null||metric==='balance'?'neutral':cls(current)}">${current==null?'—':metric==='balance'?dollars(current):signed(current)}</strong></div></section>`;
 }
@@ -705,7 +714,8 @@ window.fxmr4App={onBackendStatus,onSnapshot,onAccounts,onDisconnected,applyCloud
     }
   }
   function chart(){
-    const from=Date.now()-(PERIODS[s.period]||PERIODS['7d']);
+    const windowMs=PERIODS[s.period]??PERIODS['7d'];
+     const from=windowMs===Infinity?-Infinity:Date.now()-windowMs;
     s.points=s.snapshots.filter(p=>p.time>=from);
     if(s.tab==='overview'&&!s.showPrices&&!s.form)render();
   }
