@@ -43,7 +43,7 @@ function mount(sources,fetchImpl=null,sharedStore=null){
   setTimeout:()=>1,clearTimeout(){},setInterval:()=>{},
   window:{},FormData:class{constructor(form){this.form=form}get(key){return this.form.fields?.[key]??null}}
  };
- vm.runInNewContext(script.replace('window.fxmr4GetState=()=>', 'window.fxmr4Inspect={s,onAccounts,onSnapshot,render,renderLive,reconcileLive,pnlWindow,monthlyFutures,monthlyFuturesSeries,positionAge,futuresLedgerData,activeFuturesReports,positionAccountEquity,loadFuturesPeriod,observedEquitySeries,futuresCSVText,futuresValue,pnlBarSections,positionCostsFromBybit,overviewSpotHistory,overviewHistoryData,combineBybitChunks,fetchLongBybitPeriod,loadSpotHistory,loadMonthlyPerformance,persistBybitHistory,restoreBybitHistory};window.fxmr4GetState=()=>'),context,{filename:'index.html',timeout:3000});
+ vm.runInNewContext(script.replace('window.fxmr4GetState=()=>', 'window.fxmr4Inspect={s,onAccounts,onSnapshot,render,renderLive,reconcileLive,pnlWindow,monthlyFutures,monthlyFuturesSeries,positionAge,futuresSorted,futuresTableHead,futuresLedgerData,activeFuturesReports,positionAccountEquity,loadFuturesPeriod,observedEquitySeries,futuresCSVText,futuresValue,pnlBarSections,positionCostsFromBybit,overviewSpotHistory,overviewHistoryData,combineBybitChunks,fetchLongBybitPeriod,loadSpotHistory,loadMonthlyPerformance,persistBybitHistory,restoreBybitHistory};window.fxmr4GetState=()=>'),context,{filename:'index.html',timeout:3000});
  const click=(action,id='')=>{
   const target={dataset:{action,id},closest(selector){return selector==='[data-action]'?this:null}};
   for(const listener of listeners.click||[])listener({target});
@@ -52,10 +52,14 @@ function mount(sources,fetchImpl=null,sharedStore=null){
   const target={dataset:{futureMode},closest(selector){return selector==='[data-future-mode]'?this:null}};
   for(const listener of listeners.click||[])listener({target});
  };
+ const clickSort=sort=>{
+  const target={dataset:{sort},closest(selector){return selector==='[data-sort]'?this:null}};
+  for(const listener of listeners.click||[])listener({target});
+ };
  const submit=(id,fields)=>{
   for(const listener of listeners.submit||[])listener({target:{id,fields},preventDefault(){}});
  };
- return {elements,window:context.window,element,store,document,themeControls,click,chooseFutureMode,submit};
+ return {elements,window:context.window,element,store,document,themeControls,click,clickSort,chooseFutureMode,submit};
 }
 
 test('overview has only All Spot Futures modes and true current open PNL',()=>{
@@ -714,8 +718,8 @@ test('Sidebar icon and labels, Futures headings, native selector match UI feedba
  const overviewIcon=html.split('<symbol id="activity"')[1]?.split('</symbol>')[0];
  const futuresIcon=html.split('<symbol id="trend"')[1]?.split('</symbol>')[0];
  assert.ok(overviewIcon&&futuresIcon&&overviewIcon!==futuresIcon);
- assert.ok(html.includes('<span class="hLong">Объём</span>'));
- assert.ok(html.includes('<span class="hLong">PNL</span>'));
+ assert.ok(html.includes("cell('size','Объём','right')"));
+ assert.ok(html.includes("cell('pnl','PNL','right')"));
  assert.ok(!html.includes('<span class="hLong">Плавающий PNL</span>'));
  assert.ok(!html.includes('<span class="hLong">Объём · USD</span>'));
  const {element,window}=mount([{id:'bybit',name:'Bybit',accounts:[]}]);
