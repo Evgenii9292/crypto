@@ -304,7 +304,7 @@ def compact_history(points, now_ms=None):
         except (TypeError, ValueError):
             continue
         values = {}
-        for key in ("spot", "futures", "total"):
+        for key in ("spot", "futures", "total", "futuresAccount", "totalAccount"):
             raw = item.get(key)
             if raw is None:
                 continue
@@ -364,7 +364,7 @@ def _clean_history_point(item):
     except (TypeError, ValueError):
         raise StateError("В точке истории PNL нет времени")
     point = {"t": moment}
-    for key in ("spot", "futures", "total"):
+    for key in ("spot", "futures", "total", "futuresAccount", "totalAccount"):
         raw = item.get(key)
         if raw is None:
             continue
